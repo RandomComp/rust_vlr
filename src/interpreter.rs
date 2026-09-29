@@ -304,9 +304,9 @@ impl EvaluatorResultWrapper {
 	fn from_type(value: EvaluatorTypes) -> Self {
 		Self::from_result(EvaluatorResult::Type(value))
 	}
-	// fn boolean(value: bool) -> Self {
-	// 	Self::from_result(EvaluatorResult::Boolean(value))
-	// }
+	fn boolean(value: bool) -> Self {
+		Self::from_result(EvaluatorResult::Boolean(value))
+	}
 	fn number(value: f64) -> Self {
 		Self::from_result(EvaluatorResult::Number(value))
 	}
@@ -622,6 +622,44 @@ impl EvaluatorResultWrapper {
 		Ok(EvaluatorResultWrapper {value: result, column: self.column, row: self.row})
 	}
 
+	fn all(self) -> Result<bool, EvaluatorError> {
+		match self.value {
+			EvaluatorResult::Boolean(value) => Ok(value),
+			EvaluatorResult::Tuple(values) => {
+				let mut result = true;
+
+				for value in values {
+					if !value.all()? {
+						result = false;
+						break;
+					}
+				}
+
+				Ok(result)
+			},
+			_ => Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		}
+	}
+
+	fn any(self) -> Result<bool, EvaluatorError> {
+		match self.value {
+			EvaluatorResult::Boolean(value) => Ok(value),
+			EvaluatorResult::Tuple(values) => {
+				let mut result = false;
+
+				for value in values {
+					if value.any()? {
+						result = true;
+						break;
+					}
+				}
+
+				Ok(result)
+			},
+			_ => Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		}
+	}
+
 	fn great_or_equals(self, rhs: Self) -> Result<Self, EvaluatorError> {
 		let result = match (self.value, rhs.value) {
 			(EvaluatorResult::Number(a), EvaluatorResult::Number(b))
@@ -877,6 +915,8 @@ impl Evaluator {
 		scope.insert(String::from("repr"), EvaluatorResultWrapper::function(String::from("repr"), EvaluatorTypes::Everything, Self::repr));
 		scope.insert(String::from("str"), EvaluatorResultWrapper::function(String::from("str"), EvaluatorTypes::Everything, Self::to_str));
 		scope.insert(String::from("tuple"), EvaluatorResultWrapper::function(String::from("tuple"), EvaluatorTypes::Everything, Self::to_tuple));
+		scope.insert(String::from("all"), EvaluatorResultWrapper::function(String::from("all"), EvaluatorTypes::Everything, Self::calc_all));
+		scope.insert(String::from("any"), EvaluatorResultWrapper::function(String::from("any"), EvaluatorTypes::Everything, Self::calc_any));
 
 		Self {scope: scope}
 	}
@@ -891,6 +931,14 @@ impl Evaluator {
 
 	fn cos(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		arg.cos()
+	}
+
+	fn calc_all(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		Ok(EvaluatorResultWrapper::boolean(arg.all()?))
+	}
+
+	fn calc_any(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		Ok(EvaluatorResultWrapper::boolean(arg.any()?))
 	}
 
 	fn print(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
