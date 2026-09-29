@@ -915,8 +915,8 @@ impl Evaluator {
 		scope.insert(String::from("repr"), EvaluatorResultWrapper::function(String::from("repr"), EvaluatorTypes::Everything, Self::repr));
 		scope.insert(String::from("str"), EvaluatorResultWrapper::function(String::from("str"), EvaluatorTypes::Everything, Self::to_str));
 		scope.insert(String::from("tuple"), EvaluatorResultWrapper::function(String::from("tuple"), EvaluatorTypes::Everything, Self::to_tuple));
-		scope.insert(String::from("all"), EvaluatorResultWrapper::function(String::from("all"), EvaluatorTypes::Everything, Self::calc_all));
-		scope.insert(String::from("any"), EvaluatorResultWrapper::function(String::from("any"), EvaluatorTypes::Everything, Self::calc_any));
+		scope.insert(String::from("all"), EvaluatorResultWrapper::function(String::from("all"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), Self::calc_all));
+		scope.insert(String::from("any"), EvaluatorResultWrapper::function(String::from("any"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), Self::calc_any));
 
 		Self {scope: scope}
 	}
