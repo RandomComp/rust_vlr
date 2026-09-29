@@ -1,4 +1,4 @@
-use std::{fmt, iter::{Skip, zip}, num::ParseFloatError, str::Chars};
+use std::{fmt, iter::Skip, num::ParseFloatError, str::Chars};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
@@ -370,18 +370,30 @@ impl<'a> Lexer<'a> {
 	}
 
 	fn skip_comments(&mut self) {
-		let mut index = self.index;
+		let (mut row, mut column, mut index) = (self.row, self.column, self.index);
 
-		for (c, c_next) in zip(self.get(), self.get().skip(1)) {
+		let mut next_line = false;
+
+		for c in self.get() {
+			if next_line && c != '#' {
+				break;
+			}
+
+			next_line = false;
+
+			column += 1;
 			index += 1;
 
-			if c == '\n' && c_next != '#' {
-				break;
+			if c == '\n' {
+				column = 0;
+				row += 1;
+
+				next_line = true;
 			}
 		}
 
-		self.column = 0;
-		self.row += 1;
+		self.column = column;
+		self.row = row;
 		self.index = index;
 	}
 

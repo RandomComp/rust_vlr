@@ -351,6 +351,16 @@ impl EvaluatorResultWrapper {
 				=> EvaluatorResult::String(format!("{}{}", text_a, text_b)),
 			(EvaluatorResult::Number(a), EvaluatorResult::Number(b))
 				=> EvaluatorResult::Number(a + b),
+
+			(EvaluatorResult::Tuple(values_a), EvaluatorResult::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.add(b)?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
 			(EvaluatorResult::Tuple(values), EvaluatorResult::Number(b)) |
 			(EvaluatorResult::Number(b), EvaluatorResult::Tuple(values)) => {
 				let mut result = Vec::new();
@@ -376,6 +386,18 @@ impl EvaluatorResultWrapper {
 			(EvaluatorResultWrapper { value: EvaluatorResult::Number(a), row: _, column: _ },
 			EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ })
 				=> EvaluatorResult::Number(a - b),
+
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_b), row: _, column: _ }) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.sub(b)?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
+
 			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ },
 			EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ }) => {
 				let mut result = Vec::new();
@@ -443,6 +465,17 @@ impl EvaluatorResultWrapper {
 			(EvaluatorResultWrapper { value: EvaluatorResult::Number(a), row: _, column: _ },
 				EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ })
 				=> EvaluatorResult::Number(a / b),
+
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_b), row: _, column: _ }) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.div(b)?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
 			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ },
 				EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ }) => {
 				let mut result = Vec::new();
@@ -476,14 +509,37 @@ impl EvaluatorResultWrapper {
 
 		let result = match (self, rhs) {
 			(EvaluatorResultWrapper { value: EvaluatorResult::Number(a), row: _, column: _ },
-			EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ } )
+				EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ })
 				=> EvaluatorResult::Number(a % b),
-			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ }, b) |
-			(b, EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ }) => {
+
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_b), row: _, column: _ }) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.remainder(b)?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ },
+				EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ }) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.remainder(b.clone())?);
+					result.push(value.remainder(
+						EvaluatorResultWrapper::number(b)
+					)?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
+			(b @ EvaluatorResultWrapper { value: EvaluatorResult::Number(_), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ }) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(b.clone().remainder(value)?);
 				}
 
 				EvaluatorResult::Tuple(result)
@@ -495,16 +551,38 @@ impl EvaluatorResultWrapper {
 	}
 
 	fn equals(self, rhs: Self) -> Result<Self, EvaluatorError> {
-		let result = match (self.value, rhs.value) {
-			(EvaluatorResult::Number(a), EvaluatorResult::Number(b))
+		let (row, column) = (self.row, self.column);
+
+		let result = match (self, rhs) {
+			(EvaluatorResultWrapper { value: EvaluatorResult::Number(a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Number(b), row: _, column: _ })
 				=> EvaluatorResult::Boolean(a == b),
-			(EvaluatorResult::String(a), EvaluatorResult::String(b))
+			(EvaluatorResultWrapper { value: EvaluatorResult::String(a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::String(b), row: _, column: _ })
 				=> EvaluatorResult::Boolean(a == b),
-			(EvaluatorResult::Boolean(a), EvaluatorResult::Boolean(b))
+			(EvaluatorResultWrapper { value: EvaluatorResult::Boolean(a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Boolean(b), row: _, column: _ })
 				=> EvaluatorResult::Boolean(a == b),
-			(EvaluatorResult::Type(a), EvaluatorResult::Type(b))
+			(EvaluatorResultWrapper { value: EvaluatorResult::Type(a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Type(b), row: _, column: _ })
 				=> EvaluatorResult::Boolean(a == b),
-			(EvaluatorResult::Tuple(values_a), EvaluatorResult::Tuple(values_b)) => {
+
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ },
+			b @ EvaluatorResultWrapper { value: EvaluatorResult::Number(_), row: _, column: _ }) |
+
+	 		(b @ EvaluatorResultWrapper { value: EvaluatorResult::Number(_), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ }) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(value.equals(b.clone())?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
+
+			(EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_a), row: _, column: _ },
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values_b), row: _, column: _ }) => {
 				let mut result = Vec::new();
 
 				for (value_a, value_b) in zip(values_a, values_b) {
@@ -513,10 +591,10 @@ impl EvaluatorResultWrapper {
 
 				EvaluatorResult::Tuple(result)
 			},
-			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+			_ => return Err(EvaluatorError::IncompatibleOperationType { row: row, column: column }),
 		};
 
-		Ok(EvaluatorResultWrapper {value: result, column: self.column, row: self.row})
+		Ok(EvaluatorResultWrapper {value: result, column: column, row: row})
 	}
 
 	fn not_equals(self, rhs: Self) -> Result<Self, EvaluatorError> {

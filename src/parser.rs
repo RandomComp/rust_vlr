@@ -33,12 +33,12 @@ pub enum ASTNodeEnum {
 		block: Box<ASTNode>,
 		block_else: Option<Box<ASTNode>>
 	},
-	Ternary {
-		left: Box<ASTNode>,
-		op: TokenType,
-		center: Box<ASTNode>,
-		right: Box<ASTNode>,
-	},
+	// Ternary {
+	// 	left: Box<ASTNode>,
+	// 	op: TokenType,
+	// 	center: Box<ASTNode>,
+	// 	right: Box<ASTNode>,
+	// },
 	Binary {
 		left: Box<ASTNode>,
 		op: TokenType,
@@ -105,8 +105,8 @@ impl std::fmt::Display for ASTNodeEnum {
 			ASTNodeEnum::If { condition, block, block_else: None } => {
 				write!(f, "if {} {}", condition, block)
 			},
-			ASTNodeEnum::Ternary { left, op, center, right } =>
-				write!(f, "({} {} {} {} {})", left, op, center, op, right),
+			// ASTNodeEnum::Ternary { left, op, center, right } =>
+			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
 			ASTNodeEnum::Binary { left, op, right } =>
 				write!(f, "({} {} {})", left, op, right),
 			ASTNodeEnum::Unary {op, value} =>
