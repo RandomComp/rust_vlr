@@ -58,7 +58,7 @@ fn run(code: &str) {
 		process::exit(1);
 	}).unwrap();
 
-	println!("ast = {}", ast);
+	// println!("ast = {}", ast);
 
 	let mut evaluator = Evaluator::new();
 	evaluator.init_builtin_funcs();

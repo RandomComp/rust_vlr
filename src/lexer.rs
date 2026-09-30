@@ -8,11 +8,18 @@ pub enum TokenType {
 	TokenString(String),
 	TokenPlus,
 	TokenMinus,
-	TokenMultiply,
 	TokenPow,
+	TokenMultiply,
 	TokenDivide,
 	TokenRemainder,
+
 	TokenAssignment,
+	TokenPlusAssignment,
+	TokenMinusAssignment,
+	TokenPowAssignment,
+	TokenMultiplyAssignment,
+	TokenDivideAssignment,
+	TokenRemainderAssignment,
 
 	TokenTrue, TokenFalse,
 	TokenIf,
@@ -63,6 +70,14 @@ impl fmt::Display for OpAssoc {
 
 impl TokenType {
 	pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
+		(Self::TokenAssignment, "="),
+		(Self::TokenPlusAssignment, "+="),
+		(Self::TokenMinusAssignment, "-="),
+		(Self::TokenPowAssignment, "**="),
+		(Self::TokenMultiplyAssignment, "*="),
+		(Self::TokenDivideAssignment, "/="),
+		(Self::TokenRemainderAssignment, "%="),
+
 		(Self::TokenPlus, "+"),
 		(Self::TokenMinus, "-"),
 		(Self::TokenPow, "**"),
@@ -79,7 +94,6 @@ impl TokenType {
 		(Self::TokenLogicalAnd, "&&"),
 		(Self::TokenLogicalOr, "||"),
 
-		(Self::TokenAssignment, "="),
 		(Self::TokenComma, ","),
 		(Self::TokenSemicolon, ";"),
 		(Self::TokenLPar, "("),
@@ -91,7 +105,7 @@ impl TokenType {
 		(Self::TokenRange, ".."),
 	];
 
-	pub const MAX_PRECEDENCE: usize = 6;
+	pub const MAX_PRECEDENCE: usize = 7;
 
 	fn get_keyword(word: &str) -> Option<Self> {
 		match word {
@@ -124,6 +138,14 @@ impl TokenType {
 			Self::TokenLogicalAnd => Some(6),
 			Self::TokenLogicalOr => Some(6),
 
+			Self::TokenAssignment => Some(7),
+			Self::TokenPlusAssignment => Some(7),
+			Self::TokenMinusAssignment => Some(7),
+			Self::TokenPowAssignment => Some(7),
+			Self::TokenMultiplyAssignment => Some(7),
+			Self::TokenDivideAssignment => Some(7),
+			Self::TokenRemainderAssignment => Some(7),
+
 			_ => None
 		}
 	}
@@ -149,6 +171,15 @@ impl std::fmt::Display for TokenType {
 			Self::TokenNumber(x) => write!(f, "{}", x),
 			Self::TokenWord(word) => write!(f, "{}", word),
 			Self::TokenString(word) => write!(f, "\"{}\"", word),
+
+			Self::TokenAssignment => write!(f, "="),
+			Self::TokenPlusAssignment => write!(f, "+="),
+			Self::TokenMinusAssignment => write!(f, "-="),
+			Self::TokenPowAssignment => write!(f, "**="),
+			Self::TokenMultiplyAssignment => write!(f, "*="),
+			Self::TokenDivideAssignment => write!(f, "/="),
+			Self::TokenRemainderAssignment => write!(f, "%="),
+
 			Self::TokenPlus => write!(f, "+"),
 			Self::TokenMinus => write!(f, "-"),
 			Self::TokenMultiply => write!(f, "*"),
@@ -175,7 +206,6 @@ impl std::fmt::Display for TokenType {
 
 			Self::TokenRange => write!(f, ".."),
 
-			Self::TokenAssignment => write!(f, "="),
 			Self::TokenComma => write!(f, ","),
 			Self::TokenSemicolon => write!(f, ";"),
 			Self::TokenLPar => write!(f, "("),

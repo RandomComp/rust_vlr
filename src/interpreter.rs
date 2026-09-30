@@ -71,8 +71,20 @@ impl EvaluatorTypes {
 	fn len(&self) -> Option<usize> {
 		match self {
 			EvaluatorTypes::None => Some(0),
-			EvaluatorTypes::Tuple(types) => Some(types.len()),
-			EvaluatorTypes::Everything => None,
+			EvaluatorTypes::Tuple(types) => {
+				let mut result = Some(0);
+
+				for eval_type in types {
+					match (result, eval_type.len()) {
+						(Some(result_len), Some(eval_type)) if eval_type > result_len => result = Some(eval_type),
+						(Some(_), None) => result = None,
+						_ => {},
+					}
+				}
+
+				result
+			},
+			EvaluatorTypes::TypedTuple(_) | EvaluatorTypes::Everything => None,
 			_ => Some(1),
 		}
 	}
@@ -682,7 +694,7 @@ impl EvaluatorResultWrapper {
 		}
 	}
 
-	fn map(self, evaluator: &mut Evaluator, func: fn(&mut Evaluator, usize, usize, EvaluatorResultWrapper, Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn map(self, evaluator: &mut Evaluator, name: Option<&str>, args_value: EvaluatorTypes, static_args: Option<Vec<EvaluatorResultWrapper>>, func: fn(&mut Evaluator, usize, usize, EvaluatorResultWrapper, Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		let (row, column) = (self.row, self.column);
 
 		let result = match self {
@@ -690,12 +702,25 @@ impl EvaluatorResultWrapper {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.map(evaluator, func)?);
+					result.push(value.map(evaluator, name, args_value.clone(), static_args.clone(), func)?);
 				}
 
 				EvaluatorResultWrapper::tuple_with_pos(row, column, result)
 			},
-			value => func(evaluator, row, column, value, None)?,
+			EvaluatorResultWrapper { value: EvaluatorResult::Range(start, end, step), row: _, column: _ } => {
+				let mut result = Vec::new();
+
+				let mut i = start;
+
+				while i <= end {
+					result.push(EvaluatorResultWrapper::number(i).map(evaluator, name, args_value.clone(), static_args.clone(), func)?);
+
+					i += step;
+				};
+
+				EvaluatorResultWrapper::tuple_with_pos(row, column, result)
+			},
+			value => evaluator.call_func(name, func, row, column, value, args_value, static_args)?,
 		};
 
 		Ok(result)
@@ -865,6 +890,18 @@ impl EvaluatorResultWrapper {
 			EvaluatorResult::None => 0,
 			EvaluatorResult::Number(_) => 1,
 			EvaluatorResult::Boolean(_) => 1,
+			EvaluatorResult::String(ref text) => text.len(),
+			EvaluatorResult::Range(start, end, step) => ((end + 1.0 - start).abs() / step) as usize,
+			EvaluatorResult::Tuple(ref values) => values.len(),
+			_ => 1,
+		}
+	}
+
+	fn key(&self) -> usize {
+		match self.value {
+			EvaluatorResult::None => 0,
+			EvaluatorResult::Number(x) => x as usize,
+			EvaluatorResult::Boolean(x) => if x {1} else {0},
 			EvaluatorResult::Range(start, end, step) => ((end + 1.0 - start).abs() / step) as usize,
 			EvaluatorResult::Tuple(ref values) => values.len(),
 			_ => 1,
@@ -905,9 +942,9 @@ impl EvaluatorResultWrapper {
 
 	fn sum(self) -> Result<f64, EvaluatorError> {
 		let result = match self.value {
-			EvaluatorResult::Number(x) => x.abs(),
+			EvaluatorResult::Number(x) => x,
 			EvaluatorResult::Range(start, end, step) => {
-				((start + end + 1.0) * (end + 1.0 - start)) / (2.0 * step)
+				((start + end - 1.0) * (end - start)) / (2.0 * step)
 			},
 			EvaluatorResult::String(value) => {
 				value.len() as f64
@@ -929,26 +966,25 @@ impl EvaluatorResultWrapper {
 
 	fn min(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		let result = match self.value {
-			EvaluatorResult::Number(x) => x.abs(),
 			EvaluatorResult::Range(start, end, _) => {
 				start.min(end)
 			},
 			EvaluatorResult::Tuple(values) => {
-				values.iter().map(|v| v.len()).min().unwrap_or(0) as f64
+				values.iter().map(|v| v.key()).min().unwrap_or(0) as f64
 			},
 			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
 		};
 
 		Ok(EvaluatorResultWrapper::number_with_pos(self.row, self.column, result))
 	}
+
 	fn max(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		let result = match self.value {
-			EvaluatorResult::Number(x) => x.abs(),
 			EvaluatorResult::Range(start, end, _) => {
 				start.max(end)
 			},
 			EvaluatorResult::Tuple(values) => {
-				values.iter().map(|v| v.len()).max().unwrap_or(0) as f64
+				values.iter().map(|v| v.key()).max().unwrap_or(0) as f64
 			},
 			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
 		};
@@ -964,7 +1000,7 @@ impl EvaluatorResultWrapper {
 	fn sort(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		match self.value {
 			EvaluatorResult::Tuple(mut values) => {
-				values.sort_by_key(|value| value.len());
+				values.sort_by_key(|value| value.key());
 
 				Ok(EvaluatorResultWrapper::tuple_with_pos(self.row, self.column, values))
 			},
@@ -983,7 +1019,7 @@ impl EvaluatorResultWrapper {
 				Ok(values[result_len / 2].clone())
 			},
 			EvaluatorResult::Tuple(values) if result_len % 2 == 0 => {
-				values[result_len / 2].clone().add(values[result_len / 2 + 1].clone())
+				values[result_len / 2 - 1].clone().add(values[result_len / 2].clone())?.div(EvaluatorResultWrapper::number(2.0))
 			},
 			_ => Err(EvaluatorError::IncompatibleOperationType { row: row, column: column }),
 		}
@@ -1097,6 +1133,7 @@ impl Evaluator {
 		self.scope.insert(String::from("max"), EvaluatorResultWrapper::function(Some(String::from("max")), EvaluatorTypes::Everything, None, Self::calc_max));
 		self.scope.insert(String::from("mean"), EvaluatorResultWrapper::function(Some(String::from("mean")), EvaluatorTypes::Everything, None, Self::calc_mean));
 		self.scope.insert(String::from("median"), EvaluatorResultWrapper::function(Some(String::from("median")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::calc_median));
+		self.scope.insert(String::from("sort"), EvaluatorResultWrapper::function(Some(String::from("sort")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Everything)), None, Self::calc_sort));
 	}
 
 	fn sqrt(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
@@ -1129,6 +1166,9 @@ impl Evaluator {
 	fn calc_sum(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(EvaluatorResultWrapper::number_with_pos(row, column, arg.sum()?))
 	}
+	fn calc_sort(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.sort()
+	}
 	fn calc_min(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		arg.min()
 	}
@@ -1144,19 +1184,17 @@ impl Evaluator {
 
 	fn calc_map(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		match arg.value {
-			EvaluatorResult::Tuple(values) => {
-				match values[0].value {
-					EvaluatorResult::Function { name: _, args: _, static_args: _, func } => {
-						let mut result: Vec<EvaluatorResultWrapper> = Vec::new();
+			EvaluatorResult::Tuple(values) => match values[0].value.clone() {
+				EvaluatorResult::Function { name, args, ref static_args, func } => {
+					let mut result: Vec<EvaluatorResultWrapper> = Vec::new();
 
-						for value in values.iter().skip(1).cloned() {
-							result.push(value.map(self, func)?);
-						}
+					for value in values.iter().skip(1).cloned() {
+						result.push(value.map(self, name.as_deref(), args.clone(), static_args.clone(), func)?);
+					}
 
-						Ok(EvaluatorResultWrapper::tuple_with_pos(row, column, result))
-					},
-					_ => Err(EvaluatorError::IncompatibleOperationType { row, column }),
-				}
+					Ok(EvaluatorResultWrapper::tuple_with_pos(row, column, result))
+				},
+				_ => Err(EvaluatorError::IncompatibleOperationType { row, column }),
 			},
 
 			_ => Err(EvaluatorError::IncompatibleOperationType { row, column }),
@@ -1207,7 +1245,7 @@ impl Evaluator {
 	}
 
 	fn user_func(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
-		let static_args = static_args.unwrap();
+		let static_args = static_args.expect("static_args.len() < 1");
 
 		match arg.value {
 			EvaluatorResult::Tuple(values) => {
@@ -1221,7 +1259,7 @@ impl Evaluator {
 				}
 			}
 			_ => {
-				let (name, value) = (static_args.iter().nth(1).unwrap(), arg);
+				let (name, value) = (static_args.iter().nth(1).expect("static_args.len() < 2"), arg);
 
 				match name.clone().value {
 					EvaluatorResult::String(name) => {
@@ -1249,6 +1287,19 @@ impl Evaluator {
 		Ok(result)
 	}
 
+	fn call_func(&mut self, name: Option<&str>, func: fn(&mut Evaluator, usize, usize, EvaluatorResultWrapper, Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>, row: usize, column: usize, args: EvaluatorResultWrapper, args_types: EvaluatorTypes, static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		match (args.len(), args_types.len()) {
+			(a, Some(b)) if a < b =>
+				return Err(EvaluatorError::TooFewArgumentsForFunction { row: row, column: column, function: name.unwrap_or("<anonymous>").to_string() }),
+			(a, Some(b)) if a > b =>
+				return Err(EvaluatorError::TooManyArgumentsForFunction { row: row, column: column, function: name.unwrap_or("<anonymous>").to_string() }),
+
+			(_, _) => {},
+		}
+
+		func(self, row, column, args, static_args)
+	}
+
 	pub fn eval(&mut self, expr: Box<ASTNode>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(match expr.value {
 			ASTNodeEnum::Everything =>
@@ -1264,13 +1315,6 @@ impl Evaluator {
 					Some(value) => value.clone(),
 					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
 				}
-			},
-			ASTNodeEnum::Assignment {name, value} => {
-				let result = self.eval(value)?;
-
-				self.scope.insert(name, result.clone());
-
-				result
 			},
 			ASTNodeEnum::Tuple(values) => {
 				let mut result: Vec<EvaluatorResultWrapper> = Vec::new();
@@ -1308,6 +1352,105 @@ impl Evaluator {
 					_ => EvaluatorResultWrapper::NONE,
 				}
 			},
+			ASTNodeEnum::Binary {left, op: TokenType::TokenAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+				let result = self.eval(right)?;
+
+				self.scope.insert(name, result.clone());
+
+				result
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenPlusAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().add(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenMinusAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().sub(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenPowAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().pow(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenMultiplyAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().mul(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenDivideAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().div(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
+			ASTNodeEnum::Binary {left, op: TokenType::TokenRemainderAssignment, right}
+		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {
+
+				match self.scope.get(&name) {
+					Some(value) => {
+						let result = value.clone().remainder(self.eval(right)?)?;
+
+						self.scope.insert(name, result.clone());
+
+						result
+					},
+					None => return Err(EvaluatorError::UnknownInThisScope { row: expr.row, column: expr.column, name: name })
+				}
+			},
+
 			ASTNodeEnum::Binary {left, op: TokenType::TokenPlus, right} =>
 				self.eval(left)?.add(self.eval(right)?)?,
 			ASTNodeEnum::Binary {left, op: TokenType::TokenMinus, right} =>
@@ -1360,22 +1503,13 @@ impl Evaluator {
 				=> self.eval(value)?.neg()?,
 
 			ASTNodeEnum::Function {name, arg} => {
-				let args = self.eval(arg)?;
+				match self.scope.clone().get(&name) {
+					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name: _, args: args_types, static_args, func }, column: _, row: _ }) => {
+						let arg = self.eval(arg)?;
 
-				match self.scope.get(name.as_str()) {
-					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name, args: args_types, static_args, func }, column: _, row: _ }) => {
-						match (args.len(), args_types.len()) {
-							(a, Some(b)) if a < b =>
-								return Err(EvaluatorError::TooFewArgumentsForFunction { row: expr.row, column: expr.column, function: name.clone().unwrap() }),
-
-							(a, Some(b)) if a > b =>
-								return Err(EvaluatorError::TooManyArgumentsForFunction { row: expr.row, column: expr.column, function: name.clone().unwrap() }),
-							(_, _) => {},
-						}
-
-						func(self, expr.row, expr.column, args, static_args.clone())?
+						self.call_func(Some(name.as_str()), *func, expr.row, expr.column, arg, args_types.clone(), static_args.as_ref().cloned())?
 					},
-					_ => return Err(EvaluatorError::UnknownFunction { row: expr.row, column: expr.column, name: name })
+					_ => return Err(EvaluatorError::UnknownFunction { row: expr.row, column: expr.column, name: name.to_string() })
 				}
 			},
 			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {

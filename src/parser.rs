@@ -57,10 +57,6 @@ pub enum ASTNodeEnum {
 		args: Vec<String>,
 		block: Box<ASTNode>,
 	},
-	Assignment {
-		name: String,
-		value: Box<ASTNode>,
-	},
 }
 
 #[derive(Clone)]
@@ -146,9 +142,6 @@ impl std::fmt::Display for ASTNodeEnum {
 				}
 
 				Ok(())
-			},
-			ASTNodeEnum::Assignment {name, value} => {
-				write!(f, "({} = {})", name, value)
 			},
 		}
 	}
@@ -306,27 +299,27 @@ impl Parser {
 		}
 	}
 
-	fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		match self.peek(0) {
-			Some(Token { token_type: TokenType::TokenWord(name), column, row }) => {
-				let (row, column) = (*row, *column);
+	// fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
+	// 	match self.peek(0) {
+	// 		Some(Token { token_type: TokenType::TokenWord(name), column, row }) => {
+	// 			let (row, column) = (*row, *column);
 
-				let name = name.clone();
+	// 			let name = name.clone();
 
-				self.consume_next();
+	// 			self.consume_next();
 
-				self.consume(TokenType::TokenAssignment)?;
+	// 			self.consume(TokenType::TokenAssignment)?;
 
-				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+	// 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
-				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Assignment {name: name, value: Box::new(value)}, row: row, column: column }
-				))
-			},
-			Some(_) => return Ok(Some(self.parse(TokenType::MAX_PRECEDENCE)?)),
-			None => return Ok(None),
-		}
-	}
+	// 			Ok(Some(
+	// 				ASTNode { value: ASTNodeEnum::Assignment {name: name, value: Box::new(value)}, row: row, column: column }
+	// 			))
+	// 		},
+	// 		Some(_) => return Ok(Some(self.parse(TokenType::MAX_PRECEDENCE)?)),
+	// 		None => return Ok(None),
+	// 	}
+	// }
 
 	fn parse_unary(&mut self) -> Result<Option<ASTNode>, ParserError> {
 		let cur = match self.peek(0) {
@@ -522,10 +515,6 @@ impl Parser {
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Function { name: word, arg: Box::new(value) }, row: row, column: column }
 				))
-			}
-
-			(Token {token_type: TokenType::TokenWord(_), column: _, row: _}, Some(Token { token_type: TokenType::TokenAssignment, column: _, row: _ })) => {
-				self.parse_assignment()
 			}
 
 			(Token {token_type: TokenType::TokenWord(word), column, row}, _) => {
