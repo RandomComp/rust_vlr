@@ -18,7 +18,7 @@ pub enum ParserError {
 	UnexpectedToken {row: usize, column: usize, token_type: TokenType},
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ASTNodeEnum {
 	None,
 	Everything,
@@ -28,7 +28,13 @@ pub enum ASTNodeEnum {
 	Tuple(Vec<ASTNode>),
 	Variable(String),
 	Block(VecDeque<ASTNode>),
+	Break(Box<ASTNode>),
 	If {
+		condition: Box<ASTNode>,
+		block: Box<ASTNode>,
+		block_else: Option<Box<ASTNode>>
+	},
+	While {
 		condition: Box<ASTNode>,
 		block: Box<ASTNode>,
 		block_else: Option<Box<ASTNode>>
@@ -59,7 +65,7 @@ pub enum ASTNodeEnum {
 	},
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ASTNode {
 	pub value: ASTNodeEnum,
 	pub row: usize, pub column: usize,
@@ -105,6 +111,15 @@ impl std::fmt::Display for ASTNodeEnum {
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
 				write!(f, "if {} {}", condition, block)
+			},
+			ASTNodeEnum::Break(value) => {
+				write!(f, "break {}", value)
+			},
+			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+				write!(f, "while {} {} else {}", condition, block, block_else)
+			},
+			ASTNodeEnum::While { condition, block, block_else: None } => {
+				write!(f, "while {} {}", condition, block)
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
@@ -344,6 +359,16 @@ impl Parser {
 				))
 			}
 
+			(&Token {token_type: TokenType::TokenBreak, column, row}, _) => {
+				self.consume_next();
+
+				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				Ok(Some(
+					ASTNode { value: ASTNodeEnum::Break(Box::new(value)), row: row, column: column }
+				))
+			}
+
 			(&Token {token_type: TokenType::TokenIf, column, row}, _) => {
 				self.consume_next();
 
@@ -363,6 +388,29 @@ impl Parser {
 
 					_ => Ok(Some(
 						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: None }, row: row, column: column }
+					))
+				}
+			}
+
+			(&Token {token_type: TokenType::TokenWhile, column, row}, _) => {
+				self.consume_next();
+
+				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				match self.peek(0) {
+					Some(&Token { token_type: TokenType::TokenElse, row, column }) => {
+						self.consume_next();
+
+						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+						Ok(Some(
+							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row: row, column: column }
+						))
+					}
+
+					_ => Ok(Some(
+						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: None }, row: row, column: column }
 					))
 				}
 			}

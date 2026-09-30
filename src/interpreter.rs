@@ -18,11 +18,13 @@ pub enum EvaluatorError {
 	UnknownFunction {row: usize, column: usize, name: String},
 	#[error("formatting error: {0}")]
 	FormatError (#[from] fmt::Error),
+	#[error("Break from for/while")]
+	BreakError(EvaluatorResultWrapper),
 	// #[error("line {row} at {column}: division by zero")]
 	// DivisionByZero {row: usize, column: usize},
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum EvaluatorTypes {
 	None,
 	Type,
@@ -90,7 +92,7 @@ impl EvaluatorTypes {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum EvaluatorResult {
 	None,
 	Everything,
@@ -109,7 +111,7 @@ pub enum EvaluatorResult {
 	AST(ASTNode),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EvaluatorResultWrapper {
 	pub value: EvaluatorResult,
 	pub row: usize, pub column: usize,
@@ -902,6 +904,7 @@ impl EvaluatorResultWrapper {
 			EvaluatorResult::None => 0,
 			EvaluatorResult::Number(x) => x as usize,
 			EvaluatorResult::Boolean(x) => if x {1} else {0},
+			EvaluatorResult::String(ref text) => text.len(),
 			EvaluatorResult::Range(start, end, step) => ((end + 1.0 - start).abs() / step) as usize,
 			EvaluatorResult::Tuple(ref values) => values.len(),
 			_ => 1,
@@ -1351,6 +1354,62 @@ impl Evaluator {
 					EvaluatorResultWrapper { value: EvaluatorResult::Boolean(true), row: _, column: _ } => self.eval(block)?,
 					_ => EvaluatorResultWrapper::NONE,
 				}
+			},
+
+			ASTNodeEnum::Break(value) => {
+				return Err(EvaluatorError::BreakError(self.eval(value)?))
+			},
+
+			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+				let mut result = EvaluatorResultWrapper::NONE;
+
+				let mut breaked = false;
+
+				loop {
+					match self.eval(condition.clone())? {
+						EvaluatorResultWrapper { value: EvaluatorResult::Boolean(true), row: _, column: _ } => {},
+						_ => break,
+					};
+
+					result = match self.eval(block.clone()) {
+						Ok(result) => result,
+						Err(EvaluatorError::BreakError(value)) => {
+							result = value;
+							breaked = true;
+
+							break;
+						},
+						Err(e) => return Err(e),
+					};
+				}
+
+				if !breaked {
+					self.eval(block_else)?;
+				}
+
+				result
+			},
+			ASTNodeEnum::While { condition, block, block_else: None } => {
+				let mut result = EvaluatorResultWrapper::NONE;
+
+				loop {
+					match self.eval(condition.clone())? {
+						EvaluatorResultWrapper { value: EvaluatorResult::Boolean(true), row: _, column: _ } => {},
+						_ => break,
+					};
+
+					result = match self.eval(block.clone()) {
+						Ok(result) => result,
+						Err(EvaluatorError::BreakError(value)) => {
+							result = value;
+
+							break;
+						},
+						Err(e) => return Err(e),
+					};
+				}
+
+				result
 			},
 			ASTNodeEnum::Binary {left, op: TokenType::TokenAssignment, right}
 		 		if let ASTNodeEnum::Variable(name) = left.value.clone() => {

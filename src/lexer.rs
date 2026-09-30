@@ -22,8 +22,10 @@ pub enum TokenType {
 	TokenRemainderAssignment,
 
 	TokenTrue, TokenFalse,
-	TokenIf,
-	TokenElse,
+	TokenIf, TokenElse,
+	TokenWhile, TokenFor,
+	TokenBreak,
+	TokenReturn,
 	TokenDef,
 	TokenEverything,
 
@@ -70,6 +72,15 @@ impl fmt::Display for OpAssoc {
 
 impl TokenType {
 	pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
+		(Self::TokenEquals, "=="),
+		(Self::TokenNotEquals, "!="),
+		(Self::TokenGreatOrEquals, ">="),
+		(Self::TokenLessOrEquals, "<="),
+		(Self::TokenGreat, ">"),
+		(Self::TokenLess, "<"),
+		(Self::TokenLogicalAnd, "&&"),
+		(Self::TokenLogicalOr, "||"),
+
 		(Self::TokenAssignment, "="),
 		(Self::TokenPlusAssignment, "+="),
 		(Self::TokenMinusAssignment, "-="),
@@ -84,15 +95,6 @@ impl TokenType {
 		(Self::TokenMultiply, "*"),
 		(Self::TokenDivide, "/"),
 		(Self::TokenRemainder, "%"),
-
-		(Self::TokenEquals, "=="),
-		(Self::TokenNotEquals, "!="),
-		(Self::TokenGreatOrEquals, ">="),
-		(Self::TokenLessOrEquals, "<="),
-		(Self::TokenGreat, ">"),
-		(Self::TokenLess, "<"),
-		(Self::TokenLogicalAnd, "&&"),
-		(Self::TokenLogicalOr, "||"),
 
 		(Self::TokenComma, ","),
 		(Self::TokenSemicolon, ";"),
@@ -113,7 +115,11 @@ impl TokenType {
 			"false" => Some(Self::TokenFalse),
 			"if" => Some(Self::TokenIf),
 			"else" => Some(Self::TokenElse),
+			"while" => Some(Self::TokenWhile),
+			"for" => Some(Self::TokenFor),
 			"def" => Some(Self::TokenDef),
+			"break" => Some(Self::TokenBreak),
+			"return" => Some(Self::TokenReturn),
 			_ => None,
 		}
 	}
@@ -189,8 +195,16 @@ impl std::fmt::Display for TokenType {
 
 			Self::TokenTrue => write!(f, "true"),
 			Self::TokenFalse => write!(f, "false"),
+
 			Self::TokenIf => write!(f, "if"),
 			Self::TokenElse => write!(f, "else"),
+
+			Self::TokenWhile => write!(f, "while"),
+			Self::TokenFor => write!(f, "for"),
+
+			Self::TokenBreak => write!(f, "break"),
+			Self::TokenReturn => write!(f, "return"),
+
 			Self::TokenDef => write!(f, "def"),
 			Self::TokenEverything => write!(f, ".."),
 

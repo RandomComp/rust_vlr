@@ -1,9 +1,25 @@
-def say_hello(name) {
-	print("Hello", name, "!")
+def my_cycle(max) {
+	x = 0
+
+	while x < 12 {
+		print("x =", x)
+
+		x += 1
+
+		if x == max break x
+	} else {
+		print("Цикл пройден без break!")
+	}
 }
 
-#print(say_hello(", this is my Language"))
+print("Первый запуск: my_cycle(5)")
+result = my_cycle(5)
+print("Результат:", result)
 
-print(say_hello)
+print("Второй запуск: my_cycle(12)")
+result = my_cycle(12)
+print("Результат:", result)
 
-#print(say_hello())
+print("Третий запуск: my_cycle(25)")
+result = my_cycle(25)
+print("Результат:", result)
