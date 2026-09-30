@@ -29,6 +29,7 @@ pub enum ASTNodeEnum {
 	Variable(String),
 	Block(VecDeque<ASTNode>),
 	Break(Box<ASTNode>),
+	Return(Box<ASTNode>),
 	If {
 		condition: Box<ASTNode>,
 		block: Box<ASTNode>,
@@ -114,6 +115,9 @@ impl std::fmt::Display for ASTNodeEnum {
 			},
 			ASTNodeEnum::Break(value) => {
 				write!(f, "break {}", value)
+			},
+			ASTNodeEnum::Return(value) => {
+				write!(f, "return {}", value)
 			},
 			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
 				write!(f, "while {} {} else {}", condition, block, block_else)
@@ -356,6 +360,16 @@ impl Parser {
 
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Boolean(false), row: row, column: column }
+				))
+			}
+
+			(&Token {token_type: TokenType::TokenReturn, column, row}, _) => {
+				self.consume_next();
+
+				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				Ok(Some(
+					ASTNode { value: ASTNodeEnum::Return(Box::new(value)), row: row, column: column }
 				))
 			}
 

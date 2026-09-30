@@ -20,6 +20,8 @@ pub enum EvaluatorError {
 	FormatError (#[from] fmt::Error),
 	#[error("Break from for/while")]
 	BreakError(EvaluatorResultWrapper),
+	#[error("Return from function")]
+	ReturnError(EvaluatorResultWrapper),
 	// #[error("line {row} at {column}: division by zero")]
 	// DivisionByZero {row: usize, column: usize},
 }
@@ -1356,6 +1358,10 @@ impl Evaluator {
 				}
 			},
 
+			ASTNodeEnum::Return(value) => {
+				return Err(EvaluatorError::ReturnError(self.eval(value)?))
+			},
+
 			ASTNodeEnum::Break(value) => {
 				return Err(EvaluatorError::BreakError(self.eval(value)?))
 			},
@@ -1566,7 +1572,11 @@ impl Evaluator {
 					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name: _, args: args_types, static_args, func }, column: _, row: _ }) => {
 						let arg = self.eval(arg)?;
 
-						self.call_func(Some(name.as_str()), *func, expr.row, expr.column, arg, args_types.clone(), static_args.as_ref().cloned())?
+						match self.call_func(Some(name.as_str()), *func, expr.row, expr.column, arg, args_types.clone(), static_args.as_ref().cloned()) {
+							Ok(result) => result,
+							Err(EvaluatorError::ReturnError(value)) => value,
+							Err(e) => return Err(e),
+						}
 					},
 					_ => return Err(EvaluatorError::UnknownFunction { row: expr.row, column: expr.column, name: name.to_string() })
 				}
