@@ -52,6 +52,11 @@ pub enum ASTNodeEnum {
 		name: String,
 		arg: Box<ASTNode>,
 	},
+	FunctionDefinition {
+		name: Option<String>,
+		args: Vec<String>,
+		block: Box<ASTNode>,
+	},
 	Assignment {
 		name: String,
 		value: Box<ASTNode>,
@@ -113,6 +118,34 @@ impl std::fmt::Display for ASTNodeEnum {
 				write!(f, "{}({})", op, value),
 			ASTNodeEnum::Function {name, arg} => {
 				write!(f, "{}({})", name, arg)
+			},
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: _ } => {
+				write!(f, "def {}(", name)?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{}", arg)?;
+				}
+
+				write!(f, ")")?;
+
+				Ok(())
+			},
+			ASTNodeEnum::FunctionDefinition { name: None, args, block: _ } => {
+				write!(f, "anonymous def(")?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{}", arg)?;
+				}
+
+				Ok(())
 			},
 			ASTNodeEnum::Assignment {name, value} => {
 				write!(f, "({} = {})", name, value)
@@ -339,6 +372,81 @@ impl Parser {
 						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: None }, row: row, column: column }
 					))
 				}
+			}
+
+			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenWord(name), row: _, column: _ })) => {
+				let name = name.clone();
+
+				self.consume_next();
+				self.consume_next();
+				self.consume(TokenType::TokenLPar)?;
+
+				let mut args = Vec::new();
+
+				loop {
+					match self.peek(0) {
+						Some(Token { token_type: TokenType::TokenWord(arg), column: _, row: _ }) => {
+							args.push(arg.clone());
+
+							self.consume_next();
+						},
+						_ => break,
+					}
+
+					match self.peek(0) {
+						Some(Token { token_type: TokenType::TokenComma, column: _, row: _ }) => {
+							self.consume_next();
+
+							continue
+						},
+						_ => break,
+					}
+				}
+
+				self.consume(TokenType::TokenRPar)?;
+
+				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				Ok(Some(ASTNode { value:
+						ASTNodeEnum::FunctionDefinition { name: Some(name), args: args, block: Box::new(block) },
+					row: row, column: column }
+				))
+			}
+
+			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenLPar, row: _, column: _ })) => {
+				self.consume_next();
+				self.consume(TokenType::TokenLPar)?;
+
+				let mut args = Vec::new();
+
+				loop {
+					match self.peek(0) {
+						Some(Token { token_type: TokenType::TokenWord(arg), column: _, row: _ }) => {
+							args.push(arg.clone());
+
+							self.consume_next();
+						},
+						_ => break,
+					}
+
+					match self.peek(0) {
+						Some(Token { token_type: TokenType::TokenComma, column: _, row: _ }) => {
+							self.consume_next();
+
+							continue
+						},
+						_ => break,
+					}
+				}
+
+				self.consume(TokenType::TokenRPar)?;
+
+				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				Ok(Some(ASTNode { value:
+						ASTNodeEnum::FunctionDefinition { name: None, args: args, block: Box::new(block) },
+					row: row, column: column }
+				))
 			}
 
 			(&Token {token_type: TokenType::TokenEverything, column, row}, _) => {

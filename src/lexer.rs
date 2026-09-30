@@ -17,6 +17,7 @@ pub enum TokenType {
 	TokenTrue, TokenFalse,
 	TokenIf,
 	TokenElse,
+	TokenDef,
 	TokenEverything,
 
 	TokenEquals,
@@ -90,15 +91,18 @@ impl TokenType {
 		(Self::TokenRange, ".."),
 	];
 
-	pub const TOKEN_KEYWORDS: &[(Self, &str)] = &[
-		(Self::TokenTrue, "true"),
-		(Self::TokenFalse, "false"),
-
-		(Self::TokenIf, "if"),
-		(Self::TokenElse, "else"),
-	];
-
 	pub const MAX_PRECEDENCE: usize = 6;
+
+	fn get_keyword(word: &str) -> Option<Self> {
+		match word {
+			"true" => Some(Self::TokenTrue),
+			"false" => Some(Self::TokenFalse),
+			"if" => Some(Self::TokenIf),
+			"else" => Some(Self::TokenElse),
+			"def" => Some(Self::TokenDef),
+			_ => None,
+		}
+	}
 
 	pub fn precedence(&self) -> Option<usize> {
 		match self {
@@ -156,6 +160,7 @@ impl std::fmt::Display for TokenType {
 			Self::TokenFalse => write!(f, "false"),
 			Self::TokenIf => write!(f, "if"),
 			Self::TokenElse => write!(f, "else"),
+			Self::TokenDef => write!(f, "def"),
 			Self::TokenEverything => write!(f, ".."),
 
 			Self::TokenEquals => write!(f, "=="),
@@ -328,16 +333,16 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		match TokenType::TOKEN_KEYWORDS.iter().find(|&(_, keyword)| *keyword == word_str) {
-			Some((token_type, _)) => {
+		match TokenType::get_keyword(word_str.as_str()) {
+			Some(token_type) => {
 				self.consume_next(word_chr_cnt);
 
-				Ok(Token::new(token_type.clone(), self.column, self.row))
+				Ok(Token::new(token_type, self.row, self.column))
 			},
 			None => {
 				self.consume_next(word_chr_cnt);
 
-				Ok(Token::new(TokenType::TokenWord(word_str), self.column, self.row))
+				Ok(Token::new(TokenType::TokenWord(word_str), self.row, self.column))
 			}
 		}
 	}
@@ -426,7 +431,7 @@ impl<'a> Lexer<'a> {
 				Some(c) if c == '#' =>
 					self.skip_comments(),
 				Some(_) => break,
-				None => return Ok(Token::new(TokenType::TokenEOF, self.column, self.row))
+				None => return Ok(Token::new(TokenType::TokenEOF, self.row, self.column))
 			}
 		}
 
@@ -440,7 +445,7 @@ impl<'a> Lexer<'a> {
 			Some(_) =>
 				self.tokenize_operator(),
 
-			None => Ok(Token::new(TokenType::TokenEOF, self.column, self.row))
+			None => Ok(Token::new(TokenType::TokenEOF, self.row, self.column))
 		}
 	}
 

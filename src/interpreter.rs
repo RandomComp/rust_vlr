@@ -30,7 +30,7 @@ pub enum EvaluatorTypes {
 	Number,
 	String,
 	Range,
-	// Tuple(Vec<EvaluatorTypes>),
+	Tuple(Vec<EvaluatorTypes>),
 	TypedTuple(Box<EvaluatorTypes>),
 	Function,
 	Everything,
@@ -44,19 +44,19 @@ impl fmt::Display for EvaluatorTypes {
 			EvaluatorTypes::Number => write!(f, "number"),
 			EvaluatorTypes::String => write!(f, "string"),
 			EvaluatorTypes::Range => write!(f, "range"),
-			// EvaluatorTypes::Tuple(types) => {
-			// 	write!(f, "(")?;
+			EvaluatorTypes::Tuple(types) => {
+				write!(f, "(")?;
 
-			// 	for (i, value) in types.iter().enumerate() {
-			// 		if i > 0 {
-			// 			write!(f, ", ")?;
-			// 		}
+				for (i, value) in types.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
 
-			// 		write!(f, "{}", value)?;
-			// 	}
+					write!(f, "{}", value)?;
+				}
 
-			// 	write!(f, ")")
-			// },
+				write!(f, ")")
+			},
 			EvaluatorTypes::TypedTuple(tuple_type) => {
 				write!(f, "typed_tuple({})", tuple_type)
 			},
@@ -78,10 +78,12 @@ pub enum EvaluatorResult {
 	Range(f64, f64, f64),
 	Tuple(Vec<EvaluatorResultWrapper>),
 	Function {
-		name: String,
+		name: Option<String>,
 		args: EvaluatorTypes,
-		func: fn(row: usize, column: usize, args: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError>,
+		static_args: Option<Vec<EvaluatorResultWrapper>>,
+		func: fn(&mut Evaluator, row: usize, column: usize, args: EvaluatorResultWrapper, static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>,
 	},
+	AST(ASTNode),
 }
 
 #[derive(Clone)]
@@ -93,7 +95,7 @@ pub struct EvaluatorResultWrapper {
 impl EvaluatorResult {
 	pub fn to_str(&self, f: &mut String) -> fmt::Result {
 		match self {
-			EvaluatorResult::None => write!(f, "()"),
+			EvaluatorResult::None | EvaluatorResult::AST(_) => write!(f, "()"),
 			EvaluatorResult::Everything => write!(f, "everything"),
 			EvaluatorResult::Number(x) => write!(f, "{}", x),
 			EvaluatorResult::String(text) => write!(f, "{}", text),
@@ -141,16 +143,22 @@ impl EvaluatorResult {
 
 				write!(f, ")")
 			},
-			EvaluatorResult::Function { name, args, func: _ } => {
+			EvaluatorResult::Function { name: Some(name), args, static_args: _, func: _ } => {
 				write!(f, "function {}({})", name, args.to_string())
 			}
+			EvaluatorResult::Function { name: None, args, static_args: _, func: _ } => {
+				write!(f, "anonymous function({})", args.to_string())
+			}
+			EvaluatorResult::AST(ast) => {
+				write!(f, "{}", ast)
+			},
 			EvaluatorResult::Type(x) => write!(f, "{}", x),
 		}
 	}
 
 	fn get_type(&self) -> EvaluatorResultWrapper {
 		match self {
-			EvaluatorResult::None => {
+			EvaluatorResult::None | EvaluatorResult::AST(_) => {
 				EvaluatorResultWrapper::from_type(EvaluatorTypes::None)
 			},
 			EvaluatorResult::Everything => {
@@ -180,7 +188,7 @@ impl EvaluatorResult {
 
 				EvaluatorResultWrapper::tuple(types)
 			},
-			EvaluatorResult::Function { name: _, args: _, func: _ } => {
+			EvaluatorResult::Function { name: _, args: _, static_args: _, func: _ } => {
 				EvaluatorResultWrapper::from_type(EvaluatorTypes::Function)
 			},
 		}
@@ -310,14 +318,17 @@ impl EvaluatorResultWrapper {
 	fn number(value: f64) -> Self {
 		Self::from_result(EvaluatorResult::Number(value))
 	}
-	// fn string(value: String) -> Self {
-	// 	Self::from_result(EvaluatorResult::String(value))
-	// }
+	fn string(value: String) -> Self {
+		Self::from_result(EvaluatorResult::String(value))
+	}
 	fn tuple(value: Vec<EvaluatorResultWrapper>) -> Self {
 		Self::from_result(EvaluatorResult::Tuple(value))
 	}
-	fn function(name: String, args: EvaluatorTypes, func: fn(usize, usize, EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError>) -> Self {
-		Self::from_result(EvaluatorResult::Function { name, args, func })
+	fn function(name: Option<String>, args: EvaluatorTypes, static_args: Option<Vec<EvaluatorResultWrapper>>, func: fn(&mut Evaluator, usize, usize, EvaluatorResultWrapper, Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>) -> Self {
+		Self::from_result(EvaluatorResult::Function { name, args, static_args, func })
+	}
+	fn ast(ast: ASTNode) -> Self {
+		Self::from_result(EvaluatorResult::AST(ast))
 	}
 
 	// fn none() -> Self {
@@ -660,6 +671,25 @@ impl EvaluatorResultWrapper {
 		}
 	}
 
+	fn map(self, evaluator: &mut Evaluator, func: fn(&mut Evaluator, usize, usize, EvaluatorResultWrapper, Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let (row, column) = (self.row, self.column);
+
+		let result = match self {
+			EvaluatorResultWrapper { value: EvaluatorResult::Tuple(values), row: _, column: _ } => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(value.map(evaluator, func)?);
+				}
+
+				EvaluatorResultWrapper::tuple_with_pos(row, column, result)
+			},
+			value => func(evaluator, row, column, value, None)?,
+		};
+
+		Ok(result)
+	}
+
 	fn great_or_equals(self, rhs: Self) -> Result<Self, EvaluatorError> {
 		let result = match (self.value, rhs.value) {
 			(EvaluatorResult::Number(a), EvaluatorResult::Number(b))
@@ -905,43 +935,65 @@ pub struct Evaluator {
 
 impl Evaluator {
 	pub fn new() -> Self {
-		let mut scope: HashMap<String, EvaluatorResultWrapper> = HashMap::new();
-
-		scope.insert(String::from("sqrt"), EvaluatorResultWrapper::function(String::from("sqrt"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), Self::sqrt));
-		scope.insert(String::from("sin"), EvaluatorResultWrapper::function(String::from("sin"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), Self::sin));
-		scope.insert(String::from("cos"), EvaluatorResultWrapper::function(String::from("cos"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), Self::cos));
-		scope.insert(String::from("print"), EvaluatorResultWrapper::function(String::from("print"), EvaluatorTypes::Everything, Self::print));
-		scope.insert(String::from("type"), EvaluatorResultWrapper::function(String::from("type"), EvaluatorTypes::Everything, Self::type_name));
-		scope.insert(String::from("repr"), EvaluatorResultWrapper::function(String::from("repr"), EvaluatorTypes::Everything, Self::repr));
-		scope.insert(String::from("str"), EvaluatorResultWrapper::function(String::from("str"), EvaluatorTypes::Everything, Self::to_str));
-		scope.insert(String::from("tuple"), EvaluatorResultWrapper::function(String::from("tuple"), EvaluatorTypes::Everything, Self::to_tuple));
-		scope.insert(String::from("all"), EvaluatorResultWrapper::function(String::from("all"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), Self::calc_all));
-		scope.insert(String::from("any"), EvaluatorResultWrapper::function(String::from("any"), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), Self::calc_any));
-
-		Self {scope: scope}
+		Self {scope: HashMap::new()}
 	}
 
-	fn sqrt(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	pub fn init_builtin_funcs(&mut self) {
+		self.scope.insert(String::from("sqrt"), EvaluatorResultWrapper::function(Some(String::from("sqrt")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::sqrt));
+		self.scope.insert(String::from("sin"), EvaluatorResultWrapper::function(Some(String::from("sin")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::sin));
+		self.scope.insert(String::from("cos"), EvaluatorResultWrapper::function(Some(String::from("cos")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::cos));
+		self.scope.insert(String::from("print"), EvaluatorResultWrapper::function(Some(String::from("print")), EvaluatorTypes::Everything, None, Self::print));
+		self.scope.insert(String::from("type"), EvaluatorResultWrapper::function(Some(String::from("type")), EvaluatorTypes::Everything, None, Self::type_name));
+		self.scope.insert(String::from("repr"), EvaluatorResultWrapper::function(Some(String::from("repr")), EvaluatorTypes::Everything, None, Self::repr));
+		self.scope.insert(String::from("str"), EvaluatorResultWrapper::function(Some(String::from("str")), EvaluatorTypes::Everything, None, Self::to_str));
+		self.scope.insert(String::from("tuple"), EvaluatorResultWrapper::function(Some(String::from("tuple")), EvaluatorTypes::Everything, None, Self::to_tuple));
+		self.scope.insert(String::from("all"), EvaluatorResultWrapper::function(Some(String::from("all")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), None, Self::calc_all));
+		self.scope.insert(String::from("any"), EvaluatorResultWrapper::function(Some(String::from("any")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), None, Self::calc_any));
+		self.scope.insert(String::from("map"), EvaluatorResultWrapper::function(Some(String::from("map")), EvaluatorTypes::Tuple(vec![EvaluatorTypes::Function, EvaluatorTypes::Everything]), None, Self::calc_map));
+	}
+
+	fn sqrt(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		arg.sqrt()
 	}
 
-	fn sin(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn sin(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		arg.sin()
 	}
 
-	fn cos(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn cos(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		arg.cos()
 	}
 
-	fn calc_all(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn calc_all(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(EvaluatorResultWrapper::boolean(arg.all()?))
 	}
 
-	fn calc_any(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn calc_any(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(EvaluatorResultWrapper::boolean(arg.any()?))
 	}
 
-	fn print(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn calc_map(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		match arg.value {
+			EvaluatorResult::Tuple(values) => {
+				match values[0].value {
+					EvaluatorResult::Function { name: _, args: _, static_args: _, func } => {
+						let mut result: Vec<EvaluatorResultWrapper> = Vec::new();
+
+						for value in values.iter().skip(1).cloned() {
+							result.push(value.map(self, func)?);
+						}
+
+						Ok(EvaluatorResultWrapper::tuple_with_pos(row, column, result))
+					},
+					_ => Err(EvaluatorError::IncompatibleOperationType { row, column }),
+				}
+			},
+
+			_ => Err(EvaluatorError::IncompatibleOperationType { row, column }),
+		}
+	}
+
+	fn print(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		match arg.value {
 			EvaluatorResult::Tuple(values) => {
 				let mut result = String::new();
@@ -960,11 +1012,11 @@ impl Evaluator {
 		Ok(EvaluatorResultWrapper::NONE)
 	}
 
-	fn type_name(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn type_name(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(arg.value.get_type())
 	}
 
-	fn repr(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn repr(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		let mut result = String::new();
 
 		arg.value.repr(&mut result)?;
@@ -972,7 +1024,7 @@ impl Evaluator {
 		Ok(EvaluatorResultWrapper::from_result(EvaluatorResult::String(result)))
 	}
 
-	fn to_str(_row: usize, _column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn to_str(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		let mut result = String::new();
 
 		arg.value.to_str(&mut result)?;
@@ -980,8 +1032,42 @@ impl Evaluator {
 		Ok(EvaluatorResultWrapper::from_result(EvaluatorResult::String(result)))
 	}
 
-	fn to_tuple(row: usize, column: usize, arg: EvaluatorResultWrapper) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+	fn to_tuple(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
 		Ok(arg.to_tuple(row, column)?)
+	}
+
+	fn user_func(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let static_args = static_args.unwrap();
+
+		match arg.value {
+			EvaluatorResult::Tuple(values) => {
+				for (name, value) in zip(static_args.iter().skip(1), values.iter()) {
+					match name.clone().value {
+						EvaluatorResult::String(name) => {
+							self.scope.insert(name, value.clone());
+						},
+						_ => continue,
+					}
+				}
+			}
+			_ => {},
+		}
+
+		let result = match static_args[0].clone().value {
+			EvaluatorResult::AST(ast) => self.eval(Box::new(ast))?,
+			_ => EvaluatorResultWrapper::NONE
+		};
+
+		for name in static_args.iter().skip(1) {
+			match name.clone().value {
+				EvaluatorResult::String(name) => {
+					self.scope.remove(&name);
+				},
+				_ => continue,
+			}
+		}
+
+		Ok(result)
 	}
 
 	pub fn eval(&mut self, expr: Box<ASTNode>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
@@ -1095,12 +1181,57 @@ impl Evaluator {
 				=> self.eval(value)?.neg()?,
 
 			ASTNodeEnum::Function {name, arg} => {
+				let args = self.eval(arg)?;
+
 				match self.scope.get(name.as_str()) {
-					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name: _, args: _, func }, column: _, row: _ }) =>
-						func(expr.row, expr.column, self.eval(arg)?)?,
+					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name: _, args: _, static_args, func }, column: _, row: _ }) => {
+						match args.clone().value {
+							EvaluatorResult::Tuple(values) => {
+								for (name, value) in zip(static_args.clone().unwrap().iter().skip(1), values.iter()) {
+									println!("{name} = {value}");
+								}
+							}
+							_ => {},
+						}
+
+						func(self, expr.row, expr.column, args, static_args.clone())?
+					},
 					_ => return Err(EvaluatorError::UnknownFunction { row: expr.row, column: expr.column, name: name })
 				}
-			}
+			},
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
+				let mut static_args = vec![EvaluatorResultWrapper::ast(*block)];
+
+				let mut args_types = vec![];
+
+				for arg in args {
+					println!("arg = {}", arg);
+
+					static_args.push(EvaluatorResultWrapper::string(arg));
+
+					args_types.push(EvaluatorTypes::Everything);
+				}
+
+				let result = EvaluatorResultWrapper::function(Some(name.clone()), EvaluatorTypes::Tuple(args_types), Some(static_args), Self::user_func);
+
+				self.scope.insert(name, result.clone());
+
+				result
+			},
+
+			ASTNodeEnum::FunctionDefinition { name: None, args, block } => {
+				let mut static_args = vec![EvaluatorResultWrapper::ast(*block)];
+
+				let mut args_types = vec![];
+
+				for arg in args {
+					static_args.push(EvaluatorResultWrapper::string(arg));
+
+					args_types.push(EvaluatorTypes::Everything);
+				}
+
+				EvaluatorResultWrapper::function(None, EvaluatorTypes::Tuple(args_types), Some(static_args), Self::user_func)
+			},
 
 			x => todo!("{}", x)
 		})

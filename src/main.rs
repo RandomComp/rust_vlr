@@ -75,6 +75,7 @@ fn repl() -> Result<(), AppError> {
 	let mut rl = DefaultEditor::new().unwrap();
 
 	let mut evaluator = Evaluator::new();
+	evaluator.init_builtin_funcs();
 
 	loop {
 		// println!("Tokenizing expr '{}'", code);
