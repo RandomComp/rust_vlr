@@ -10,10 +10,10 @@ pub enum EvaluatorError {
 	IncompatibleOperationType {row: usize, column: usize},
 	#[error("line {row} at {column}: not known variable '{name}' in this scope")]
 	UnknownInThisScope {row: usize, column: usize, name: String},
-	// #[error("line {row} at {column}: too few arguments for function {function}")]
-	// TooFewArgumentsForFunction {row: usize, column: usize, function: &'static str},
-	// #[error("line {row} at {column}: too many arguments for function {function}")]
-	// TooManyArgumentsForFunction {row: usize, column: usize, function: &'static str},
+	#[error("line {row} at {column}: too few arguments for function {function}")]
+	TooFewArgumentsForFunction {row: usize, column: usize, function: String},
+	#[error("line {row} at {column}: too many arguments for function {function}")]
+	TooManyArgumentsForFunction {row: usize, column: usize, function: String},
 	#[error("line {row} at {column}: unknown function {name}")]
 	UnknownFunction {row: usize, column: usize, name: String},
 	#[error("formatting error: {0}")]
@@ -63,6 +63,17 @@ impl fmt::Display for EvaluatorTypes {
 			EvaluatorTypes::Function => write!(f, "function"),
 			EvaluatorTypes::Type => write!(f, "type"),
 			EvaluatorTypes::Everything => write!(f, "..."),
+		}
+	}
+}
+
+impl EvaluatorTypes {
+	fn len(&self) -> Option<usize> {
+		match self {
+			EvaluatorTypes::None => Some(0),
+			EvaluatorTypes::Tuple(types) => Some(types.len()),
+			EvaluatorTypes::Everything => None,
+			_ => Some(1),
 		}
 	}
 }
@@ -340,12 +351,12 @@ impl EvaluatorResultWrapper {
 	// fn from_type_with_pos(row: usize, column: usize, value: EvaluatorTypes) -> Self {
 	// 	Self::from_result_with_pos(row, column, EvaluatorResult::Type(value))
 	// }
-	// fn boolean(value: bool) -> Self {
-	// 	Self::from_result(EvaluatorResult::Boolean(value))
-	// }
-	// fn number_with_pos(row: usize, column: usize, value: f64) -> Self {
-	// 	Self::from_result_with_pos(row, column, EvaluatorResult::Number(value))
-	// }
+	fn boolean_with_pos(row: usize, column: usize, value: bool) -> Self {
+		Self::from_result_with_pos(row, column, EvaluatorResult::Boolean(value))
+	}
+	fn number_with_pos(row: usize, column: usize, value: f64) -> Self {
+		Self::from_result_with_pos(row, column, EvaluatorResult::Number(value))
+	}
 	// fn string(value: String) -> Self {
 	// 	Self::from_result(EvaluatorResult::String(value))
 	// }
@@ -849,6 +860,135 @@ impl EvaluatorResultWrapper {
 		Ok(EvaluatorResultWrapper {value: result, column: self.column, row: self.row})
 	}
 
+	fn len(&self) -> usize {
+		match self.value {
+			EvaluatorResult::None => 0,
+			EvaluatorResult::Number(_) => 1,
+			EvaluatorResult::Boolean(_) => 1,
+			EvaluatorResult::Range(start, end, step) => ((end + 1.0 - start).abs() / step) as usize,
+			EvaluatorResult::Tuple(ref values) => values.len(),
+			_ => 1,
+		}
+	}
+
+	fn abs(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let result = match self.value {
+			EvaluatorResult::Number(x) =>
+				EvaluatorResult::Number(x.abs()),
+			EvaluatorResult::Range(start, end, step) => {
+				let mut result = Vec::new();
+
+				let mut i = start;
+
+				while i <= end {
+					result.push(EvaluatorResultWrapper::number(i).abs()?);
+
+					i += step;
+				};
+
+				EvaluatorResult::Tuple(result)
+			},
+			EvaluatorResult::Tuple(values) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(value.abs()?);
+				}
+
+				EvaluatorResult::Tuple(result)
+			},
+			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		};
+
+		Ok(EvaluatorResultWrapper {value: result, column: self.column, row: self.row})
+	}
+
+	fn sum(self) -> Result<f64, EvaluatorError> {
+		let result = match self.value {
+			EvaluatorResult::Number(x) => x.abs(),
+			EvaluatorResult::Range(start, end, step) => {
+				((start + end + 1.0) * (end + 1.0 - start)) / (2.0 * step)
+			},
+			EvaluatorResult::String(value) => {
+				value.len() as f64
+			},
+			EvaluatorResult::Tuple(values) => {
+				let mut result = 0.0;
+
+				for value in values {
+					result += value.sum()?;
+				}
+
+				result
+			},
+			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		};
+
+		Ok(result)
+	}
+
+	fn min(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let result = match self.value {
+			EvaluatorResult::Number(x) => x.abs(),
+			EvaluatorResult::Range(start, end, _) => {
+				start.min(end)
+			},
+			EvaluatorResult::Tuple(values) => {
+				values.iter().map(|v| v.len()).min().unwrap_or(0) as f64
+			},
+			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		};
+
+		Ok(EvaluatorResultWrapper::number_with_pos(self.row, self.column, result))
+	}
+	fn max(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let result = match self.value {
+			EvaluatorResult::Number(x) => x.abs(),
+			EvaluatorResult::Range(start, end, _) => {
+				start.max(end)
+			},
+			EvaluatorResult::Tuple(values) => {
+				values.iter().map(|v| v.len()).max().unwrap_or(0) as f64
+			},
+			_ => return Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		};
+
+		Ok(EvaluatorResultWrapper::number_with_pos(self.row, self.column, result))
+	}
+	fn mean(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let len = self.len();
+
+		Ok(EvaluatorResultWrapper::number_with_pos(self.row, self.column, self.sum()? / (len as f64)))
+	}
+
+	fn sort(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		match self.value {
+			EvaluatorResult::Tuple(mut values) => {
+				values.sort_by_key(|value| value.len());
+
+				Ok(EvaluatorResultWrapper::tuple_with_pos(self.row, self.column, values))
+			},
+			_ => Err(EvaluatorError::IncompatibleOperationType { row: self.row, column: self.column }),
+		}
+	}
+
+	fn median(self) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		let (row, column) = (self.row, self.column);
+
+		let result = self.sort()?;
+		let result_len = result.len();
+
+		match result.value {
+			EvaluatorResult::Tuple(values) if result_len % 2 != 0 => {
+				Ok(values[result_len / 2].clone())
+			},
+			EvaluatorResult::Tuple(values) if result_len % 2 == 0 => {
+				values[result_len / 2].clone().add(values[result_len / 2 + 1].clone())
+			},
+			_ => Err(EvaluatorError::IncompatibleOperationType { row: row, column: column }),
+		}
+	}
+
 	fn pow(self, right: Self) -> Result<Self, EvaluatorError> {
 		let result = match (self.value, right.value) {
 			(EvaluatorResult::Number(a), EvaluatorResult::Number(b))
@@ -950,6 +1090,13 @@ impl Evaluator {
 		self.scope.insert(String::from("all"), EvaluatorResultWrapper::function(Some(String::from("all")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), None, Self::calc_all));
 		self.scope.insert(String::from("any"), EvaluatorResultWrapper::function(Some(String::from("any")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Boolean)), None, Self::calc_any));
 		self.scope.insert(String::from("map"), EvaluatorResultWrapper::function(Some(String::from("map")), EvaluatorTypes::Tuple(vec![EvaluatorTypes::Function, EvaluatorTypes::Everything]), None, Self::calc_map));
+		self.scope.insert(String::from("len"), EvaluatorResultWrapper::function(Some(String::from("len")), EvaluatorTypes::Everything, None, Self::calc_len));
+		self.scope.insert(String::from("abs"), EvaluatorResultWrapper::function(Some(String::from("abs")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::calc_abs));
+		self.scope.insert(String::from("sum"), EvaluatorResultWrapper::function(Some(String::from("sum")), EvaluatorTypes::Everything, None, Self::calc_sum));
+		self.scope.insert(String::from("min"), EvaluatorResultWrapper::function(Some(String::from("min")), EvaluatorTypes::Everything, None, Self::calc_min));
+		self.scope.insert(String::from("max"), EvaluatorResultWrapper::function(Some(String::from("max")), EvaluatorTypes::Everything, None, Self::calc_max));
+		self.scope.insert(String::from("mean"), EvaluatorResultWrapper::function(Some(String::from("mean")), EvaluatorTypes::Everything, None, Self::calc_mean));
+		self.scope.insert(String::from("median"), EvaluatorResultWrapper::function(Some(String::from("median")), EvaluatorTypes::TypedTuple(Box::new(EvaluatorTypes::Number)), None, Self::calc_median));
 	}
 
 	fn sqrt(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
@@ -968,8 +1115,31 @@ impl Evaluator {
 		Ok(EvaluatorResultWrapper::boolean(arg.all()?))
 	}
 
-	fn calc_any(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
-		Ok(EvaluatorResultWrapper::boolean(arg.any()?))
+	fn calc_any(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		Ok(EvaluatorResultWrapper::boolean_with_pos(row, column, arg.any()?))
+	}
+
+	fn calc_len(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		Ok(EvaluatorResultWrapper::number_with_pos(row, column, arg.len() as f64))
+	}
+
+	fn calc_abs(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.abs()
+	}
+	fn calc_sum(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		Ok(EvaluatorResultWrapper::number_with_pos(row, column, arg.sum()?))
+	}
+	fn calc_min(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.min()
+	}
+	fn calc_max(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.max()
+	}
+	fn calc_mean(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.mean()
+	}
+	fn calc_median(&mut self, _row: usize, _column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
+		arg.median()
 	}
 
 	fn calc_map(&mut self, row: usize, column: usize, arg: EvaluatorResultWrapper, _static_args: Option<Vec<EvaluatorResultWrapper>>) -> Result<EvaluatorResultWrapper, EvaluatorError> {
@@ -1050,7 +1220,16 @@ impl Evaluator {
 					}
 				}
 			}
-			_ => {},
+			_ => {
+				let (name, value) = (static_args.iter().nth(1).unwrap(), arg);
+
+				match name.clone().value {
+					EvaluatorResult::String(name) => {
+						self.scope.insert(name, value.clone());
+					},
+					_ => {},
+				}
+			},
 		}
 
 		let result = match static_args[0].clone().value {
@@ -1184,14 +1363,14 @@ impl Evaluator {
 				let args = self.eval(arg)?;
 
 				match self.scope.get(name.as_str()) {
-					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name: _, args: _, static_args, func }, column: _, row: _ }) => {
-						match args.clone().value {
-							EvaluatorResult::Tuple(values) => {
-								for (name, value) in zip(static_args.clone().unwrap().iter().skip(1), values.iter()) {
-									println!("{name} = {value}");
-								}
-							}
-							_ => {},
+					Some(EvaluatorResultWrapper { value: EvaluatorResult::Function { name, args: args_types, static_args, func }, column: _, row: _ }) => {
+						match (args.len(), args_types.len()) {
+							(a, Some(b)) if a < b =>
+								return Err(EvaluatorError::TooFewArgumentsForFunction { row: expr.row, column: expr.column, function: name.clone().unwrap() }),
+
+							(a, Some(b)) if a > b =>
+								return Err(EvaluatorError::TooManyArgumentsForFunction { row: expr.row, column: expr.column, function: name.clone().unwrap() }),
+							(_, _) => {},
 						}
 
 						func(self, expr.row, expr.column, args, static_args.clone())?
@@ -1205,8 +1384,6 @@ impl Evaluator {
 				let mut args_types = vec![];
 
 				for arg in args {
-					println!("arg = {}", arg);
-
 					static_args.push(EvaluatorResultWrapper::string(arg));
 
 					args_types.push(EvaluatorTypes::Everything);

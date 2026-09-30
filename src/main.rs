@@ -61,6 +61,7 @@ fn run(code: &str) {
 	// println!("ast = {}", ast);
 
 	let mut evaluator = Evaluator::new();
+	evaluator.init_builtin_funcs();
 
 	evaluator.eval(Box::new(ast)).unwrap_or_else(|e| {
 		eprintln!("Evaluator error: {}", e);
