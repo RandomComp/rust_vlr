@@ -119,7 +119,7 @@ impl std::fmt::Display for ASTNodeEnum {
 			ASTNodeEnum::Function {name, arg} => {
 				write!(f, "{}({})", name, arg)
 			},
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: _ } => {
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
 				write!(f, "def {}(", name)?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -130,7 +130,7 @@ impl std::fmt::Display for ASTNodeEnum {
 					write!(f, "{}", arg)?;
 				}
 
-				write!(f, ")")?;
+				write!(f, ") {}", block)?;
 
 				Ok(())
 			},
@@ -257,7 +257,7 @@ impl Parser {
 				Some(Token { token_type: TokenType::TokenSemicolon, column: _, row: _ }) => {
 					self.skip(TokenType::TokenSemicolon);
 				},
-				_ => break,
+				_ => {},
 			}
 		}
 

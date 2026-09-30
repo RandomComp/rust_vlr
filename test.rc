@@ -1,18 +1,9 @@
-print(sqrt);
-print(sin);
-print(cos);
-print(print);
-print(type);
-print(repr);
-print(str);
-print(tuple);
-print(all);
-print(any);
-print(map);
-print(len);
-print(abs);
-print(sum);
-print(min);
-print(max);
-print(mean);
-print(median);
+def say_hello(name) {
+	print("Hello", name, "!")
+}
+
+#print(say_hello(", this is my Language"))
+
+print(say_hello)
+
+#print(say_hello())
