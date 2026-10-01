@@ -128,28 +128,28 @@ impl TokenType {
 		match self {
 			Self::TokenRange => Some(1),
 			Self::TokenPow => Some(2),
-			Self::TokenRemainder => Some(3),
-			Self::TokenDivide => Some(3),
+			Self::TokenRemainder |
+			Self::TokenDivide |
 			Self::TokenMultiply => Some(3),
-			Self::TokenPlus => Some(4),
+			Self::TokenPlus |
 			Self::TokenMinus => Some(4),
 
-			Self::TokenEquals => Some(5),
-			Self::TokenNotEquals => Some(5),
-			Self::TokenGreatOrEquals => Some(5),
-			Self::TokenLessOrEquals => Some(5),
-			Self::TokenGreat => Some(5),
+			Self::TokenEquals |
+			Self::TokenNotEquals |
+			Self::TokenGreatOrEquals |
+			Self::TokenLessOrEquals |
+			Self::TokenGreat |
 			Self::TokenLess => Some(5),
 
-			Self::TokenLogicalAnd => Some(6),
+			Self::TokenLogicalAnd |
 			Self::TokenLogicalOr => Some(6),
 
-			Self::TokenAssignment => Some(7),
-			Self::TokenPlusAssignment => Some(7),
-			Self::TokenMinusAssignment => Some(7),
-			Self::TokenPowAssignment => Some(7),
-			Self::TokenMultiplyAssignment => Some(7),
-			Self::TokenDivideAssignment => Some(7),
+			Self::TokenAssignment |
+			Self::TokenPlusAssignment |
+			Self::TokenMinusAssignment |
+			Self::TokenPowAssignment |
+			Self::TokenMultiplyAssignment |
+			Self::TokenDivideAssignment |
 			Self::TokenRemainderAssignment => Some(7),
 
 			_ => None
@@ -163,20 +163,20 @@ impl TokenType {
 		}
 	}
 
-	pub fn arity(&self) -> OpArity {
-		match self {
-			_ => OpArity::Binary,
-		}
-	}
+	// pub fn arity(&self) -> OpArity {
+	// 	match self {
+	// 		_ => OpArity::Binary,
+	// 	}
+	// }
 }
 
 impl std::fmt::Display for TokenType {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			Self::TokenUndefined => write!(f, "undefined"),
-			Self::TokenNumber(x) => write!(f, "{}", x),
-			Self::TokenWord(word) => write!(f, "{}", word),
-			Self::TokenString(word) => write!(f, "\"{}\"", word),
+			Self::TokenNumber(x) => write!(f, "{x}"),
+			Self::TokenWord(word) => write!(f, "{word}"),
+			Self::TokenString(word) => write!(f, "\"{word}\""),
 
 			Self::TokenAssignment => write!(f, "="),
 			Self::TokenPlusAssignment => write!(f, "+="),
@@ -206,7 +206,7 @@ impl std::fmt::Display for TokenType {
 			Self::TokenReturn => write!(f, "return"),
 
 			Self::TokenDef => write!(f, "def"),
-			Self::TokenEverything => write!(f, ".."),
+			Self::TokenEverything => write!(f, "..."),
 
 			Self::TokenEquals => write!(f, "=="),
 			Self::TokenNotEquals => write!(f, "!="),
@@ -245,7 +245,7 @@ impl std::fmt::Display for Token {
 
 impl Token {
 	fn new(token_type: TokenType, row: usize, column: usize) -> Self {
-		Self {token_type: token_type, row: row, column: column}
+		Self {token_type, row, column}
 	}
 }
 
@@ -270,7 +270,7 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
 	pub fn new(expr: Chars<'a>) -> Self {
-		Lexer {expr: expr, index: 0, column: 0, row: 0}
+		Lexer {expr, index: 0, column: 0, row: 0}
 	}
 
 	fn get(&self) -> Skip<Chars<'a>> {
@@ -317,7 +317,7 @@ impl<'a> Lexer<'a> {
 		}
 
 		if *result == TokenType::TokenUndefined {
-			 return Err(LexerError::UnknownOperation {row: row, column: column})
+			 return Err(LexerError::UnknownOperation {row, column})
 		}
 
 		Ok(Token::new(result.clone(), row, column))
@@ -344,18 +344,15 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		match number_str.chars().last() {
-			Some(x) if x == '.' => {
-				number_str.pop();
+		if let Some(x) = number_str.chars().last() && x == '.' {
+			number_str.pop();
 
-				word_chr_cnt -= 1
-			},
-			_ => {},
-		};
+			word_chr_cnt -= 1;
+		}
 
 		let result = match number_str.parse::<f64>() {
 			Ok(x) => x,
-			Err(e) => Err(LexerError::InvalidNumber {row: self.row, column: self.column, e: e})?
+			Err(e) => Err(LexerError::InvalidNumber {row: self.row, column: self.column, e})?
 		};
 
 		self.consume_next(word_chr_cnt);
@@ -363,7 +360,7 @@ impl<'a> Lexer<'a> {
 		Ok(Token::new(TokenType::TokenNumber(result), row, column))
 	}
 
-	fn tokenize_word(&mut self) -> Result<Token, LexerError> {
+	fn tokenize_word(&mut self) -> Token {
 		let mut word_chr_cnt = 0;
 
 		let mut word_str = String::new();
@@ -377,17 +374,14 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		match TokenType::get_keyword(word_str.as_str()) {
-			Some(token_type) => {
-				self.consume_next(word_chr_cnt);
+		if let Some(token_type) = TokenType::get_keyword(word_str.as_str()) {
+			self.consume_next(word_chr_cnt);
 
-				Ok(Token::new(token_type, self.row, self.column))
-			},
-			None => {
-				self.consume_next(word_chr_cnt);
+			Token::new(token_type, self.row, self.column)
+		} else {
+			self.consume_next(word_chr_cnt);
 
-				Ok(Token::new(TokenType::TokenWord(word_str), self.row, self.column))
-			}
+			Token::new(TokenType::TokenWord(word_str), self.row, self.column)
 		}
 	}
 
@@ -472,7 +466,7 @@ impl<'a> Lexer<'a> {
 			match self.peek(0) {
 				Some(c) if c.is_whitespace() =>
 		 			self.skip_spaces(),
-				Some(c) if c == '#' =>
+				Some('#') =>
 					self.skip_comments(),
 				Some(_) => break,
 				None => return Ok(Token::new(TokenType::TokenEOF, self.row, self.column))
@@ -481,8 +475,8 @@ impl<'a> Lexer<'a> {
 
 		match self.peek(0) {
 			Some(c) if c.is_ascii_alphabetic() =>
-				self.tokenize_word(),
-			Some(c) if c == '"' =>
+				Ok(self.tokenize_word()),
+			Some('"') =>
 				self.tokenize_string(),
 			Some(c) if c.is_ascii_digit() =>
 				self.tokenize_number(),

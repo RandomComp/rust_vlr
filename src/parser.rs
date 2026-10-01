@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, mem, num::ParseFloatError};
 
-use crate::lexer::{LexerError, OpArity, OpAssoc, Token, TokenType};
+use crate::lexer::{LexerError, OpAssoc, Token, TokenType};
 
 impl From<ParseFloatError> for LexerError {
 	fn from(err: ParseFloatError) -> LexerError {
@@ -81,16 +81,16 @@ impl std::fmt::Display for ASTNodeEnum {
 		match self {
 			ASTNodeEnum::None => write!(f, "()"),
 			ASTNodeEnum::Everything => write!(f, "..."),
-			ASTNodeEnum::Boolean(value) => write!(f, "{}", value),
-			ASTNodeEnum::Number(value) => write!(f, "{}", value),
-			ASTNodeEnum::String(text) => write!(f, "\"{}\"", text),
-			ASTNodeEnum::Variable(name) => write!(f, "{}", name),
+			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
+			ASTNodeEnum::Number(value) => write!(f, "{value}"),
+			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
+			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
 			ASTNodeEnum::Tuple(values) => {
 				for (i, value) in values.iter().enumerate() {
 					if i < values.len() - 1 {
-						write!(f, "{}, ", value)?;
+						write!(f, "{value}, ")?;
 					} else {
-						write!(f, "{}", value)?;
+						write!(f, "{value}")?;
 					}
 				}
 
@@ -100,7 +100,7 @@ impl std::fmt::Display for ASTNodeEnum {
 				write!(f, "{{ ")?;
 
 				for value in values {
-					write!(f, "{}; ", value)?;
+					write!(f, "{value}; ")?;
 				}
 
 				write!(f, "}}")?;
@@ -108,48 +108,48 @@ impl std::fmt::Display for ASTNodeEnum {
 				Ok(())
 			},
 			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
-				write!(f, "if {} {} else {}", condition, block, block_else)
+				write!(f, "if {condition} {block} else {block_else}")
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
-				write!(f, "if {} {}", condition, block)
+				write!(f, "if {condition} {block}")
 			},
 			ASTNodeEnum::Break(value) => {
-				write!(f, "break {}", value)
+				write!(f, "break {value}")
 			},
 			ASTNodeEnum::Return(value) => {
-				write!(f, "return {}", value)
+				write!(f, "return {value}")
 			},
 			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
-				write!(f, "while {} {} else {}", condition, block, block_else)
+				write!(f, "while {condition} {block} else {block_else}")
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
-				write!(f, "while {} {}", condition, block)
+				write!(f, "while {condition} {block}")
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
 			ASTNodeEnum::Binary { left, op, right } =>
-				write!(f, "({} {} {})", left, op, right),
+				write!(f, "({left} {op} {right})"),
 			ASTNodeEnum::Unary {op, value} =>
-				write!(f, "{}({})", op, value),
+				write!(f, "{op}({value})"),
 			ASTNodeEnum::Function {name, arg} => {
-				write!(f, "{}({})", name, arg)
+				write!(f, "{name}({arg})")
 			},
 			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
-				write!(f, "def {}(", name)?;
+				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
 					if i > 0 {
 						write!(f, ", ")?;
 					}
 
-					write!(f, "{}", arg)?;
+					write!(f, "{arg}")?;
 				}
 
-				write!(f, ") {}", block)?;
+				write!(f, ") {block}")?;
 
 				Ok(())
 			},
-			ASTNodeEnum::FunctionDefinition { name: None, args, block: _ } => {
+			ASTNodeEnum::FunctionDefinition { name: None, args, .. } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -157,7 +157,7 @@ impl std::fmt::Display for ASTNodeEnum {
 						write!(f, ", ")?;
 					}
 
-					write!(f, "{}", arg)?;
+					write!(f, "{arg}")?;
 				}
 
 				Ok(())
@@ -179,18 +179,18 @@ pub struct Parser {
 
 impl Parser {
 	pub fn new(tokens: Vec<Token>) -> Self {
-		Self {tokens: tokens, index: 0}
+		Self {tokens, index: 0}
 	}
 
 	fn peek(&self, offset: usize) -> Option<&Token> {
 		self.tokens.get(self.index + offset)
 	}
 
-	fn skip(&mut self, expected_token_type: TokenType) {
+	fn skip(&mut self, expected_token_type: &TokenType) {
 		loop {
 			match self.peek(0) {
-				Some(Token { token_type, column: _, row: _ }) if *token_type != expected_token_type => break,
-				Some(Token { token_type: _, column: _, row: _ }) => {
+				Some(Token { token_type, .. }) if token_type != expected_token_type => break,
+				Some(Token { .. }) => {
 					self.index += 1;
 				},
 				None => break,
@@ -216,19 +216,19 @@ impl Parser {
 				Ok(res)
 			},
 			Some(Token { token_type: found, row, column }) =>
-				Err(ParserError::ExpectedToken { row: *row, column: *column, token_type: token_type, found: found.clone() }),
+				Err(ParserError::ExpectedToken { row: *row, column: *column, token_type, found: found.clone() }),
 			None => panic!("Outside of array")
 		}
 	}
 
-	fn _token_exists_until_token(&self, expected_token_type: TokenType, until_token_type: TokenType) -> bool {
+	fn _token_exists_until_token(&self, expected_token_type: &TokenType, until_token_type: &TokenType) -> bool {
 		let mut index = 0;
 
 		loop {
-			match self.peek(index) {
-				Some(Token { token_type, column, row }) if *token_type == until_token_type => break false,
-				Some(Token { token_type, column, row }) if *token_type == expected_token_type => break true,
-				Some(Token { token_type: _, column: _, row: _ }) => index += 1,
+			match self.peek(index).map(|v| &v.token_type) {
+				Some(token_type) if token_type == until_token_type => break false,
+				Some(token_type) if token_type == expected_token_type => break true,
+				Some(_) => index += 1,
 				None => break false,
 			}
 		}
@@ -246,30 +246,23 @@ impl Parser {
 
 	pub fn parse_instructions(&mut self) -> Result<Option<ASTNode>, ParserError> {
 		let (row, column) = match self.peek(0) {
-			Some(Token { token_type: _, column, row }) => (*row, *column),
+			Some(Token { column, row, .. }) => (*row, *column),
 			None => return Ok(None),
 		};
 
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
 		loop {
-			match self.peek(0) {
-				Some(Token { token_type: TokenType::TokenRBrace, column: _, row: _ }) |
-				Some(Token { token_type: TokenType::TokenEOF, column: _, row: _ }) => {
-					break
-				},
-				_ => {},
+			if let Some(Token { token_type: TokenType::TokenRBrace | TokenType::TokenEOF, .. }) = self.peek(0) {
+				break;
 			}
 
 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 			result.push_back(value);
 
-			match self.peek(0) {
-				Some(Token { token_type: TokenType::TokenSemicolon, column: _, row: _ }) => {
-					self.skip(TokenType::TokenSemicolon);
-				},
-				_ => {},
+			if let Some(Token { token_type: TokenType::TokenSemicolon, .. }) = self.peek(0) {
+				self.skip(&TokenType::TokenSemicolon);
 			}
 		}
 
@@ -277,7 +270,7 @@ impl Parser {
 			Ok(result.pop_front())
 		} else {
 			Ok(Some(
-				ASTNode { value: ASTNodeEnum::Block(result), row: row, column: column }
+				ASTNode { value: ASTNodeEnum::Block(result), row, column }
 			))
 		}
 	}
@@ -288,24 +281,21 @@ impl Parser {
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		loop {
-			match self.peek(0) {
-				Some(&Token { token_type: TokenType::TokenRPar, column, row }) => {
-					self.consume(TokenType::TokenRPar)?;
+			if let Some(&Token { token_type: TokenType::TokenRPar, column, row }) = self.peek(0) {
+				self.consume(TokenType::TokenRPar)?;
 
-					return Ok(Some(ASTNode { value: ASTNodeEnum::Tuple(result), row: row, column: column }))
-				},
-				_ => {},
+				return Ok(Some(ASTNode { value: ASTNodeEnum::Tuple(result), row, column }));
 			}
 
 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 			match self.peek(0) {
-				Some(Token { token_type: TokenType::TokenComma, column: _, row: _ }) => {
+				Some(Token { token_type: TokenType::TokenComma, .. }) => {
 					result.push(value);
 
 					self.consume_next();
 				},
-				Some(Token { token_type: TokenType::TokenRPar, column, row }) if result.len() == 0 => {
+				Some(Token { token_type: TokenType::TokenRPar, column, row }) if result.is_empty() => {
 					self.consume(TokenType::TokenRPar)?;
 
 					return Ok(Some(value))
@@ -332,7 +322,7 @@ impl Parser {
 	// 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 	// 			Ok(Some(
-	// 				ASTNode { value: ASTNodeEnum::Assignment {name: name, value: Box::new(value)}, row: row, column: column }
+	// 				ASTNode { value: ASTNodeEnum::Assignment {name: name, value: Box::new(value)}, row, column }
 	// 			))
 	// 		},
 	// 		Some(_) => return Ok(Some(self.parse(TokenType::MAX_PRECEDENCE)?)),
@@ -341,49 +331,46 @@ impl Parser {
 	// }
 
 	fn parse_unary(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		let cur = match self.peek(0) {
-			Some(x) => x,
-			None => return Ok(None),
-		};
+		let Some(cur) = self.peek(0) else { return Ok(None) };
 
 		match (cur, self.peek(1)) {
-			(&Token {token_type: TokenType::TokenTrue, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenTrue, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Boolean(true), row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Boolean(true), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenFalse, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenFalse, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Boolean(false), row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Boolean(false), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenReturn, column, row}, _) => {
-				self.consume_next();
-
-				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
-
-				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Return(Box::new(value)), row: row, column: column }
-				))
-			}
-
-			(&Token {token_type: TokenType::TokenBreak, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenReturn, column, row}, ..) => {
 				self.consume_next();
 
 				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Break(Box::new(value)), row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Return(Box::new(value)), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenIf, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenBreak, column, row}, ..) => {
+				self.consume_next();
+
+				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+
+				Ok(Some(
+					ASTNode { value: ASTNodeEnum::Break(Box::new(value)), row, column }
+				))
+			}
+
+			(&Token {token_type: TokenType::TokenIf, column, row}, ..) => {
 				self.consume_next();
 
 				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -396,17 +383,17 @@ impl Parser {
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row: row, column: column }
+							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: None }, row: row, column: column }
+						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: None }, row, column }
 					))
 				}
 			}
 
-			(&Token {token_type: TokenType::TokenWhile, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenWhile, column, row}, ..) => {
 				self.consume_next();
 
 				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -419,17 +406,17 @@ impl Parser {
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row: row, column: column }
+							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: None }, row: row, column: column }
+						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: None }, row, column }
 					))
 				}
 			}
 
-			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenWord(name), row: _, column: _ })) => {
+			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenWord(name), .. })) => {
 				let name = name.clone();
 
 				self.consume_next();
@@ -438,21 +425,15 @@ impl Parser {
 
 				let mut args = Vec::new();
 
-				loop {
-					match self.peek(0) {
-						Some(Token { token_type: TokenType::TokenWord(arg), column: _, row: _ }) => {
+				while let Some(Token { token_type, .. }) = self.peek(0) {
+					match token_type {
+						TokenType::TokenWord(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
-						},
-						_ => break,
-					}
-
-					match self.peek(0) {
-						Some(Token { token_type: TokenType::TokenComma, column: _, row: _ }) => {
+						}
+						TokenType::TokenComma => {
 							self.consume_next();
-
-							continue
 						},
 						_ => break,
 					}
@@ -463,8 +444,8 @@ impl Parser {
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-						ASTNodeEnum::FunctionDefinition { name: Some(name), args: args, block: Box::new(block) },
-					row: row, column: column }
+						ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: Box::new(block) },
+					row, column }
 				))
 			}
 
@@ -474,21 +455,15 @@ impl Parser {
 
 				let mut args = Vec::new();
 
-				loop {
-					match self.peek(0) {
-						Some(Token { token_type: TokenType::TokenWord(arg), column: _, row: _ }) => {
+				while let Some(Token { token_type, column: _, row: _ }) = self.peek(0) {
+					match token_type {
+						TokenType::TokenWord(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
-						},
-						_ => break,
-					}
-
-					match self.peek(0) {
-						Some(Token { token_type: TokenType::TokenComma, column: _, row: _ }) => {
+						}
+						TokenType::TokenComma => {
 							self.consume_next();
-
-							continue
 						},
 						_ => break,
 					}
@@ -499,16 +474,16 @@ impl Parser {
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-						ASTNodeEnum::FunctionDefinition { name: None, args: args, block: Box::new(block) },
-					row: row, column: column }
+						ASTNodeEnum::FunctionDefinition { name: None, args, block: Box::new(block) },
+					row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenEverything, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenEverything, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Everything, row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Everything, row, column }
 				))
 			}
 
@@ -516,52 +491,46 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Number(value), row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Number(value), row, column }
 				))
 			}
 
-			(Token {token_type: TokenType::TokenString(value), column, row}, _) => {
+			(Token {token_type: TokenType::TokenString(value), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let value = value.clone();
 
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::String(value), row: row, column: column }
+					ASTNode { value: ASTNodeEnum::String(value), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenPlus, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenPlus, column, row}, ..) => {
 				self.consume_next();
 
-				let value = match self.parse_unary()? {
-					Some(x) => x,
-					None => return Ok(None),
-				};
+				let Some(value) = self.parse_unary()? else { return Ok(None) };
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenPlus, value: Box::new(value) }, row: row, column: column  }
+					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenPlus, value: Box::new(value) }, row, column  }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenMinus, column, row}, _) => {
+			(&Token {token_type: TokenType::TokenMinus, column, row}, ..) => {
 				self.consume_next();
 
-				let value = match self.parse_unary()? {
-					Some(x) => x,
-					None => return Ok(None),
-				};
+				let Some(value) = self.parse_unary()? else { return Ok(None) };
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenMinus, value: Box::new(value) }, row: row, column: column  }
+					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenMinus, value: Box::new(value) }, row, column  }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenLPar, column: _, row: _}, _) => {
+			(&Token {token_type: TokenType::TokenLPar, ..}, ..) => {
 				self.parse_tuple()
 			}
 
-			(&Token {token_type: TokenType::TokenLBrace, column: _, row: _}, _) => {
+			(&Token {token_type: TokenType::TokenLBrace, ..}, ..) => {
 				self.parse_block()
 			}
 
@@ -575,22 +544,22 @@ impl Parser {
 				let value = self.parse_tuple()?.unwrap();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Function { name: word, arg: Box::new(value) }, row: row, column: column }
+					ASTNode { value: ASTNodeEnum::Function { name: word, arg: Box::new(value) }, row, column }
 				))
 			}
 
-			(Token {token_type: TokenType::TokenWord(word), column, row}, _) => {
+			(Token {token_type: TokenType::TokenWord(word), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let word = word.clone();
 
 				self.consume_next();
 
-				return Ok(Some(
-					ASTNode { value: ASTNodeEnum::Variable(word), row: row, column: column }
+				Ok(Some(
+					ASTNode { value: ASTNodeEnum::Variable(word), row, column }
 				))
 			}
 
-			(Token {token_type, column, row}, _) =>
+			(Token {token_type, column, row}, ..) =>
 				Err(ParserError::UnexpectedToken { row: *row, column: *column, token_type: token_type.clone() }),
 		}
 	}
@@ -614,15 +583,15 @@ impl Parser {
 
 					let old_cur = mem::replace(cur, ASTNode::NONE);
 
-					match x.token_type.arity() {
-						OpArity::Binary => {
-							self.consume_next();
+					// match x.token_type.arity() {
+					// 	OpArity::Binary => {
+					self.consume_next();
 
-							let right = self.parse(right_precedence)?;
+					let right = self.parse(right_precedence)?;
 
-							let new_cur = ASTNode { value: ASTNodeEnum::Binary { left: Box::new(old_cur), op: op, right: Box::new(right) }, row: row, column: column };
-							*cur = new_cur;
-						}
+					let new_cur = ASTNode { value: ASTNodeEnum::Binary { left: Box::new(old_cur), op, right: Box::new(right) }, row, column };
+					*cur = new_cur;
+					// 	}
 
 						// OpArity::Ternary => {
 						// 	self.consume_next();
@@ -635,11 +604,11 @@ impl Parser {
 
 						// 	let new_cur = ASTNode { value: ASTNodeEnum::Ternary {
 						// 		left: Box::new(old_cur), op: op, center: Box::new(center), right: Box::new(right)
-						// 	}, row: row, column: column };
+						// 	}, row, column };
 
 						// 	*cur = new_cur;
 						// }
-					}
+					// }
 				},
 				_ => break
 			}
