@@ -81,7 +81,7 @@ fn repl() -> Result<(), AppError> {
 		};
 
 		// for token in &tokens {
-		// 	println!("token = {}", token);
+		// 	println!("token = {token}");
 		// }
 
 		let mut parser = Parser::new(tokens);
@@ -95,7 +95,7 @@ fn repl() -> Result<(), AppError> {
 			}
 		};
 
-		// println!("ast = {}", ast);
+		println!("ast = {ast}");
 
 		let mut result = Vec::new();
 

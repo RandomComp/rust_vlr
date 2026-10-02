@@ -86,6 +86,8 @@ impl std::fmt::Display for ASTNodeEnum {
 			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
 			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
 			ASTNodeEnum::Tuple(values) => {
+				write!(f, "(")?;
+
 				for (i, value) in values.iter().enumerate() {
 					if i < values.len() - 1 {
 						write!(f, "{value}, ")?;
@@ -94,7 +96,7 @@ impl std::fmt::Display for ASTNodeEnum {
 					}
 				}
 
-				Ok(())
+				write!(f, ")")
 			},
 			ASTNodeEnum::Block(values) => {
 				write!(f, "{{ ")?;
@@ -187,14 +189,8 @@ impl Parser {
 	}
 
 	fn skip(&mut self, expected_token_type: &TokenType) {
-		loop {
-			match self.peek(0) {
-				Some(Token { token_type, .. }) if token_type != expected_token_type => break,
-				Some(Token { .. }) => {
-					self.index += 1;
-				},
-				None => break,
-			}
+		while let Some(Token { token_type, .. }) = self.peek(0) && token_type == expected_token_type {
+			self.index += 1;
 		}
 	}
 
@@ -206,18 +202,17 @@ impl Parser {
 		result
 	}
 
-	fn consume(&mut self, token_type: TokenType) -> Result<Token, ParserError> {
+	fn consume(&mut self, expected_token_type: &TokenType) -> Result<(), ParserError> {
 		match self.peek(0) {
-			Some(x) if x.token_type == token_type => {
-				let res = x.clone();
-
+			Some(Token { token_type, .. }) if token_type == expected_token_type => {
 				self.consume_next();
 
-				Ok(res)
+				Ok(())
 			},
-			Some(Token { token_type: found, row, column }) =>
-				Err(ParserError::ExpectedToken { row: *row, column: *column, token_type, found: found.clone() }),
-			None => panic!("Outside of array")
+			Some(Token { token_type, row, column }) => {
+				Err(ParserError::ExpectedToken { row: *row, column: *column, token_type: expected_token_type.clone(), found: token_type.clone() })
+			},
+			None => panic!("Outside of array"),
 		}
 	}
 
@@ -235,18 +230,18 @@ impl Parser {
 	}
 
 	fn parse_block(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		self.consume(TokenType::TokenLBrace)?;
+		self.consume(&TokenType::TokenLBrace)?;
 
 		let result = self.parse_instructions();
 
-		self.consume(TokenType::TokenRBrace)?;
+		self.consume(&TokenType::TokenRBrace)?;
 
 		result
 	}
 
 	pub fn parse_instructions(&mut self) -> Result<Option<ASTNode>, ParserError> {
 		let (row, column) = match self.peek(0) {
-			Some(Token { column, row, .. }) => (*row, *column),
+			Some(Token { row, column, .. }) => (*row, *column),
 			None => return Ok(None),
 		};
 
@@ -275,16 +270,16 @@ impl Parser {
 		}
 	}
 
-	fn parse_tuple(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		self.consume(TokenType::TokenLPar)?;
+	fn parse_tuple(&mut self) -> Result<ASTNode, ParserError> {
+		self.consume(&TokenType::TokenLPar)?;
 
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		loop {
 			if let Some(&Token { token_type: TokenType::TokenRPar, column, row }) = self.peek(0) {
-				self.consume(TokenType::TokenRPar)?;
+				self.consume(&TokenType::TokenRPar)?;
 
-				return Ok(Some(ASTNode { value: ASTNodeEnum::Tuple(result), row, column }));
+				return Ok(ASTNode { value: ASTNodeEnum::Tuple(result), row, column });
 			}
 
 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -296,9 +291,9 @@ impl Parser {
 					self.consume_next();
 				},
 				Some(Token { token_type: TokenType::TokenRPar, column, row }) if result.is_empty() => {
-					self.consume(TokenType::TokenRPar)?;
+					self.consume(&TokenType::TokenRPar)?;
 
-					return Ok(Some(value))
+					return Ok(value)
 				},
 				Some(_) => {
 					result.push(value);
@@ -421,7 +416,7 @@ impl Parser {
 
 				self.consume_next();
 				self.consume_next();
-				self.consume(TokenType::TokenLPar)?;
+				self.consume(&TokenType::TokenLPar)?;
 
 				let mut args = Vec::new();
 
@@ -439,19 +434,19 @@ impl Parser {
 					}
 				}
 
-				self.consume(TokenType::TokenRPar)?;
+				self.consume(&TokenType::TokenRPar)?;
 
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-						ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: Box::new(block) },
+					ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: Box::new(block) },
 					row, column }
 				))
 			}
 
 			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenLPar, row: _, column: _ })) => {
 				self.consume_next();
-				self.consume(TokenType::TokenLPar)?;
+				self.consume(&TokenType::TokenLPar)?;
 
 				let mut args = Vec::new();
 
@@ -469,7 +464,7 @@ impl Parser {
 					}
 				}
 
-				self.consume(TokenType::TokenRPar)?;
+				self.consume(&TokenType::TokenRPar)?;
 
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
@@ -506,14 +501,10 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenPlus, column, row}, ..) => {
+			(&Token {token_type: TokenType::TokenPlus, ..}, ..) => {
 				self.consume_next();
 
-				let Some(value) = self.parse_unary()? else { return Ok(None) };
-
-				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenPlus, value: Box::new(value) }, row, column  }
-				))
+				self.parse_unary()
 			}
 
 			(&Token {token_type: TokenType::TokenMinus, column, row}, ..) => {
@@ -527,7 +518,7 @@ impl Parser {
 			}
 
 			(&Token {token_type: TokenType::TokenLPar, ..}, ..) => {
-				self.parse_tuple()
+				self.parse_tuple().map(Some)
 			}
 
 			(&Token {token_type: TokenType::TokenLBrace, ..}, ..) => {
@@ -537,11 +528,11 @@ impl Parser {
 			(Token {token_type: TokenType::TokenWord(word), column, row}, Some(Token { token_type: TokenType::TokenLPar, column: _, row: _ })) => {
 				let (row, column) = (*row, *column);
 
-				let word = word.clone();
+				let word = word.to_owned();
 
 				self.consume_next();
 
-				let value = self.parse_tuple()?.unwrap();
+				let value = self.parse_tuple()?;
 
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Function { name: word, arg: Box::new(value) }, row, column }
@@ -550,7 +541,7 @@ impl Parser {
 
 			(Token {token_type: TokenType::TokenWord(word), column, row}, ..) => {
 				let (column, row) = (*column, *row);
-				let word = word.clone();
+				let word = word.to_owned();
 
 				self.consume_next();
 
