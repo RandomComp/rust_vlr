@@ -1,12 +1,12 @@
-use std::{collections::VecDeque, fmt::Display, iter::zip, string::FromUtf8Error};
+use std::{collections::VecDeque, ops::IndexMut, string::FromUtf8Error};
 
-use crate::compiler::{Bytecode, NativeFunctionId};
+use crate::{compiler::{Bytecode, NativeFunctionId}, uni_result::{UniResult, UniResultError}};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VMError {
-	#[error("incompatible operation")]
-	IncompatibleOperationType,
-	#[error("invalid UTF-8")]
+	#[error("UniResult error: {0}")]
+	UniResultError(#[from] UniResultError),
+	#[error("invalid UTF-8: {0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
 	// #[error("Unknown native function with id {0} call")]
 	// UnknownNativeFunctionCall(NativeFunctionId),
@@ -14,360 +14,10 @@ pub enum VMError {
 	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionId, found: u8, expected: u8 },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum VMResult {
-	ArgsEnd,
-	None,
-	Boolean(bool),
-	Number(f64),
-	String(String),
-	Tuple(Vec<VMResult>),
-	Range { start: f64, end: f64, step: f64 },
-}
-
-impl Display for VMResult {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			VMResult::ArgsEnd => write!(f, "<args end>"),
-			VMResult::None => write!(f, "None"),
-			VMResult::Boolean(x) => write!(f, "{x}"),
-			VMResult::Number(x) => write!(f, "{x}"),
-			VMResult::String(x) => write!(f, "\"{x}\""),
-			VMResult::Tuple(values) => {
-				write!(f, "(")?;
-
-				for (i, value) in values.iter().enumerate() {
-					if i > 0 {
-						write!(f, ", ")?;
-					}
-
-					write!(f, "{value}")?;
-				}
-
-				write!(f, ")")
-			},
-			VMResult::Range { start, end, step } => {
-				write!(f, "{start}..{end}..{step}")
-			},
-		}
-	}
-}
-
-impl VMResult {
-	fn add(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Number(a + b)),
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) |
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.add(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.add(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-	fn sub(self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Number(a - b)),
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.sub(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(b.clone().sub(value)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.sub(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-	fn mul(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(VMResult::Number(a), VMResult::Number(b))
-				=> Ok(VMResult::Number(a * b)),
-			(VMResult::Tuple(values), &VMResult::Number(b)) |
-			(&VMResult::Number(b), VMResult::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.mul(&b.into())?);
-				}
-
-				Ok(result.into())
-			},
-
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.mul(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-	fn div(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Number(a / b)),
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.div(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(b.clone().div(value)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.div(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-	fn pow(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Number(a.powf(b))),
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.pow(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(b.clone().pow(value)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.pow(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-
-	fn eq(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(&VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Boolean((a - b).abs() < f64::EPSILON)),
-			(VMResult::String(a), VMResult::String(b))
-				=> Ok(VMResult::Boolean(a == b)),
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) |
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.eq(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.eq(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-
-	fn neq(&self, right: &Self) -> Result<Self, VMError> {
-		match (self, right) {
-			(&VMResult::Number(a), &VMResult::Number(b))
-				=> Ok(VMResult::Boolean((a - b).abs() > f64::EPSILON)),
-			(VMResult::String(a), VMResult::String(b))
-				=> Ok(VMResult::Boolean(a != b)),
-			(b @ VMResult::Number(..), VMResult::Tuple(values)) |
-			(VMResult::Tuple(values), b @ VMResult::Number(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.eq(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(VMResult::Tuple(values_a), VMResult::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.eq(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-
-	fn neg(&self) -> Result<Self, VMError> {
-		match self {
-			&VMResult::Number(x)
-				=> Ok(VMResult::Number(-x)),
-			VMResult::Tuple(values) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.neg()?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-
-	fn not(&self) -> Result<Self, VMError> {
-		match self {
-			&VMResult::Boolean(x)
-				=> Ok(VMResult::Boolean(!x)),
-			VMResult::Tuple(values) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.not()?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-
-	fn to_bool(&self) -> Result<bool, VMError> {
-		match self {
-			&VMResult::Boolean(x) => Ok(x),
-			_ => Err(VMError::IncompatibleOperationType),
-		}
-	}
-}
-
-impl From<bool> for VMResult {
-	fn from(value: bool) -> Self {
-		VMResult::Boolean(value)
-	}
-}
-
-impl From<f64> for VMResult {
-	fn from(value: f64) -> Self {
-		VMResult::Number(value)
-	}
-}
-
-impl From<String> for VMResult {
-	fn from(value: String) -> Self {
-		VMResult::String(value)
-	}
-}
-
-impl From<Vec<VMResult>> for VMResult {
-	fn from(values: Vec<VMResult>) -> Self {
-		VMResult::Tuple(values)
-	}
-}
-
-impl From<VMResult> for f64 {
-	fn from(value: VMResult) -> f64 {
-		if let VMResult::Number(x) = value {
-			x
-		} else {
-			panic!("Using 'into' on incompatible type {value:?}")
-		}
-	}
-}
-
-impl From<VMResult> for String {
-	fn from(value: VMResult) -> String {
-		if let VMResult::String(x) = value {
-			x
-		} else {
-			panic!("Using 'into' on incompatible type {value:?}")
-		}
-	}
-}
-
-impl From<VMResult> for Vec<VMResult> {
-	fn from(value: VMResult) -> Vec<VMResult> {
-		if let VMResult::Tuple(x) = value {
-			x
-		} else {
-			panic!("Using 'into' on incompatible type {value:?}")
-		}
-	}
-}
-
 pub struct VM {
 	pc: usize,
 	pub bytecode: Option<Vec<u8>>,
-	stack: VecDeque<VMResult>,
+	stack: VecDeque<UniResult>,
 }
 
 impl VM {
@@ -419,7 +69,7 @@ impl VM {
 		result
 	}
 
-	fn pop_stack_until_value(&mut self, value: &VMResult) -> Vec<VMResult> {
+	fn pop_stack_until_value(&mut self, value: &UniResult) -> Vec<UniResult> {
 		let mut result = Vec::new();
 
 		while let Some(x) = self.stack.pop_back() && &x != value {
@@ -448,27 +98,6 @@ impl VM {
 
 				true
 			}
-			Some(Bytecode::COPY) => {
-				self.consume_next(1);
-
-				println!("push copy");
-
-				true
-			},
-			Some(Bytecode::SWAP) => {
-				self.consume_next(1);
-
-				println!("push swap");
-
-				true
-			},
-			Some(Bytecode::REMOVE) => {
-				self.consume_next(1);
-
-				println!("remove");
-
-				true
-			},
 			Some(Bytecode::PUSH_NUMBER) => {
 				self.consume_next(1);
 
@@ -490,6 +119,24 @@ impl VM {
 				let text = String::from_utf8(bytes)?;
 
 				println!("push \"{text}\"");
+
+				true
+			},
+			Some(Bytecode::LOOK) => {
+				self.consume_next(1);
+
+				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
+
+				println!("look {index}");
+
+				true
+			},
+			Some(Bytecode::LOAD) => {
+				self.consume_next(1);
+
+				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
+
+				println!("load {index}");
 
 				true
 			},
@@ -549,6 +196,20 @@ impl VM {
 
 				true
 			},
+			Some(Bytecode::LT) => {
+				self.consume_next(1);
+
+				println!("lt");
+
+				true
+			},
+			Some(Bytecode::GT) => {
+				self.consume_next(1);
+
+				println!("gt");
+
+				true
+			},
 			Some(Bytecode::NEG) => {
 				self.consume_next(1);
 
@@ -563,21 +224,21 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::JIC) => {
+			Some(Bytecode::JIT) => {
 				self.consume_next(1);
 
 				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) + 5;
 
-				println!("jic +{jump:02}");
+				println!("jit +{jump:02}");
 
 				true
 			},
-			Some(Bytecode::JINC) => {
+			Some(Bytecode::JIF) => {
 				self.consume_next(1);
 
 				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) + 5;
 
-				println!("jinc +{jump:02}");
+				println!("jif +{jump:02}");
 
 				true
 			},
@@ -624,17 +285,17 @@ impl VM {
 		Ok(())
 	}
 
-	fn print(args: Vec<VMResult>) -> VMResult {
+	fn print(args: Vec<UniResult>) -> UniResult {
 		for arg in args {
 			println!("{arg}");
 		}
 
-		VMResult::None
+		UniResult::None
 	}
-	fn tuple(args: Vec<VMResult>) -> VMResult {
-		VMResult::Tuple(args)
+	fn tuple(args: Vec<UniResult>) -> UniResult {
+		UniResult::Tuple(args)
 	}
-	fn range(args: &[VMResult]) -> Result<VMResult, VMError> {
+	fn range(args: &[UniResult]) -> Result<UniResult, VMError> {
 		if args.len() == 1 {
 			Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionId::Range, found: 1, expected: 2 })
 		} else {
@@ -642,13 +303,13 @@ impl VM {
 			let end = &args[1];
 
 			match (start, end) {
-				(VMResult::Number(start), VMResult::Number(end)) => Ok(VMResult::Range { start: *start, end: *end, step: 1.0 }),
-				_ => Err(VMError::IncompatibleOperationType)
+				(UniResult::Number(start), UniResult::Number(end)) => Ok(UniResult::Range { start: *start, end: *end, step: 1.0 }),
+				_ => Err(VMError::UniResultError(UniResultError::IncompatibleOperationType))
 			}
 		}
 	}
 
-	fn call_native(id: NativeFunctionId, args: Vec<VMResult>) -> Result<VMResult, VMError> {
+	fn call_native(id: NativeFunctionId, args: Vec<UniResult>) -> Result<UniResult, VMError> {
 		match id {
 			NativeFunctionId::Print => Ok(Self::print(args)),
 			NativeFunctionId::Tuple => Ok(Self::tuple(args)),
@@ -657,7 +318,7 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, VMError> {
-		self.disasm_inst_nochange()?;
+		// self.disasm_inst_nochange()?;
 
 		let result = match self.peek(0) {
 			Some(Bytecode::PUSH_FALSE) => {
@@ -671,41 +332,6 @@ impl VM {
 				self.consume_next(1);
 
 				self.stack.push_back(true.into());
-
-				true
-			},
-			Some(Bytecode::COPY) => {
-				self.consume_next(1);
-
-				if let Some(value) = self.stack.back() {
-					self.stack.push_back(value.clone());
-				}
-
-				true
-			},
-			Some(Bytecode::SWAP) => {
-				self.consume_next(1);
-
-				let first = self.stack.pop_back();
-				let second = self.stack.pop_back();
-
-				match (first, second) {
-					(Some(first), Some(second)) => {
-						self.stack.push_back(first);
-						self.stack.push_back(second);
-					},
-					(Some(value), None) | (None, Some(value)) => {
-						self.stack.push_back(value);
-					},
-					_ => {},
-				}
-
-				true
-			},
-			Some(Bytecode::REMOVE) => {
-				self.consume_next(1);
-
-				self.stack.pop_back();
 
 				true
 			},
@@ -733,10 +359,34 @@ impl VM {
 
 				true
 			},
+			Some(Bytecode::LOOK) => {
+				self.consume_next(1);
+
+				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
+
+				if let Some(value) = self.stack.get(index) {
+					self.stack.push_back(value.clone());
+				}
+
+				true
+			},
+			Some(Bytecode::LOAD) => {
+				self.consume_next(1);
+
+				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
+
+				if index < self.stack.len() {
+					let value = self.stack.pop_back().unwrap();
+
+					*self.stack.index_mut(index) = value;
+				}
+
+				true
+			},
 			Some(Bytecode::PUSH_ARG_END) => {
 				self.consume_next(1);
 
-				self.stack.push_back(VMResult::ArgsEnd);
+				self.stack.push_back(UniResult::ArgsEnd);
 
 				true
 			},
@@ -810,6 +460,26 @@ impl VM {
 
 				true
 			},
+			Some(Bytecode::LT) => {
+				self.consume_next(1);
+
+				let left = self.stack.pop_back().unwrap();
+				let right = self.stack.pop_back().unwrap();
+
+				self.stack.push_back(left.lt(&right)?);
+
+				true
+			},
+			Some(Bytecode::GT) => {
+				self.consume_next(1);
+
+				let left = self.stack.pop_back().unwrap();
+				let right = self.stack.pop_back().unwrap();
+
+				self.stack.push_back(left.gt(&right)?);
+
+				true
+			},
 			Some(Bytecode::NEG) => {
 				self.consume_next(1);
 
@@ -828,24 +498,32 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::JIC) => {
+			Some(Bytecode::JIT) => {
 				self.consume_next(1);
 
 				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
 				if self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
-					self.pc += jump as usize;
+					if jump < 0 {
+						self.pc -= jump.unsigned_abs() as usize;
+					} else {
+						self.pc += jump.unsigned_abs() as usize;
+					}
 				}
 
 				true
 			},
-			Some(Bytecode::JINC) => {
+			Some(Bytecode::JIF) => {
 				self.consume_next(1);
 
 				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
 				if !self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
-					self.pc += jump as usize;
+					if jump < 0 {
+						self.pc -= jump.unsigned_abs() as usize;
+					} else {
+						self.pc += jump.unsigned_abs() as usize;
+					}
 				}
 
 				true
@@ -855,7 +533,11 @@ impl VM {
 
 				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				self.pc += jump as usize;
+				if jump < 0 {
+					self.pc -= jump.unsigned_abs() as usize;
+				} else {
+					self.pc += jump.unsigned_abs() as usize;
+				}
 
 				true
 			},
@@ -864,10 +546,10 @@ impl VM {
 
 				let id = u8::from_le_bytes(self.consume_const_bytes_and_get::<1>());
 
-				let args = self.pop_stack_until_value(&VMResult::ArgsEnd);
+				let args = self.pop_stack_until_value(&UniResult::ArgsEnd);
 
 				match Self::call_native(id.into(), args)? {
-					VMResult::None => {},
+					UniResult::None => {},
 					val => self.stack.push_back(val),
 				}
 
@@ -894,11 +576,11 @@ impl VM {
 		println!("]");
 	}
 
-	pub fn exec(&mut self) -> Result<Option<VMResult>, VMError> {
+	pub fn exec(&mut self) -> Result<Option<UniResult>, VMError> {
 		self.pc = 0;
 
 		while self.exec_inst()? {
-			self.dump_stack();
+			// self.dump_stack();
 		}
 
 		Ok(self.stack.pop_back())

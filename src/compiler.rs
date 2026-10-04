@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{lexer::TokenType, parser::{ASTNode, ASTNodeEnum}};
 
@@ -11,15 +11,16 @@ impl Bytecode {
 	pub const PUSH_STRING: u8 = 0x02;
 	pub const PUSH_FALSE: u8 = 0x03;
 	pub const PUSH_TRUE: u8 = 0x04;
-	pub const COPY: u8 = 0x05; // Copies value from stack and pushes it up
-	pub const SWAP: u8 = 0x06; // Swaps two values from stack
-	pub const REMOVE: u8 = 0x07; // Remvoe value from stack
+	pub const LOOK: u8 = 0x05; // Copy to head from N
+	pub const LOAD: u8 = 0x06; // Load value to N
 	pub const PUSH_ARG_END: u8 = 0x0F;
-	pub const JIC: u8 = 0x20; // Jump if condition
-	pub const JINC: u8 = 0x21; // Jump if not condition
+	pub const JIT: u8 = 0x20; // Jump if condition
+	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
 	pub const EQ: u8 = 0x50;
 	pub const NEQ: u8 = 0x51;
+	pub const LT: u8 = 0x52; // Less than
+	pub const GT: u8 = 0x53; // Great than
 	pub const NATIVE_CALL: u8 = 0x80;
 	pub const ADD: u8 = 0xA0;
 	pub const SUB: u8 = 0xA3;
@@ -48,6 +49,8 @@ impl Bytecode {
 			TokenType::TokenPow => Self::POW,
 			TokenType::TokenEquals => Self::EQ,
 			TokenType::TokenNotEquals => Self::NEQ,
+			TokenType::TokenLess => Self::LT,
+			TokenType::TokenGreat => Self::GT,
 			x => todo!("{}", x),
 		}
 	}
@@ -67,6 +70,10 @@ pub enum CompilerError {
 	StringTooLong,
 	#[error("Block is too long for u32 type, that means block is bigger than 4 GB, try separate code for modules")]
 	BlockIsTooLong,
+	#[error("'{0}' variable is not known in current scope")]
+	NotKnownAtThisScope(String),
+	#[error("L-value of assignment should be variable name, not '{0}'")]
+	LeftExprShouldBeId(String),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -113,13 +120,14 @@ impl From<u8> for NativeFunctionId {
 }
 
 pub struct Compiler {
-	// scope: Vec<String>,
+	stack_pos: u32,
+	scope: HashMap<String, u32>,
 }
 
 impl Compiler {
-	// pub fn new() -> Self {
-	// 	Self {}
-	// }
+	pub fn new() -> Self {
+		Self {stack_pos: 0, scope: HashMap::new()}
+	}
 
 	pub fn get_native_call_id_by_name(name: &str) -> Option<NativeFunctionId> {
 		match name {
@@ -130,138 +138,243 @@ impl Compiler {
 		}
 	}
 
-	pub fn compile(ast: &ASTNode, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+	fn look(stack_pos: u32, result: &mut Vec<u8>) {
+		result.push(Bytecode::LOOK);
+		result.extend(stack_pos.to_le_bytes());
+	}
+
+	fn load(stack_pos: u32, result: &mut Vec<u8>) {
+		result.push(Bytecode::LOAD);
+		result.extend(stack_pos.to_le_bytes());
+	}
+
+	fn push_bool(&mut self, val: bool, result: &mut Vec<u8>) {
+		self.stack_pos += 1;
+
+		if val {
+			result.push(Bytecode::PUSH_TRUE);
+		} else {
+			result.push(Bytecode::PUSH_FALSE);
+		}
+	}
+
+	fn push_number(&mut self, val: f64, result: &mut Vec<u8>) {
+		self.stack_pos += 1;
+
+		result.push(Bytecode::PUSH_NUMBER);
+		result.extend(val.to_le_bytes());
+	}
+
+	fn push_string(&mut self, val: &str, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+		self.stack_pos += 1;
+
+		let Ok(len_u16) = u16::try_from(val.len()) else {
+			return Err(CompilerError::StringTooLong)
+		};
+
+		result.push(Bytecode::PUSH_STRING);
+		result.extend(len_u16.to_le_bytes());
+		result.extend(val.bytes());
+
+		Ok(())
+	}
+
+	fn native_call_with_arg(&mut self, name: &str, arg: &ASTNode, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+		self.stack_pos += 1;
+
+		result.push(Bytecode::PUSH_ARG_END);
+
+		self.compile(arg, result)?;
+
+		result.push(Bytecode::NATIVE_CALL);
+		result.extend(Self::get_native_call_id_by_name(name).ok_or(
+			CompilerError::UnknownNativeFunctionCall(name.to_owned())
+		)?.to_le_bytes());
+
+		Ok(())
+	}
+
+	fn native_call(&mut self, name: &str, args: &[ASTNode], result: &mut Vec<u8>) -> Result<(), CompilerError> {
+		self.stack_pos += 1;
+
+		result.push(Bytecode::PUSH_ARG_END);
+
+		for arg in args.iter().rev() {
+			self.compile(arg, result)?;
+		}
+
+		result.push(Bytecode::NATIVE_CALL);
+		result.extend(Self::get_native_call_id_by_name(name).ok_or(
+			CompilerError::UnknownNativeFunctionCall(name.to_owned())
+		)?.to_le_bytes());
+
+		Ok(())
+	}
+
+	fn jit(pos: i32, result: &mut Vec<u8>) {
+		result.push(Bytecode::JIT);
+		result.extend(pos.to_le_bytes());
+	}
+
+	fn jif(pos: i32, result: &mut Vec<u8>) {
+		result.push(Bytecode::JIF);
+		result.extend(pos.to_le_bytes());
+	}
+
+	fn jmp(pos: i32, result: &mut Vec<u8>) {
+		result.push(Bytecode::JMP);
+		result.extend(pos.to_le_bytes());
+	}
+
+	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: u8, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+		if let ASTNodeEnum::Variable(name) = &left.value {
+			let Some(&stack_pos) = self.scope.get(name) else {
+				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
+			};
+
+			Self::look(stack_pos, result);
+			self.compile(right, result)?;
+
+			result.push(op);
+
+			Self::load(stack_pos, result);
+		} else {
+			return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
+		}
+
+		Ok(())
+	}
+
+	pub fn compile(&mut self, ast: &ASTNode, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+		println!("stack_pos = {}", self.stack_pos);
+
 		match &ast.value {
-			ASTNodeEnum::Boolean(x) if !*x => {
-				result.push(Bytecode::PUSH_FALSE);
+			&ASTNodeEnum::Boolean(x) => {
+				self.push_bool(x, result);
 			},
-			ASTNodeEnum::Boolean(x) if *x => {
-				result.push(Bytecode::PUSH_TRUE);
-			},
-			ASTNodeEnum::Number(x) => {
-				result.push(Bytecode::PUSH_NUMBER);
-				result.extend(x.to_le_bytes());
+			&ASTNodeEnum::Number(x) => {
+				self.push_number(x, result);
 			},
 			ASTNodeEnum::String(x) => {
-				let Ok(len_u16) = u16::try_from(x.len()) else {
-					return Err(CompilerError::StringTooLong)
-				};
-
-				result.push(Bytecode::PUSH_STRING);
-				result.extend(len_u16.to_le_bytes());
-				result.extend(x.bytes());
+				self.push_string(x, result)?;
 			},
 			ASTNodeEnum::Tuple(values) => {
-				result.push(Bytecode::PUSH_ARG_END);
-
-				for value in values.iter().rev() {
-					Self::compile(value, result)?;
-				}
-
-				result.push(Bytecode::NATIVE_CALL);
-				result.extend(Self::get_native_call_id_by_name("tuple").ok_or(
-					CompilerError::UnknownNativeFunctionCall("tuple".to_owned())
-				)?.to_le_bytes());
+				self.native_call("tuple", values, result)?;
 			},
 			ASTNodeEnum::Binary { left, op: TokenType::TokenRange, right } => {
-				result.push(Bytecode::PUSH_ARG_END);
+				let args = vec![*left.clone(), *right.clone()];
 
-				Self::compile(right, result)?;
-				Self::compile(left, result)?;
+				self.native_call("range", &args, result)?;
+			},
+			ASTNodeEnum::Binary { left, op: TokenType::TokenAssignment, right } => if let ASTNodeEnum::Variable(name) = &left.value {
+				if let Some(&stack_pos) = self.scope.get(name) {
+					self.compile(right, result)?;
 
-				result.push(Bytecode::NATIVE_CALL);
-				result.extend(Self::get_native_call_id_by_name("range").ok_or(
-					CompilerError::UnknownNativeFunctionCall("range".to_owned())
-				)?.to_le_bytes());
+					Self::load(stack_pos, result);
+				} else {
+					self.scope.insert(name.to_owned(), self.stack_pos);
+
+					self.compile(right, result)?;
+				}
+			} else {
+				return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
+			},
+			ASTNodeEnum::Binary { left, op: TokenType::TokenPlusAssignment, right } =>
+				self.compile_assignment(left, right, Bytecode::ADD, result)?,
+			ASTNodeEnum::Binary { left, op: TokenType::TokenMinusAssignment, right } =>
+				self.compile_assignment(left, right, Bytecode::SUB, result)?,
+			ASTNodeEnum::Binary { left, op: TokenType::TokenMultiplyAssignment, right } =>
+				self.compile_assignment(left, right, Bytecode::MUL, result)?,
+			ASTNodeEnum::Binary { left, op: TokenType::TokenDivideAssignment, right } =>
+				self.compile_assignment(left, right, Bytecode::DIV, result)?,
+			ASTNodeEnum::Variable(name) => if let Some(&stack_pos) = self.scope.get(name) {
+				self.stack_pos += 1;
+
+				Self::look(stack_pos, result);
+			} else {
+				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
 			},
 			ASTNodeEnum::Binary { left, op, right } => {
-				Self::compile(left, result)?;
-				Self::compile(right, result)?;
+				self.compile(right, result)?;
+				self.compile(left, result)?;
+
+				self.stack_pos -= 1;
 
 				result.push(Bytecode::from_binary_op(op.clone()));
 			},
 			ASTNodeEnum::Function { name, arg } => {
-				result.push(Bytecode::PUSH_ARG_END);
-
-				Self::compile(arg, result)?;
-
-				result.push(Bytecode::NATIVE_CALL);
-
-				// let id = if self.scope.contains(&name) {
-				// 	self.scope.iter().position(|v| *v == name).unwrap()
-				// } else {
-				// 	self.scope.push(name);
-
-				// 	self.scope.len() - 1
-				// };
-
-				// println!("id = {id}");
-
-				result.extend(Self::get_native_call_id_by_name(name).ok_or(
-					CompilerError::UnknownNativeFunctionCall(name.clone())
-				)?.to_le_bytes());
+				self.native_call_with_arg(name, arg, result)?;
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
+				let mut compiled_condition = Vec::new();
+				self.compile(condition, &mut compiled_condition)?;
+
+				let Ok(compiled_condition_size) = i32::try_from(compiled_condition.len()) else {
+					return Err(CompilerError::BlockIsTooLong)
+				};
+
+				self.stack_pos -= 1;
+
 				let mut compiled_block = Vec::new();
-				Self::compile(block, &mut compiled_block)?;
+				self.compile(block, &mut compiled_block)?;
 
 				let Ok(compiled_block_size) = i32::try_from(compiled_block.len()) else {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
-				Self::compile(condition, result)?;
+				result.extend(compiled_condition);
 
-				result.push(Bytecode::JINC);
-				result.extend((compiled_block_size + 5).to_le_bytes());
+				Self::jif(compiled_block_size + 5, result);
 
 				result.extend(compiled_block);
-				result.push(Bytecode::JMP);
-				result.extend((-compiled_block_size).to_le_bytes());
+				Self::jmp(-compiled_block_size - compiled_condition_size - 10, result);
 			},
 			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
 				let mut compiled_block = Vec::new();
-				Self::compile(block, &mut compiled_block)?;
+				self.compile(block, &mut compiled_block)?;
 
 				let Ok(else_offset) = i32::try_from(5 + compiled_block.len()) else {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
 				let mut compiled_block_else = Vec::new();
-				Self::compile(block_else, &mut compiled_block_else)?;
+				self.compile(block_else, &mut compiled_block_else)?;
 
 				let Ok(else_block_size) = i32::try_from(compiled_block_else.len()) else {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
-				Self::compile(condition, result)?;
+				self.compile(condition, result)?;
 
-				result.push(Bytecode::JINC);
-				result.extend(else_offset.to_le_bytes());
+				self.stack_pos -= 1;
+
+				Self::jif(else_offset, result);
 
 				result.extend(compiled_block);
-				result.push(Bytecode::JMP);
-				result.extend(else_block_size.to_le_bytes());
+				Self::jmp(else_block_size, result);
 
 				result.extend(compiled_block_else);
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
 				let mut compiled_block = Vec::new();
 
-				Self::compile(block, &mut compiled_block)?;
+				self.compile(block, &mut compiled_block)?;
 
 				let Ok(i32_len) = i32::try_from(compiled_block.len()) else {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
-				Self::compile(condition, result)?;
-				result.push(Bytecode::JINC);
-				result.extend(i32_len.to_le_bytes());
+				self.compile(condition, result)?;
+
+				self.stack_pos -= 1;
+
+				Self::jif(i32_len, result);
 
 				result.extend(compiled_block);
 			},
 			ASTNodeEnum::Block(statements) => {
 				for statement in statements {
-					Self::compile(statement, result)?;
+					self.compile(statement, result)?;
 				}
 			},
 			_ => todo!("{}", ast)

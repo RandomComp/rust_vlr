@@ -14,9 +14,12 @@ use rustyline::{DefaultEditor, error::ReadlineError::self};
 
 mod lexer;
 mod parser;
+mod optimizer;
+mod uni_result;
 mod compiler;
 mod vm;
 
+use crate::optimizer::{Optimizer, OptimizerError};
 use crate::vm::{VM, VMError};
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError, Token};
@@ -37,6 +40,8 @@ enum AppError {
 	Lexer(#[from] LexerError),
 	#[error("Parser error: {0}")]
 	Parser(#[from] ParserError),
+	#[error("Optimizer error: {0}")]
+	Optimizer(#[from] OptimizerError),
 	#[error("Compiler error: {0}")]
 	Compiler(#[from] CompilerError),
 	#[error("VM error: {0}")]
@@ -97,9 +102,11 @@ fn repl() -> Result<(), AppError> {
 
 		println!("ast = {ast}");
 
+		let mut compiler = Compiler::new();
+
 		let mut result = Vec::new();
 
-		if let Err(e) = Compiler::compile(&ast, &mut result) {
+		if let Err(e) = compiler.compile(&ast, &mut result) {
 			eprintln!("Compiler error: {e}");
 
 			continue;
@@ -141,7 +148,7 @@ fn run_file(file: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-fn compile(code: &str) -> Result<Vec<u8>, CompilerError> {
+fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 	// println!("Tokenizing expr '{}'", code);
 
 	let mut lexer = Lexer::new(code.chars());
@@ -158,7 +165,7 @@ fn compile(code: &str) -> Result<Vec<u8>, CompilerError> {
 
 	let mut parser = Parser::new(tokens);
 
-	let ast = parser.parse_instructions().unwrap_or_else(|e| {
+	let mut ast = parser.parse_instructions().unwrap_or_else(|e| {
 		eprintln!("Parser error: {e}");
 
 		process::exit(1);
@@ -166,11 +173,15 @@ fn compile(code: &str) -> Result<Vec<u8>, CompilerError> {
 
 	println!("ast = {ast}");
 
-	// let mut compiler = Compiler::new();
+	ast.value = Optimizer::fold(ast.value)?;
+
+	println!("ast after optimizer = {ast}");
+
+	let mut compiler = Compiler::new();
 
 	let mut bytes = Vec::new();
 
-	Compiler::compile(&ast, &mut bytes)?;
+	compiler.compile(&ast, &mut bytes)?;
 
 	for byte in &bytes {
 		print!("{byte:02X} ");

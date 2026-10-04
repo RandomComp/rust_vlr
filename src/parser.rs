@@ -72,6 +72,12 @@ pub struct ASTNode {
 	pub row: usize, pub column: usize,
 }
 
+impl From<ASTNodeEnum> for ASTNode {
+	fn from(value: ASTNodeEnum) -> Self {
+    	ASTNode { value, row: 0, column: 0 }
+	}
+}
+
 impl ASTNode {
 	pub const NONE: Self = Self {value: ASTNodeEnum::None, row: 0, column: 0};
 }
