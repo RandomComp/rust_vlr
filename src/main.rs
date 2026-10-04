@@ -31,7 +31,9 @@ struct Args {
 	#[argh(option, description = "run bytecode file", short = 'r')]
 	run: Option<String>,
 	#[argh(option, description = "file to compile", short = 'c')]
-	file_to_compile: Option<String>
+	compile: Option<String>,
+	#[argh(option, description = "file to format", short = 'f')]
+	format: Option<String>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -148,6 +150,48 @@ fn run_file(file: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
+fn format(code: &str) -> Result<(), AppError> {
+	// println!("Tokenizing expr '{}'", code);
+
+	let mut lexer = Lexer::new(code.chars());
+
+	let tokens: Vec<Token> = lexer.tokenize_loop().unwrap_or_else(|e| {
+		eprintln!("Lexer error: {e}");
+
+		process::exit(1);
+	});
+
+	// for token in &tokens {
+	// 	println!("token = {}", token);
+	// }
+
+	let mut parser = Parser::new(tokens);
+
+	let mut ast = parser.parse_instructions().unwrap_or_else(|e| {
+		eprintln!("Parser error: {e}");
+
+		process::exit(1);
+	}).unwrap();
+
+	let mut ast_str = String::new();
+
+	ast.format_human_readable(&mut ast_str, false, 0)?;
+
+	println!("ast (with formatting) = {ast_str}");
+	println!("ast (without formatting) = {ast}");
+
+	ast = Optimizer::fold(&ast)?;
+
+	ast_str.clear();
+
+	ast.format_human_readable(&mut ast_str, false, 0)?;
+
+	println!("ast after optimizer (with formatting) = {ast_str}");
+	println!("ast after optimizer (without formatting) = {ast}");
+
+	Ok(())
+}
+
 fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 	// println!("Tokenizing expr '{}'", code);
 
@@ -171,11 +215,19 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		process::exit(1);
 	}).unwrap();
 
-	println!("ast = {ast}");
+	let mut ast_str = String::new();
 
-	ast.value = Optimizer::fold(ast.value)?;
+	ast.format_human_readable(&mut ast_str, false, 0)?;
 
-	println!("ast after optimizer = {ast}");
+	println!("ast = {ast_str}");
+
+	ast = Optimizer::fold(&ast)?;
+
+	ast_str.clear();
+
+	ast.format_human_readable(&mut ast_str, false, 0)?;
+
+	println!("ast after optimizer = {ast_str}");
 
 	let mut compiler = Compiler::new();
 
@@ -190,6 +242,12 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 	println!();
 
 	Ok(bytes)
+}
+
+fn format_file(file: &str) -> Result<(), AppError> {
+	let code = std::fs::read_to_string(file)?;
+
+	format(&code)
 }
 
 fn compile_file(file: &str) -> Result<(), AppError> {
@@ -217,7 +275,14 @@ fn main() {
 	let args: Args = argh::from_env();
 
 	match args {
-		Args { run: Some(file_to_run), file_to_compile: Some(file_to_compile) } => {
+		Args { format: Some(format), .. } => {
+			format_file(&format).unwrap_or_else(|e| {
+				eprintln!("{e}");
+
+				process::exit(1);
+			});
+		}
+		Args { run: Some(file_to_run), compile: Some(file_to_compile), .. } => {
 			compile_file(&file_to_compile).unwrap_or_else(|e| {
 				eprintln!("{e}");
 
@@ -229,19 +294,19 @@ fn main() {
 				process::exit(1);
 			});
 		},
-		Args { run: Some(file), file_to_compile: None } =>
+		Args { run: Some(file), compile: None, .. } =>
 			run_file(&file).unwrap_or_else(|e| {
 				eprintln!("{e}");
 
 				process::exit(1);
 			}),
-		Args { run: None, file_to_compile: Some(file) } =>
+		Args { run: None, compile: Some(file), .. } =>
 			compile_file(&file).unwrap_or_else(|e| {
 				eprintln!("{e}");
 
 				process::exit(1);
 			}),
-		Args { run: None, file_to_compile: None } => {
+		Args { run: None, compile: None, .. } => {
 			repl().unwrap_or_else(|e| {
 				eprintln!("{e}");
 

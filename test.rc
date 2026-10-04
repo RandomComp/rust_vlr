@@ -1,5 +1,7 @@
-x = 123 + 456;
-x += 789;
-print("Hello, world!")
-print(2 + 2 * 2)
-print("123 + 456 * 789", 123 + 456 * 789)
+x = 0
+
+while x < 100 {
+	print(x)
+
+	x += 1;
+}

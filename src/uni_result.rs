@@ -83,14 +83,18 @@ impl TryFrom<ASTNode> for UniResult {
 	}
 }
 
-pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: TokenType) -> Result<UniResult, UniResultError> {
+pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &TokenType) -> Result<UniResult, UniResultError> {
 	match op {
 		TokenType::TokenPlus => left.add(right),
 		TokenType::TokenMinus => left.sub(right),
 		TokenType::TokenMultiply => left.mul(right),
 		TokenType::TokenPow => left.pow(right),
 		TokenType::TokenDivide => left.div(right),
-		_ => Err(UniResultError::UnknownOperation(op)),
+		TokenType::TokenEquals => left.eq(right),
+		TokenType::TokenNotEquals => left.neq(right),
+		TokenType::TokenGreat => left.gt(right),
+		TokenType::TokenLess => left.lt(right),
+		_ => Err(UniResultError::UnknownOperation(op.to_owned())),
 	}
 }
 

@@ -55,12 +55,6 @@ pub enum OpAssoc {
 	Right
 }
 
-#[derive(Debug, PartialEq)]
-pub enum OpArity {
-	Binary,
-	// Ternary
-}
-
 impl fmt::Display for OpAssoc {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
@@ -162,12 +156,6 @@ impl TokenType {
 			_ => OpAssoc::Left,
 		}
 	}
-
-	// pub fn arity(&self) -> OpArity {
-	// 	match self {
-	// 		_ => OpArity::Binary,
-	// 	}
-	// }
 }
 
 impl std::fmt::Display for TokenType {

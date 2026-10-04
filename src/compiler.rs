@@ -138,12 +138,16 @@ impl Compiler {
 		}
 	}
 
-	fn look(stack_pos: u32, result: &mut Vec<u8>) {
+	fn look(&mut self, stack_pos: u32, result: &mut Vec<u8>) {
+		self.stack_pos += 1;
+
 		result.push(Bytecode::LOOK);
 		result.extend(stack_pos.to_le_bytes());
 	}
 
-	fn load(stack_pos: u32, result: &mut Vec<u8>) {
+	fn load(&mut self, stack_pos: u32, result: &mut Vec<u8>) {
+		self.stack_pos -= 1;
+
 		result.push(Bytecode::LOAD);
 		result.extend(stack_pos.to_le_bytes());
 	}
@@ -227,20 +231,20 @@ impl Compiler {
 	}
 
 	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: u8, result: &mut Vec<u8>) -> Result<(), CompilerError> {
-		if let ASTNodeEnum::Variable(name) = &left.value {
-			let Some(&stack_pos) = self.scope.get(name) else {
-				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
-			};
-
-			Self::look(stack_pos, result);
-			self.compile(right, result)?;
-
-			result.push(op);
-
-			Self::load(stack_pos, result);
-		} else {
+		let ASTNodeEnum::Variable(name) = &left.value else {
 			return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
-		}
+		};
+
+		let Some(&stack_pos) = self.scope.get(name) else {
+			return Err(CompilerError::NotKnownAtThisScope(name.clone()));
+		};
+
+		self.look(stack_pos, result);
+		self.compile(right, result)?;
+
+		result.push(op);
+
+		self.load(stack_pos, result);
 
 		Ok(())
 	}
@@ -249,6 +253,7 @@ impl Compiler {
 		println!("stack_pos = {}", self.stack_pos);
 
 		match &ast.value {
+			ASTNodeEnum::None => return Ok(()),
 			&ASTNodeEnum::Boolean(x) => {
 				self.push_bool(x, result);
 			},
@@ -270,7 +275,7 @@ impl Compiler {
 				if let Some(&stack_pos) = self.scope.get(name) {
 					self.compile(right, result)?;
 
-					Self::load(stack_pos, result);
+					self.load(stack_pos, result);
 				} else {
 					self.scope.insert(name.to_owned(), self.stack_pos);
 
@@ -288,9 +293,7 @@ impl Compiler {
 			ASTNodeEnum::Binary { left, op: TokenType::TokenDivideAssignment, right } =>
 				self.compile_assignment(left, right, Bytecode::DIV, result)?,
 			ASTNodeEnum::Variable(name) => if let Some(&stack_pos) = self.scope.get(name) {
-				self.stack_pos += 1;
-
-				Self::look(stack_pos, result);
+				self.look(stack_pos, result);
 			} else {
 				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
 			},

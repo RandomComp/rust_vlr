@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, mem, num::ParseFloatError};
+use std::{fmt::Write, collections::VecDeque, mem, num::ParseFloatError};
 
 use crate::lexer::{LexerError, OpAssoc, Token, TokenType};
 
@@ -80,6 +80,10 @@ impl From<ASTNodeEnum> for ASTNode {
 
 impl ASTNode {
 	pub const NONE: Self = Self {value: ASTNodeEnum::None, row: 0, column: 0};
+
+	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
+		self.value.format_human_readable(f, for_statement, tab_level)
+	}
 }
 
 impl std::fmt::Display for ASTNodeEnum {
@@ -169,6 +173,146 @@ impl std::fmt::Display for ASTNodeEnum {
 				}
 
 				Ok(())
+			},
+		}
+	}
+}
+
+impl ASTNodeEnum {
+	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
+		let tab_level_syms: String = std::iter::repeat_n(' ', 4 * tab_level).collect();
+
+		if !for_statement {
+			write!(f, "{tab_level_syms}")?;
+		}
+
+		match self {
+			ASTNodeEnum::None => write!(f, "()"),
+			ASTNodeEnum::Everything => write!(f, "..."),
+			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
+			ASTNodeEnum::Number(value) => write!(f, "{value}"),
+			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
+			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
+			ASTNodeEnum::Tuple(values) => {
+				write!(f, "(")?;
+
+				for (i, value) in values.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					value.format_human_readable(f, false, 0)?;
+				}
+
+				write!(f, ")")
+			},
+			ASTNodeEnum::Block(values) => {
+				writeln!(f, "{{")?;
+
+				for value in values {
+					value.format_human_readable(f, false, tab_level + 1)?;
+
+					writeln!(f, ";")?;
+				}
+
+				write!(f, "{tab_level_syms}}}")
+			},
+			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
+				write!(f, "if ")?;
+
+				condition.format_human_readable(f, false, 0)?;
+
+				write!(f, " ")?;
+
+				block.format_human_readable(f, true, tab_level + 1)?;
+
+				write!(f, " ")?;
+
+				write!(f, "else ")?;
+
+				write!(f, " ")?;
+
+				block_else.format_human_readable(f, true, tab_level + 1)
+			},
+			ASTNodeEnum::If { condition, block, block_else: None } => {
+				write!(f, "if ")?;
+
+				condition.format_human_readable(f, false, 0)?;
+
+				write!(f, " ")?;
+
+				block.format_human_readable(f, true, tab_level)
+			},
+			ASTNodeEnum::Break(value) => {
+				write!(f, "break {value}")
+			},
+			ASTNodeEnum::Return(value) => {
+				write!(f, "return {value}")
+			},
+			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+				write!(f, "while ")?;
+
+				condition.format_human_readable(f, false, 0)?;
+
+				write!(f, " ")?;
+
+				block.format_human_readable(f, false, tab_level + 1)?;
+
+				write!(f, " ")?;
+
+				write!(f, "else ")?;
+
+				write!(f, " ")?;
+
+				block_else.format_human_readable(f, true, tab_level + 1)
+			},
+			ASTNodeEnum::While { condition, block, block_else: None } => {
+				write!(f, "while ")?;
+
+				condition.format_human_readable(f, false, 0)?;
+
+				write!(f, " ")?;
+
+				block.format_human_readable(f, true, tab_level)
+			},
+			ASTNodeEnum::Binary { left, op, right } =>
+				write!(f, "({left} {op} {right})"),
+			ASTNodeEnum::Unary {op, value} =>
+				write!(f, "{op}({value})"),
+			ASTNodeEnum::Function {name, arg} => {
+				write!(f, "{name}({arg})")
+			},
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
+				write!(f, "def {name}(")?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{arg}")?;
+				}
+
+				write!(f, ") ")?;
+
+				block.format_human_readable(f, true, tab_level + 1)?;
+
+				Ok(())
+			},
+			ASTNodeEnum::FunctionDefinition { name: None, args, block } => {
+				write!(f, "anonymous def(")?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{arg}")?;
+				}
+
+				write!(f, ") ")?;
+
+				block.format_human_readable(f, true, tab_level + 1)
 			},
 		}
 	}
@@ -580,32 +724,12 @@ impl Parser {
 
 					let old_cur = mem::replace(cur, ASTNode::NONE);
 
-					// match x.token_type.arity() {
-					// 	OpArity::Binary => {
 					self.consume_next();
 
 					let right = self.parse(right_precedence)?;
 
 					let new_cur = ASTNode { value: ASTNodeEnum::Binary { left: Box::new(old_cur), op, right: Box::new(right) }, row, column };
 					*cur = new_cur;
-					// 	}
-
-						// OpArity::Ternary => {
-						// 	self.consume_next();
-
-						// 	let center = self.parse(right_precedence)?;
-
-						// 	self.consume_next();
-
-						// 	let right = self.parse(right_precedence)?;
-
-						// 	let new_cur = ASTNode { value: ASTNodeEnum::Ternary {
-						// 		left: Box::new(old_cur), op: op, center: Box::new(center), right: Box::new(right)
-						// 	}, row, column };
-
-						// 	*cur = new_cur;
-						// }
-					// }
 				},
 				_ => break
 			}
