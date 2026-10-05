@@ -191,12 +191,11 @@ impl std::fmt::Display for UnaryOp {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ASTNodeEnum {
 	None,
-	Everything,
 	Boolean(bool),
-	Number(f64),
+	Float(f64),
 	String(String),
 	Tuple(Vec<ASTNode>),
 	Variable(String),
@@ -233,7 +232,7 @@ pub enum ASTNodeEnum {
 	},
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ASTNode {
 	pub value: ASTNodeEnum,
 	pub row: usize, pub column: usize,
@@ -263,9 +262,8 @@ impl std::fmt::Display for ASTNodeEnum {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			ASTNodeEnum::None => write!(f, "()"),
-			ASTNodeEnum::Everything => write!(f, "..."),
 			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
-			ASTNodeEnum::Number(value) => write!(f, "{value}"),
+			ASTNodeEnum::Float(value) => write!(f, "{value}"),
 			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
 			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
 			ASTNodeEnum::Tuple(values) => {
@@ -361,9 +359,8 @@ impl ASTNodeEnum {
 
 		match self {
 			ASTNodeEnum::None => write!(f, "()"),
-			ASTNodeEnum::Everything => write!(f, "..."),
 			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
-			ASTNodeEnum::Number(value) => write!(f, "{value}"),
+			ASTNodeEnum::Float(value) => write!(f, "{value}"),
 			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
 			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
 			ASTNodeEnum::Tuple(values) => {
@@ -563,33 +560,28 @@ impl Parser {
 	}
 
 	pub fn parse_instructions(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		let (row, column) = match self.peek(0) {
-			Some(Token { row, column, .. }) => (*row, *column),
-			None => return Ok(None),
+		let Some((row, column)) = self.peek(0).map(|v| (v.row, v.column)) else {
+			return Ok(None)
 		};
 
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
-		loop {
-			if let Some(Token { token_type: TokenType::RBrace | TokenType::Eof, .. }) = self.peek(0) {
-				break;
-			}
+		self.skip(&TokenType::Semicolon);
 
-			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+		while let Some(cur) = self.peek(0) && !matches!(cur.token_type, TokenType::RBrace | TokenType::Eof) {
+			result.push_back(
+				self.parse(TokenType::MAX_PRECEDENCE)?
+			);
 
-			result.push_back(value);
-
-			if let Some(Token { token_type: TokenType::Semicolon, .. }) = self.peek(0) {
-				self.skip(&TokenType::Semicolon);
-			}
+			self.skip(&TokenType::Semicolon);
 		}
 
-		if result.len() == 1 {
-			Ok(result.pop_front())
-		} else {
+		if result.len() > 1 {
 			Ok(Some(
 				ASTNode { value: ASTNodeEnum::Block(result), row, column }
 			))
+		} else {
+			Ok(result.pop_front())
 		}
 	}
 
@@ -797,19 +789,19 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::Everything, column, row}, ..) => {
+			// (&Token {token_type: TokenType::Everything, column, row}, ..) => {
+			// 	self.consume_next();
+
+			// 	Ok(Some(
+			// 		ASTNode { value: ASTNodeEnum::Everything, row, column }
+			// 	))
+			// }
+
+			(&Token {token_type: TokenType::Float(value), column, row}, _) => {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Everything, row, column }
-				))
-			}
-
-			(&Token {token_type: TokenType::Number(value), column, row}, _) => {
-				self.consume_next();
-
-				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Number(value), row, column }
+					ASTNode { value: ASTNodeEnum::Float(value), row, column }
 				))
 			}
 

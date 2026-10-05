@@ -1,5 +1,7 @@
-test = 2 + 2 * 2
+x = 123
 
-a = 123 * 456
+def test() {
+	print("Hello, world!")
+}
 
-print("test =", test)
+test()

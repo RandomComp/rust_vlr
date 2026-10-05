@@ -1,20 +1,23 @@
-use std::mem;
+use std::{collections::HashMap, mem};
 
-use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_result::{UniResult, UniResultError, calc_binary_by_op}};
+use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_type::{UniResult, UniResultError, calc_binary_by_op}};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OptimizerError {
 	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
+	#[error("'{0}' variable is not known in current scope")]
+	NotKnownAtThisScope(String),
 }
 
 pub struct Optimizer {
+	constants: HashMap<String, UniResult>,
 }
 
 impl Optimizer {
-	// pub fn new() -> Self {
-	// 	Self {}
-	// }
+	pub fn new() -> Self {
+		Self {constants: HashMap::new()}
+	}
 
 	pub fn have_no_effects(ast: &ASTNode) -> bool {
 		match &ast.value {
@@ -43,18 +46,88 @@ impl Optimizer {
 		match &mut ast.value {
 			ASTNodeEnum::Binary {
 				left,
-				op: BinaryOp::Plus | BinaryOp::Minus,
+				op: BinaryOp::Multiply,
 				right
-			} if let ASTNodeEnum::Number(0.0) = right.value => {
+			} if left.value == ASTNodeEnum::Float(0.0) || right.value == ASTNodeEnum::Float(0.0) => {
+				ast.value = ASTNodeEnum::Float(0.0);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Multiply,
+				right
+			} if right.value == ASTNodeEnum::Float(1.0) => {
 				 *ast = mem::take(left);
 			},
-			// ASTNodeEnum::Binary {
-			// 	left,
-			// 	op: TokenType::TokenMinus,
-			// 	right
-			// } if left => {
-			// 	*ast = ASTNode { value: ASTNodeEnum::Number(0.0), row, column };
-			// },
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Multiply,
+				right
+			} if left.value == ASTNodeEnum::Float(1.0) => {
+				 *ast = mem::take(right);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Plus,
+				right
+			} if let ASTNodeEnum::Float(0.0) = left.value => {
+				 *ast = mem::take(right);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Minus,
+				right
+			} if let ASTNodeEnum::Float(0.0) = left.value => {
+				*ast = ASTNode {
+					value: ASTNodeEnum::Unary {
+						op: UnaryOp::Minus, value: mem::take(right)
+					},
+					row, column
+				};
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Plus | BinaryOp::Minus,
+				right
+			} if let ASTNodeEnum::Float(0.0) = right.value => {
+				 *ast = mem::take(left);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Plus,
+				right
+			} if left.value == right.value => {
+				let left = mem::take(left);
+
+				*ast = ASTNode {
+					value: ASTNodeEnum::Binary {
+						left,
+						op: BinaryOp::Multiply,
+						right: Box::new(ASTNode { value: ASTNodeEnum::Float(2.0), row, column }),
+					},
+					row, column
+				};
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Minus,
+				right
+			} if left.value == right.value => {
+				ast.value = ASTNodeEnum::Float(0.0);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Equals | BinaryOp::LessOrEquals | BinaryOp::GreatOrEquals,
+				right
+			} if left.value == right.value => {
+				ast.value = ASTNodeEnum::Boolean(true);
+			},
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::NotEquals | BinaryOp::Less | BinaryOp::Great,
+				right
+			} if left.value == right.value => {
+				ast.value = ASTNodeEnum::Boolean(false);
+			},
 			ASTNodeEnum::Binary {
 				left,
 				op: BinaryOp::LogicalAnd,
@@ -99,10 +172,25 @@ impl Optimizer {
 		}
 	}
 
-	pub fn fold(ast: &mut ASTNode) -> Result<(), OptimizerError> {
+	pub fn fold(&mut self, ast: &mut ASTNode) -> Result<(), OptimizerError> {
 		let (row, column) = (ast.row, ast.column);
 
 		match &mut ast.value {
+			// ASTNodeEnum::Variable(name) => {
+			// 	let constant_value = self.constants.get(name).ok_or(OptimizerError::NotKnownAtThisScope(name.to_owned()))?;
+			// 	ast.value = constant_value.clone().try_into()?;
+			// },
+			// ASTNodeEnum::Binary { left, op:BinaryOp::Assignment, right } if let ASTNodeEnum::Variable(name) = &left.value => {
+			// 	self.fold(right)?;
+
+			// 	let Ok(constant_value): Result<UniResult, _> = (**right).clone().try_into() else {
+			// 		return Ok(())
+			// 	};
+
+			// 	self.constants.insert(name.to_owned(), constant_value);
+
+			// 	ast.value = ASTNodeEnum::None;
+			// },
 			ASTNodeEnum::Binary {
 				left: _, op:BinaryOp::Assignment |
 							BinaryOp::PlusAssignment |
@@ -111,10 +199,10 @@ impl Optimizer {
 							BinaryOp::PowAssignment |
 							BinaryOp::DivideAssignment,
 				right } => {
-				Self::fold(right)?;
+				self.fold(right)?;
 			},
 			ASTNodeEnum::Unary { op: UnaryOp::Minus, value } => {
-				Self::fold(value)?;
+				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
 					Self::simplify(ast);
@@ -125,7 +213,7 @@ impl Optimizer {
 				ast.value = value.neg()?.try_into()?;
 			},
 			ASTNodeEnum::Unary { op: UnaryOp::Not, value } => {
-				Self::fold(value)?;
+				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
 					Self::simplify(ast);
@@ -136,8 +224,8 @@ impl Optimizer {
 				ast.value = value.not()?.try_into()?;
 			},
 			ASTNodeEnum::Binary { left, op, right } => {
-				let left_is_err = Self::fold(left).is_err();
-				let right_is_err = Self::fold(right).is_err();
+				let left_is_err = self.fold(left).is_err();
+				let right_is_err = self.fold(right).is_err();
 
 				if left_is_err || right_is_err {
 					Self::simplify(ast);
@@ -161,19 +249,19 @@ impl Optimizer {
 			},
 			ASTNodeEnum::Tuple(values) => {
 				for value in values {
-					Self::fold(value)?;
+					self.fold(value)?;
 				}
 			},
 			ASTNodeEnum::Function { name: _, arg } => {
-				Self::fold(arg)?;
+				self.fold(arg)?;
 			},
 			ASTNodeEnum::FunctionDefinition { name: _, args: _, block } => {
-				Self::fold(block)?;
+				self.fold(block)?;
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
-				Self::fold(block)?;
+				self.fold(block)?;
 
-				Self::fold(condition)?;
+				self.fold(condition)?;
 
 				let condition_folded: Result<UniResult, _> = (**condition).clone().try_into();
 
@@ -186,11 +274,11 @@ impl Optimizer {
 				}
 			},
 			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
-				Self::fold(condition)?;
+				self.fold(condition)?;
 
 				let condition_folded: Result<UniResult, UniResultError> = (**condition).clone().try_into();
-				Self::fold(block)?;
-				Self::fold(block_else)?;
+				self.fold(block)?;
+				self.fold(block_else)?;
 
 				if let Ok(condition) = condition_folded {
 					if condition.to_bool()? {
@@ -201,9 +289,9 @@ impl Optimizer {
 				}
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
-				Self::fold(block)?;
+				self.fold(block)?;
 
-				Self::fold(condition)?;
+				self.fold(condition)?;
 
 				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
 					return Ok(())
@@ -214,9 +302,9 @@ impl Optimizer {
 				}
 			},
 			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
-				Self::fold(condition)?;
-				Self::fold(block)?;
-				Self::fold(block_else)?;
+				self.fold(condition)?;
+				self.fold(block)?;
+				self.fold(block_else)?;
 
 				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
 					return Ok(())
@@ -228,7 +316,7 @@ impl Optimizer {
 			},
 			ASTNodeEnum::Block(exprs) => {
 				for expr in exprs {
-					Self::fold(expr)?;
+					self.fold(expr)?;
 				}
 			},
 			_ => {},

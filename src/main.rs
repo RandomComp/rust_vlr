@@ -4,7 +4,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use std::fmt::Debug;
+use std::fmt::{Debug, write};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -15,14 +15,14 @@ use rustyline::{DefaultEditor, error::ReadlineError::self};
 mod lexer;
 mod parser;
 mod optimizer;
-mod uni_result;
+mod uni_type;
 mod compiler;
 mod vm;
 
 use crate::optimizer::{Optimizer, OptimizerError};
 use crate::vm::{VM, VMError};
 use crate::compiler::{Compiler, CompilerError};
-use crate::lexer::{Lexer, LexerError, Token};
+use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 
 #[derive(argh::FromArgs, Debug)]
@@ -36,7 +36,7 @@ struct Args {
 	format: Option<String>,
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 enum AppError {
 	#[error("Lexer error: {0}")]
 	Lexer(#[from] LexerError),
@@ -52,10 +52,20 @@ enum AppError {
 	IO(#[from] io::Error),
 	#[error("Fmt error: {0}")]
 	Fmt(#[from] fmt::Error),
+	#[error("Readline error: {0}")]
+	Readline(#[from] ReadlineError),
+	#[error("Empty code")]
+	EmptyCode,
+}
+
+impl Debug for AppError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    	write!(f, "{self}")
+	}
 }
 
 fn repl() -> Result<(), AppError> {
-	let mut rl = DefaultEditor::new().unwrap();
+	let mut rl = DefaultEditor::new()?;
 
 	// let mut compiler = Compiler::new();
 
@@ -74,11 +84,9 @@ fn repl() -> Result<(), AppError> {
 			}
 		};
 
-		rl.add_history_entry(code.clone()).unwrap();
-
 		let mut lexer = Lexer::new(code.chars());
 
-		let tokens: Vec<Token> = match lexer.tokenize_loop() {
+		let tokens = match lexer.tokenize_loop() {
 			Ok(x) => x,
 			Err(e) => {
 				eprintln!("Lexer error: {e}");
@@ -94,7 +102,8 @@ fn repl() -> Result<(), AppError> {
 		let mut parser = Parser::new(tokens);
 
 		let ast = match parser.parse_instructions() {
-			Ok(x) => x.unwrap(),
+			Ok(Some(x)) => x,
+			Ok(None) => continue,
 			Err(e) => {
 				eprintln!("Parser error: {e}");
 
@@ -123,6 +132,8 @@ fn repl() -> Result<(), AppError> {
 		} else if let Err(e) = result {
 			eprintln!("VM error: {e}");
 		}
+
+		rl.add_history_entry(code)?;
 	}
 }
 
@@ -155,7 +166,7 @@ fn format(code: &str) -> Result<(), AppError> {
 
 	let mut lexer = Lexer::new(code.chars());
 
-	let tokens: Vec<Token> = lexer.tokenize_loop().unwrap_or_else(|e| {
+	let tokens = lexer.tokenize_loop().unwrap_or_else(|e| {
 		eprintln!("Lexer error: {e}");
 
 		process::exit(1);
@@ -180,7 +191,9 @@ fn format(code: &str) -> Result<(), AppError> {
 	println!("ast (with formatting) = {ast_str}");
 	println!("ast (without formatting) = {ast}");
 
-	Optimizer::fold(&mut ast)?;
+	let mut optimizer = Optimizer::new();
+
+	optimizer.fold(&mut ast)?;
 
 	ast_str.clear();
 
@@ -197,11 +210,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	let mut lexer = Lexer::new(code.chars());
 
-	let tokens: Vec<Token> = lexer.tokenize_loop().unwrap_or_else(|e| {
-		eprintln!("Lexer error: {e}");
-
-		process::exit(1);
-	});
+	let tokens = lexer.tokenize_loop()?;
 
 	// for token in &tokens {
 	// 	println!("token = {}", token);
@@ -209,11 +218,9 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	let mut parser = Parser::new(tokens);
 
-	let mut ast = parser.parse_instructions().unwrap_or_else(|e| {
-		eprintln!("Parser error: {e}");
-
-		process::exit(1);
-	}).unwrap();
+	let Some(mut ast) = parser.parse_instructions()? else {
+		return Err(AppError::EmptyCode)
+	};
 
 	let mut ast_str = String::new();
 
@@ -221,7 +228,9 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	println!("ast = {ast_str}");
 
-	Optimizer::fold(&mut ast)?;
+	let mut optimizer = Optimizer::new();
+
+	optimizer.fold(&mut ast)?;
 
 	ast_str.clear();
 
@@ -271,47 +280,21 @@ fn compile_file(file: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-fn main() {
+fn main() -> Result<(), AppError> {
 	let args: Args = argh::from_env();
 
 	match args {
-		Args { format: Some(format), .. } => {
-			format_file(&format).unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			});
-		}
+		Args { format: Some(format), .. } =>
+			format_file(&format),
 		Args { run: Some(file_to_run), compile: Some(file_to_compile), .. } => {
-			compile_file(&file_to_compile).unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			});
-			run_file(&file_to_run).unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			});
+			compile_file(&file_to_compile)?;
+			run_file(&file_to_run)
 		},
 		Args { run: Some(file), compile: None, .. } =>
-			run_file(&file).unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			}),
+			run_file(&file),
 		Args { run: None, compile: Some(file), .. } =>
-			compile_file(&file).unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			}),
-		Args { run: None, compile: None, .. } => {
-			repl().unwrap_or_else(|e| {
-				eprintln!("{e}");
-
-				process::exit(1);
-			});
-		}
+			compile_file(&file),
+		Args { run: None, compile: None, .. } =>
+			repl(),
 	}
 }

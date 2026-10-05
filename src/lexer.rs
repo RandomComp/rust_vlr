@@ -3,7 +3,7 @@ use std::{iter::Skip, num::ParseFloatError, str::Chars};
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
 	Undefined,
-	Number(f64),
+	Float(f64),
 	Word(String),
 	String(String),
 	Plus,
@@ -110,7 +110,7 @@ impl std::fmt::Display for TokenType {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			Self::Undefined => write!(f, "undefined"),
-			Self::Number(x) => write!(f, "{x}"),
+			Self::Float(x) => write!(f, "{x}"),
 			Self::Word(word) => write!(f, "{word}"),
 			Self::String(word) => write!(f, "\"{word}\""),
 
@@ -294,7 +294,7 @@ impl<'a> Lexer<'a> {
 
 		self.consume_next(word_chr_cnt);
 
-		Ok(Token::new(TokenType::Number(result), row, column))
+		Ok(Token::new(TokenType::Float(result), row, column))
 	}
 
 	fn tokenize_word(&mut self) -> Token {
@@ -427,16 +427,11 @@ impl<'a> Lexer<'a> {
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
 		let mut result: Vec<Token> = Vec::new();
 
-		loop {
-			let token = self.tokenize()?;
-			let token_type = token.token_type.clone();
-
+		while let token = self.tokenize()? && token.token_type != TokenType::Eof {
 			result.push(token);
-
-			if token_type == TokenType::Eof {
-				break;
-			}
 		}
+
+		result.push(Token::new(TokenType::Eof, self.row, self.column));
 
 		Ok(result)
 	}

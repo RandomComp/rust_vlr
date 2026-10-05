@@ -19,7 +19,8 @@ pub enum UniResult {
 	ArgsEnd,
 	None,
 	Boolean(bool),
-	Number(f64),
+	NumberU32(u32),
+	Float(f64),
 	String(String),
 	Tuple(Vec<UniResult>),
 	Range { start: f64, end: f64, step: f64 },
@@ -32,7 +33,7 @@ impl TryFrom<UniResult> for ASTNodeEnum {
 		let result = match value {
 			UniResult::None => ASTNodeEnum::None,
 			UniResult::Boolean(val) => ASTNodeEnum::Boolean(val),
-			UniResult::Number(val) => ASTNodeEnum::Number(val),
+			UniResult::Float(val) => ASTNodeEnum::Float(val),
 			UniResult::String(val) => ASTNodeEnum::String(val),
 			UniResult::Tuple(values) => {
 				let result: Result<Vec<ASTNode>, _> = values.into_iter().map(TryInto::try_into).collect();
@@ -61,7 +62,7 @@ impl TryFrom<ASTNodeEnum> for UniResult {
 		let result = match value {
 			ASTNodeEnum::None => Self::None,
 			ASTNodeEnum::Boolean(val) => Self::Boolean(val),
-			ASTNodeEnum::Number(val) => Self::Number(val),
+			ASTNodeEnum::Float(val) => Self::Float(val),
 			ASTNodeEnum::String(val) => Self::String(val),
 			ASTNodeEnum::Tuple(values) => {
 				let result: Result<Vec<Self>, _> = values.into_iter().map(TryInto::try_into).collect();
@@ -106,7 +107,8 @@ impl Display for UniResult {
 			UniResult::ArgsEnd => write!(f, "<args end>"),
 			UniResult::None => write!(f, "None"),
 			UniResult::Boolean(x) => write!(f, "{x}"),
-			UniResult::Number(x) => write!(f, "{x}"),
+			UniResult::NumberU32(x) => write!(f, "{x}"),
+			UniResult::Float(x) => write!(f, "{x}"),
 			UniResult::String(x) => write!(f, "\"{x}\""),
 			UniResult::Tuple(values) => {
 				write!(f, "(")?;
@@ -131,10 +133,10 @@ impl Display for UniResult {
 impl UniResult {
 	pub fn add(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(Self::Number(a), &Self::Number(b))
-				=> Ok(Self::Number(a + b)),
-			(Self::Tuple(values), b @ Self::Number(..)) |
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a + b)),
+			(Self::Tuple(values), b @ Self::Float(..)) |
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -157,9 +159,9 @@ impl UniResult {
 	}
 	pub fn sub(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(Self::Number(a), &Self::Number(b))
-				=> Ok(Self::Number(a - b)),
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a - b)),
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -168,7 +170,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -191,10 +193,10 @@ impl UniResult {
 	}
 	pub fn mul(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(Self::Number(a), Self::Number(b))
-				=> Ok(Self::Number(a * b)),
-			(Self::Tuple(values), &Self::Number(b)) |
-			(&Self::Number(b), Self::Tuple(values)) => {
+			(Self::Float(a), Self::Float(b))
+				=> Ok(Self::Float(a * b)),
+			(Self::Tuple(values), &Self::Float(b)) |
+			(&Self::Float(b), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -218,9 +220,9 @@ impl UniResult {
 	}
 	pub fn div(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(Self::Number(a), &Self::Number(b))
-				=> Ok(Self::Number(a / b)),
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a / b)),
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -229,7 +231,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -252,9 +254,9 @@ impl UniResult {
 	}
 	pub fn pow(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(Self::Number(a), &Self::Number(b))
-				=> Ok(Self::Number(a.powf(b))),
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a.powf(b))),
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -263,7 +265,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -289,12 +291,12 @@ impl UniResult {
 		match (self, right) {
 			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(UniResult::Boolean(a == b)),
-			(&Self::Number(a), &Self::Number(b))
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a == b)),
-			(b @ Self::Number(..), Self::Tuple(values)) |
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) |
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -320,12 +322,12 @@ impl UniResult {
 		match (self, right) {
 			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(Self::Boolean(a != b)),
-			(&Self::Number(a), &Self::Number(b))
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean((a - b).abs() > f64::EPSILON)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a != b)),
-			(b @ Self::Number(..), Self::Tuple(values)) |
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) |
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -349,11 +351,11 @@ impl UniResult {
 
 	pub fn lt(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&Self::Number(a), &Self::Number(b))
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a < b)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a < b)),
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -362,7 +364,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -386,11 +388,11 @@ impl UniResult {
 
 	pub fn gt(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&Self::Number(a), &Self::Number(b))
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a > b)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a > b)),
-			(b @ Self::Number(..), Self::Tuple(values)) => {
+			(b @ Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -399,7 +401,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Tuple(values), b @ Self::Number(..)) => {
+			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -477,8 +479,8 @@ impl UniResult {
 
 	pub fn neg(&self) -> Result<Self, UniResultError> {
 		match self {
-			&Self::Number(x)
-				=> Ok(Self::Number(-x)),
+			&Self::Float(x)
+				=> Ok(Self::Float(-x)),
 			Self::Tuple(values) => {
 				let mut result = Vec::new();
 
@@ -509,10 +511,19 @@ impl UniResult {
 		}
 	}
 
+	pub fn to_u32(&self) -> Result<u32, UniResultError> {
+		if let &Self::NumberU32(x) = self {
+			Ok(x)
+		} else {
+			Err(UniResultError::IncompatibleOperationType)
+		}
+	}
+
 	pub fn to_bool(&self) -> Result<bool, UniResultError> {
-		match self {
-			&Self::Boolean(x) => Ok(x),
-			_ => Err(UniResultError::IncompatibleOperationType),
+		if let &Self::Boolean(x) = self {
+			Ok(x)
+		} else {
+			Err(UniResultError::IncompatibleOperationType)
 		}
 	}
 }
@@ -523,9 +534,15 @@ impl From<bool> for UniResult {
 	}
 }
 
+impl From<u32> for UniResult {
+	fn from(value: u32) -> Self {
+		UniResult::NumberU32(value)
+	}
+}
+
 impl From<f64> for UniResult {
 	fn from(value: f64) -> Self {
-		UniResult::Number(value)
+		UniResult::Float(value)
 	}
 }
 
@@ -543,30 +560,30 @@ impl From<Vec<UniResult>> for UniResult {
 
 impl From<UniResult> for f64 {
 	fn from(value: UniResult) -> f64 {
-		if let UniResult::Number(x) = value {
-			x
-		} else {
+		let UniResult::Float(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
-		}
+		};
+
+		x
 	}
 }
 
 impl From<UniResult> for String {
 	fn from(value: UniResult) -> String {
-		if let UniResult::String(x) = value {
-			x
-		} else {
+		let UniResult::String(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
-		}
+		};
+
+		x
 	}
 }
 
 impl From<UniResult> for Vec<UniResult> {
 	fn from(value: UniResult) -> Vec<UniResult> {
-		if let UniResult::Tuple(x) = value {
-			x
-		} else {
+		let UniResult::Tuple(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
-		}
+		};
+
+		x
 	}
 }

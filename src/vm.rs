@@ -1,6 +1,6 @@
-use std::{collections::VecDeque, ops::IndexMut, string::FromUtf8Error};
+use std::{fmt::Write, collections::VecDeque, ops::IndexMut, string::FromUtf8Error};
 
-use crate::{compiler::{Bytecode, NativeFunctionId}, uni_result::{UniResult, UniResultError}};
+use crate::{compiler::{Bytecode, NativeFunctionId}, uni_type::{UniResult, UniResultError}};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VMError {
@@ -8,6 +8,8 @@ pub enum VMError {
 	UniResultError(#[from] UniResultError),
 	#[error("invalid UTF-8: {0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
+	#[error("fmt::Error: {0}")]
+	Fmt(#[from] std::fmt::Error),
 	// #[error("Unknown native function with id {0} call")]
 	// UnknownNativeFunctionCall(NativeFunctionId),
 	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
@@ -79,33 +81,31 @@ impl VM {
 		result
 	}
 
-	fn disasm_inst(&mut self) -> Result<bool, VMError> {
-		println!("{:02}:", self.pc);
-
+	fn disasm_inst(&mut self, f: &mut String) -> Result<bool, VMError> {
 		let result = match self.peek(0) {
 			Some(Bytecode::NOP | Bytecode::NOP_FF) => true,
 			Some(Bytecode::PUSH_FALSE) => {
 				self.consume_next(1);
 
-				println!("push false");
+				write!(f, "push false")?;
 
 				true
 			}
 			Some(Bytecode::PUSH_TRUE) => {
 				self.consume_next(1);
 
-				println!("push true");
+				write!(f, "push true")?;
 
 				true
 			}
-			Some(Bytecode::PUSH_NUMBER) => {
+			Some(Bytecode::PUSH_FLOAT) => {
 				self.consume_next(1);
 
 				let bytes = self.consume_const_bytes_and_get::<8>();
 
 				let number = f64::from_le_bytes(bytes);
 
-				println!("push {number}");
+				write!(f, "push {number}")?;
 
 				true
 			},
@@ -118,7 +118,7 @@ impl VM {
 
 				let text = String::from_utf8(bytes)?;
 
-				println!("push \"{text}\"");
+				write!(f, "push \"{text}\"")?;
 
 				true
 			},
@@ -127,7 +127,7 @@ impl VM {
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
-				println!("look {index}");
+				write!(f, "look {index}")?;
 
 				true
 			},
@@ -136,139 +136,155 @@ impl VM {
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
-				println!("load {index}");
+				write!(f, "load {index}")?;
 
 				true
 			},
 			Some(Bytecode::REMOVE) => {
 				self.consume_next(1);
 
-				println!("remove");
+				write!(f, "remove")?;
 
 				true
 			},
 			Some(Bytecode::PUSH_ARG_END) => {
 				self.consume_next(1);
 
-				println!("push args_end");
+				write!(f, "push args_end")?;
 
 				true
 			},
 			Some(Bytecode::ADD) => {
 				self.consume_next(1);
 
-				println!("add");
+				write!(f, "add")?;
 
 				true
 			},
 			Some(Bytecode::SUB) => {
 				self.consume_next(1);
 
-				println!("sub");
+				write!(f, "sub")?;
 
 				true
 			},
 			Some(Bytecode::MUL) => {
 				self.consume_next(1);
 
-				println!("mul");
+				write!(f, "mul")?;
 
 				true
 			},
 			Some(Bytecode::DIV) => {
 				self.consume_next(1);
 
-				println!("div");
+				write!(f, "div")?;
 
 				true
 			},
 			Some(Bytecode::POW) => {
 				self.consume_next(1);
 
-				println!("pow");
+				write!(f, "pow")?;
 
 				true
 			},
 			Some(Bytecode::EQ) => {
 				self.consume_next(1);
 
-				println!("eq");
+				write!(f, "eq")?;
 
 				true
 			},
 			Some(Bytecode::NEQ) => {
 				self.consume_next(1);
 
-				println!("neq");
+				write!(f, "neq")?;
 
 				true
 			},
 			Some(Bytecode::LT) => {
 				self.consume_next(1);
 
-				println!("lt");
+				write!(f, "lt")?;
 
 				true
 			},
 			Some(Bytecode::GT) => {
 				self.consume_next(1);
 
-				println!("gt");
+				write!(f, "gt")?;
 
 				true
 			},
 			Some(Bytecode::LOG_AND) => {
 				self.consume_next(1);
 
-				println!("log_and");
+				write!(f, "log_and")?;
 
 				true
 			},
 			Some(Bytecode::LOG_OR) => {
 				self.consume_next(1);
 
-				println!("log_or");
+				write!(f, "log_or")?;
 
 				true
 			},
 			Some(Bytecode::NEG) => {
 				self.consume_next(1);
 
-				println!("neg");
+				write!(f, "neg")?;
 
 				true
 			},
 			Some(Bytecode::NOT) => {
 				self.consume_next(1);
 
-				println!("not");
+				write!(f, "not")?;
 
 				true
 			},
 			Some(Bytecode::JIT) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) + 5;
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				println!("jit +{jump:02}");
+				write!(f, "jit {jump:02}")?;
 
 				true
 			},
 			Some(Bytecode::JIF) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) + 5;
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				println!("jif +{jump:02}");
+				write!(f, "jif {jump:02}")?;
 
 				true
 			},
 			Some(Bytecode::JMP) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) + 5;
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				println!("jmp +{jump:02}");
+				write!(f, "jmp {jump:02}")?;
+
+				true
+			},
+			Some(Bytecode::CALL) => {
+				self.consume_next(1);
+
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
+
+				write!(f, "call {jump:02}")?;
+
+				true
+			},
+			Some(Bytecode::RET) => {
+				self.consume_next(1);
+
+				write!(f, "ret")?;
 
 				true
 			},
@@ -277,7 +293,7 @@ impl VM {
 
 				let id = u8::from_le_bytes(self.consume_const_bytes_and_get::<1>());
 
-				println!("native_call {}", NativeFunctionId::from(id).get_name());
+				write!(f, "native_call {}", NativeFunctionId::from(id).get_name())?;
 
 				true
 			}
@@ -291,7 +307,13 @@ impl VM {
 	fn disasm_inst_nochange(&mut self) -> Result<(), VMError> {
 		let index = self.pc;
 
-		self.disasm_inst()?;
+		let mut buf = String::new();
+
+		println!("{:02}:", index);
+
+		if self.disasm_inst(&mut buf)? {
+			println!("{buf}");
+		}
 
 		self.pc = index;
 
@@ -301,7 +323,20 @@ impl VM {
 	pub fn disasm(&mut self) -> Result<(), VMError> {
 		self.pc = 0;
 
-		while self.disasm_inst()? {}
+		let mut buf = String::new();
+
+		loop {
+			if !self.disasm_inst(&mut buf)? {
+				break;
+			}
+
+			buf.clear();
+
+			println!("{:02}:", self.pc);
+			println!("{buf}");
+		}
+
+		println!();
 
 		Ok(())
 	}
@@ -326,7 +361,7 @@ impl VM {
 			let end = &args[1];
 
 			match (start, end) {
-				(UniResult::Number(start), UniResult::Number(end)) => Ok(UniResult::Range { start: *start, end: *end, step: 1.0 }),
+				(UniResult::Float(start), UniResult::Float(end)) => Ok(UniResult::Range { start: *start, end: *end, step: 1.0 }),
 				_ => Err(VMError::UniResultError(UniResultError::IncompatibleOperationType))
 			}
 		}
@@ -341,7 +376,7 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, VMError> {
-		// self.disasm_inst_nochange()?;
+		self.disasm_inst_nochange()?;
 
 		let result = match self.peek(0) {
 			Some(Bytecode::PUSH_FALSE) => {
@@ -358,7 +393,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::PUSH_NUMBER) => {
+			Some(Bytecode::PUSH_FLOAT) => {
 				self.consume_next(1);
 
 				let bytes = self.consume_const_bytes_and_get::<8>();
@@ -551,14 +586,10 @@ impl VM {
 			Some(Bytecode::JIT) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
 				if self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
-					if jump < 0 {
-						self.pc -= jump.unsigned_abs() as usize;
-					} else {
-						self.pc += jump.unsigned_abs() as usize;
-					}
+					self.pc = jump as usize;
 				}
 
 				true
@@ -566,14 +597,10 @@ impl VM {
 			Some(Bytecode::JIF) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
 				if !self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
-					if jump < 0 {
-						self.pc -= jump.unsigned_abs() as usize;
-					} else {
-						self.pc += jump.unsigned_abs() as usize;
-					}
+					self.pc = jump as usize;
 				}
 
 				true
@@ -581,13 +608,29 @@ impl VM {
 			Some(Bytecode::JMP) => {
 				self.consume_next(1);
 
-				let jump = i32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				if jump < 0 {
-					self.pc -= jump.unsigned_abs() as usize;
-				} else {
-					self.pc += jump.unsigned_abs() as usize;
-				}
+				self.pc = jump as usize;
+
+				true
+			},
+			Some(Bytecode::CALL) => {
+				self.consume_next(1);
+
+				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
+
+				self.stack.push_back((self.pc as u32).into());
+
+				self.pc = jump as usize;
+
+				true
+			},
+			Some(Bytecode::RET) => {
+				self.consume_next(1);
+
+				let pos = self.stack.pop_back().unwrap().to_u32()?;
+
+				self.pc = pos as usize;
 
 				true
 			},
@@ -630,7 +673,7 @@ impl VM {
 		self.pc = 0;
 
 		while self.exec_inst()? {
-			// self.dump_stack();
+			self.dump_stack();
 		}
 
 		Ok(self.stack.pop_back())
