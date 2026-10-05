@@ -1,159 +1,105 @@
-use std::{fmt, iter::Skip, num::ParseFloatError, str::Chars};
+use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
-	TokenUndefined,
-	TokenNumber(f64),
-	TokenWord(String),
-	TokenString(String),
-	TokenPlus,
-	TokenMinus,
-	TokenPow,
-	TokenMultiply,
-	TokenDivide,
-	TokenRemainder,
+	Undefined,
+	Number(f64),
+	Word(String),
+	String(String),
+	Plus,
+	Minus,
+	Pow,
+	Multiply,
+	Divide,
+	Remainder,
 
-	TokenAssignment,
-	TokenPlusAssignment,
-	TokenMinusAssignment,
-	TokenPowAssignment,
-	TokenMultiplyAssignment,
-	TokenDivideAssignment,
-	TokenRemainderAssignment,
+	Assignment,
+	PlusAssignment,
+	MinusAssignment,
+	PowAssignment,
+	MultiplyAssignment,
+	DivideAssignment,
+	RemainderAssignment,
 
-	TokenTrue, TokenFalse,
-	TokenIf, TokenElse,
-	TokenWhile, TokenFor,
-	TokenBreak,
-	TokenReturn,
-	TokenDef,
-	TokenEverything,
+	True, False,
+	If, Else,
+	While, For,
+	Break,
+	Return,
+	Def,
+	Everything,
 
-	TokenEquals,
-	TokenNotEquals,
-	TokenGreat,
-	TokenLess,
-	TokenGreatOrEquals,
-	TokenLessOrEquals,
-	TokenLogicalAnd,
-	TokenLogicalOr,
+	Equals,
+	NotEquals,
+	Great,
+	Less,
+	GreatOrEquals,
+	LessOrEquals,
+	LogicalAnd,
+	LogicalOr,
 
-	TokenRange,
+	Range,
 
-	TokenComma,
-	TokenSemicolon,
-	TokenLPar,
-	TokenRPar,
-	TokenLBrace,
-	TokenRBrace,
-	TokenEOF,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum OpAssoc {
-	Left,
-	Right
-}
-
-impl fmt::Display for OpAssoc {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			Self::Left => write!(f, "left"),
-			Self::Right => write!(f, "right")
-		}
-	}
+	Comma,
+	Semicolon,
+	LPar,
+	RPar,
+	LBrace,
+	RBrace,
+	Eof,
 }
 
 impl TokenType {
 	pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
-		(Self::TokenEquals, "=="),
-		(Self::TokenNotEquals, "!="),
-		(Self::TokenGreatOrEquals, ">="),
-		(Self::TokenLessOrEquals, "<="),
-		(Self::TokenGreat, ">"),
-		(Self::TokenLess, "<"),
-		(Self::TokenLogicalAnd, "&&"),
-		(Self::TokenLogicalOr, "||"),
+		(Self::Equals, "=="),
+		(Self::NotEquals, "!="),
+		(Self::GreatOrEquals, ">="),
+		(Self::LessOrEquals, "<="),
+		(Self::Great, ">"),
+		(Self::Less, "<"),
+		(Self::LogicalAnd, "&&"),
+		(Self::LogicalOr, "||"),
 
-		(Self::TokenAssignment, "="),
-		(Self::TokenPlusAssignment, "+="),
-		(Self::TokenMinusAssignment, "-="),
-		(Self::TokenPowAssignment, "**="),
-		(Self::TokenMultiplyAssignment, "*="),
-		(Self::TokenDivideAssignment, "/="),
-		(Self::TokenRemainderAssignment, "%="),
+		(Self::Assignment, "="),
+		(Self::PlusAssignment, "+="),
+		(Self::MinusAssignment, "-="),
+		(Self::PowAssignment, "**="),
+		(Self::MultiplyAssignment, "*="),
+		(Self::DivideAssignment, "/="),
+		(Self::RemainderAssignment, "%="),
 
-		(Self::TokenPlus, "+"),
-		(Self::TokenMinus, "-"),
-		(Self::TokenPow, "**"),
-		(Self::TokenMultiply, "*"),
-		(Self::TokenDivide, "/"),
-		(Self::TokenRemainder, "%"),
+		(Self::Plus, "+"),
+		(Self::Minus, "-"),
+		(Self::Pow, "**"),
+		(Self::Multiply, "*"),
+		(Self::Divide, "/"),
+		(Self::Remainder, "%"),
 
-		(Self::TokenComma, ","),
-		(Self::TokenSemicolon, ";"),
-		(Self::TokenLPar, "("),
-		(Self::TokenRPar, ")"),
-		(Self::TokenLBrace, "{"),
-		(Self::TokenRBrace, "}"),
+		(Self::Comma, ","),
+		(Self::Semicolon, ";"),
+		(Self::LPar, "("),
+		(Self::RPar, ")"),
+		(Self::LBrace, "{"),
+		(Self::RBrace, "}"),
 
-		(Self::TokenEverything, "..."),
-		(Self::TokenRange, ".."),
+		(Self::Everything, "..."),
+		(Self::Range, ".."),
 	];
 
 	pub const MAX_PRECEDENCE: usize = 7;
 
 	fn get_keyword(word: &str) -> Option<Self> {
 		match word {
-			"true" => Some(Self::TokenTrue),
-			"false" => Some(Self::TokenFalse),
-			"if" => Some(Self::TokenIf),
-			"else" => Some(Self::TokenElse),
-			"while" => Some(Self::TokenWhile),
-			"for" => Some(Self::TokenFor),
-			"def" => Some(Self::TokenDef),
-			"break" => Some(Self::TokenBreak),
-			"return" => Some(Self::TokenReturn),
+			"true" => Some(Self::True),
+			"false" => Some(Self::False),
+			"if" => Some(Self::If),
+			"else" => Some(Self::Else),
+			"while" => Some(Self::While),
+			"for" => Some(Self::For),
+			"def" => Some(Self::Def),
+			"break" => Some(Self::Break),
+			"return" => Some(Self::Return),
 			_ => None,
-		}
-	}
-
-	pub fn precedence(&self) -> Option<usize> {
-		match self {
-			Self::TokenRange => Some(1),
-			Self::TokenPow => Some(2),
-			Self::TokenRemainder |
-			Self::TokenDivide |
-			Self::TokenMultiply => Some(3),
-			Self::TokenPlus |
-			Self::TokenMinus => Some(4),
-
-			Self::TokenEquals |
-			Self::TokenNotEquals |
-			Self::TokenGreatOrEquals |
-			Self::TokenLessOrEquals |
-			Self::TokenGreat |
-			Self::TokenLess => Some(5),
-
-			Self::TokenLogicalAnd |
-			Self::TokenLogicalOr => Some(6),
-
-			Self::TokenAssignment |
-			Self::TokenPlusAssignment |
-			Self::TokenMinusAssignment |
-			Self::TokenPowAssignment |
-			Self::TokenMultiplyAssignment |
-			Self::TokenDivideAssignment |
-			Self::TokenRemainderAssignment => Some(7),
-
-			_ => None
-		}
-	}
-
-	pub fn assoc(&self) -> OpAssoc {
-		match self {
-			Self::TokenPow => OpAssoc::Right,
-			_ => OpAssoc::Left,
 		}
 	}
 }
@@ -161,60 +107,60 @@ impl TokenType {
 impl std::fmt::Display for TokenType {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			Self::TokenUndefined => write!(f, "undefined"),
-			Self::TokenNumber(x) => write!(f, "{x}"),
-			Self::TokenWord(word) => write!(f, "{word}"),
-			Self::TokenString(word) => write!(f, "\"{word}\""),
+			Self::Undefined => write!(f, "undefined"),
+			Self::Number(x) => write!(f, "{x}"),
+			Self::Word(word) => write!(f, "{word}"),
+			Self::String(word) => write!(f, "\"{word}\""),
 
-			Self::TokenAssignment => write!(f, "="),
-			Self::TokenPlusAssignment => write!(f, "+="),
-			Self::TokenMinusAssignment => write!(f, "-="),
-			Self::TokenPowAssignment => write!(f, "**="),
-			Self::TokenMultiplyAssignment => write!(f, "*="),
-			Self::TokenDivideAssignment => write!(f, "/="),
-			Self::TokenRemainderAssignment => write!(f, "%="),
+			Self::Assignment => write!(f, "="),
+			Self::PlusAssignment => write!(f, "+="),
+			Self::MinusAssignment => write!(f, "-="),
+			Self::PowAssignment => write!(f, "**="),
+			Self::MultiplyAssignment => write!(f, "*="),
+			Self::DivideAssignment => write!(f, "/="),
+			Self::RemainderAssignment => write!(f, "%="),
 
-			Self::TokenPlus => write!(f, "+"),
-			Self::TokenMinus => write!(f, "-"),
-			Self::TokenMultiply => write!(f, "*"),
-			Self::TokenPow => write!(f, "**"),
-			Self::TokenDivide => write!(f, "/"),
-			Self::TokenRemainder => write!(f, "%"),
+			Self::Plus => write!(f, "+"),
+			Self::Minus => write!(f, "-"),
+			Self::Multiply => write!(f, "*"),
+			Self::Pow => write!(f, "**"),
+			Self::Divide => write!(f, "/"),
+			Self::Remainder => write!(f, "%"),
 
-			Self::TokenTrue => write!(f, "true"),
-			Self::TokenFalse => write!(f, "false"),
+			Self::True => write!(f, "true"),
+			Self::False => write!(f, "false"),
 
-			Self::TokenIf => write!(f, "if"),
-			Self::TokenElse => write!(f, "else"),
+			Self::If => write!(f, "if"),
+			Self::Else => write!(f, "else"),
 
-			Self::TokenWhile => write!(f, "while"),
-			Self::TokenFor => write!(f, "for"),
+			Self::While => write!(f, "while"),
+			Self::For => write!(f, "for"),
 
-			Self::TokenBreak => write!(f, "break"),
-			Self::TokenReturn => write!(f, "return"),
+			Self::Break => write!(f, "break"),
+			Self::Return => write!(f, "return"),
 
-			Self::TokenDef => write!(f, "def"),
-			Self::TokenEverything => write!(f, "..."),
+			Self::Def => write!(f, "def"),
+			Self::Everything => write!(f, "..."),
 
-			Self::TokenEquals => write!(f, "=="),
-			Self::TokenNotEquals => write!(f, "!="),
-			Self::TokenGreatOrEquals => write!(f, ">="),
-			Self::TokenLessOrEquals => write!(f, "<="),
-			Self::TokenGreat => write!(f, ">"),
-			Self::TokenLess => write!(f, "<"),
+			Self::Equals => write!(f, "=="),
+			Self::NotEquals => write!(f, "!="),
+			Self::GreatOrEquals => write!(f, ">="),
+			Self::LessOrEquals => write!(f, "<="),
+			Self::Great => write!(f, ">"),
+			Self::Less => write!(f, "<"),
 
-			Self::TokenLogicalAnd => write!(f, "&&"),
-			Self::TokenLogicalOr => write!(f, "||"),
+			Self::LogicalAnd => write!(f, "&&"),
+			Self::LogicalOr => write!(f, "||"),
 
-			Self::TokenRange => write!(f, ".."),
+			Self::Range => write!(f, ".."),
 
-			Self::TokenComma => write!(f, ","),
-			Self::TokenSemicolon => write!(f, ";"),
-			Self::TokenLPar => write!(f, "("),
-			Self::TokenRPar => write!(f, ")"),
-			Self::TokenLBrace => write!(f, "{{"),
-			Self::TokenRBrace => write!(f, "}}"),
-			Self::TokenEOF => write!(f, "EOF"),
+			Self::Comma => write!(f, ","),
+			Self::Semicolon => write!(f, ";"),
+			Self::LPar => write!(f, "("),
+			Self::RPar => write!(f, ")"),
+			Self::LBrace => write!(f, "{{"),
+			Self::RBrace => write!(f, "}}"),
+			Self::Eof => write!(f, "EOF"),
 		}
 	}
 }
@@ -288,7 +234,7 @@ impl<'a> Lexer<'a> {
 	fn tokenize_operator(&mut self) -> Result<Token, LexerError> {
 		let (row, column) = (self.row, self.column);
 
-		let mut result = &TokenType::TokenUndefined;
+		let mut result = &TokenType::Undefined;
 
 		for (token_type, op) in TokenType::TOKEN_OPERATORS {
 			let op_len = op.len();
@@ -304,7 +250,7 @@ impl<'a> Lexer<'a> {
 			}
 		}
 
-		if *result == TokenType::TokenUndefined {
+		if *result == TokenType::Undefined {
 			 return Err(LexerError::UnknownOperation {row, column})
 		}
 
@@ -345,7 +291,7 @@ impl<'a> Lexer<'a> {
 
 		self.consume_next(word_chr_cnt);
 
-		Ok(Token::new(TokenType::TokenNumber(result), row, column))
+		Ok(Token::new(TokenType::Number(result), row, column))
 	}
 
 	fn tokenize_word(&mut self) -> Token {
@@ -369,7 +315,7 @@ impl<'a> Lexer<'a> {
 		} else {
 			self.consume_next(word_chr_cnt);
 
-			Token::new(TokenType::TokenWord(word_str), self.row, self.column)
+			Token::new(TokenType::Word(word_str), self.row, self.column)
 		}
 	}
 
@@ -391,7 +337,7 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		let result = Token::new(TokenType::TokenString(word_str), row, column);
+		let result = Token::new(TokenType::String(word_str), row, column);
 
 		self.consume_next(word_chr_cnt);
 
@@ -457,7 +403,7 @@ impl<'a> Lexer<'a> {
 				Some('#') =>
 					self.skip_comments(),
 				Some(_) => break,
-				None => return Ok(Token::new(TokenType::TokenEOF, self.row, self.column))
+				None => return Ok(Token::new(TokenType::Eof, self.row, self.column))
 			}
 		}
 
@@ -471,7 +417,7 @@ impl<'a> Lexer<'a> {
 			Some(_) =>
 				self.tokenize_operator(),
 
-			None => Ok(Token::new(TokenType::TokenEOF, self.row, self.column))
+			None => Ok(Token::new(TokenType::Eof, self.row, self.column))
 		}
 	}
 
@@ -484,7 +430,7 @@ impl<'a> Lexer<'a> {
 
 			result.push(token);
 
-			if token_type == TokenType::TokenEOF {
+			if token_type == TokenType::Eof {
 				break;
 			}
 		}

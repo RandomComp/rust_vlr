@@ -1,13 +1,13 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::{lexer::TokenType, parser::{ASTNode, ASTNodeEnum}};
+use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UniResultError {
 	#[error("incompatible operation")]
 	IncompatibleOperationType,
 	#[error("Unknown operation '{0}'")]
-	UnknownOperation(TokenType),
+	UnknownOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
 	CannotConvertToUniResult(ASTNodeEnum),
 	#[error("Cannot convert to {0:?} from UniResult")]
@@ -83,17 +83,19 @@ impl TryFrom<ASTNode> for UniResult {
 	}
 }
 
-pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &TokenType) -> Result<UniResult, UniResultError> {
+pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
 	match op {
-		TokenType::TokenPlus => left.add(right),
-		TokenType::TokenMinus => left.sub(right),
-		TokenType::TokenMultiply => left.mul(right),
-		TokenType::TokenPow => left.pow(right),
-		TokenType::TokenDivide => left.div(right),
-		TokenType::TokenEquals => left.eq(right),
-		TokenType::TokenNotEquals => left.neq(right),
-		TokenType::TokenGreat => left.gt(right),
-		TokenType::TokenLess => left.lt(right),
+		BinaryOp::Plus => left.add(right),
+		BinaryOp::Minus => left.sub(right),
+		BinaryOp::Multiply => left.mul(right),
+		BinaryOp::Pow => left.pow(right),
+		BinaryOp::Divide => left.div(right),
+		BinaryOp::Equals => left.eq(right),
+		BinaryOp::NotEquals => left.neq(right),
+		BinaryOp::Great => left.gt(right),
+		BinaryOp::Less => left.lt(right),
+		BinaryOp::LogicalAnd => left.log_and(right),
+		BinaryOp::LogicalOr => left.log_or(right),
 		_ => Err(UniResultError::UnknownOperation(op.to_owned())),
 	}
 }
@@ -129,10 +131,10 @@ impl Display for UniResult {
 impl UniResult {
 	pub fn add(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Number(a + b)),
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) |
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a + b)),
+			(Self::Tuple(values), b @ Self::Number(..)) |
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -141,7 +143,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -155,9 +157,9 @@ impl UniResult {
 	}
 	pub fn sub(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Number(a - b)),
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a - b)),
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -166,7 +168,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -175,7 +177,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -189,10 +191,10 @@ impl UniResult {
 	}
 	pub fn mul(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(UniResult::Number(a), UniResult::Number(b))
-				=> Ok(UniResult::Number(a * b)),
-			(UniResult::Tuple(values), &UniResult::Number(b)) |
-			(&UniResult::Number(b), UniResult::Tuple(values)) => {
+			(Self::Number(a), Self::Number(b))
+				=> Ok(Self::Number(a * b)),
+			(Self::Tuple(values), &Self::Number(b)) |
+			(&Self::Number(b), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -202,7 +204,7 @@ impl UniResult {
 				Ok(result.into())
 			},
 
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -216,9 +218,9 @@ impl UniResult {
 	}
 	pub fn div(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Number(a / b)),
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a / b)),
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -227,7 +229,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -236,7 +238,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -250,9 +252,9 @@ impl UniResult {
 	}
 	pub fn pow(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Number(a.powf(b))),
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a.powf(b))),
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -261,7 +263,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -270,7 +272,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -285,12 +287,14 @@ impl UniResult {
 
 	pub fn eq(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Boolean((a - b).abs() < f64::EPSILON)),
-			(UniResult::String(a), UniResult::String(b))
+			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(UniResult::Boolean(a == b)),
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) |
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a == b)),
+			(b @ Self::Number(..), Self::Tuple(values)) |
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -299,7 +303,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -314,12 +318,14 @@ impl UniResult {
 
 	pub fn neq(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Boolean((a - b).abs() > f64::EPSILON)),
-			(UniResult::String(a), UniResult::String(b))
-				=> Ok(UniResult::Boolean(a != b)),
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) |
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(&Self::Boolean(a), &Self::Boolean(b))
+				=> Ok(Self::Boolean(a != b)),
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Boolean((a - b).abs() > f64::EPSILON)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a != b)),
+			(b @ Self::Number(..), Self::Tuple(values)) |
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -328,7 +334,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -343,11 +349,11 @@ impl UniResult {
 
 	pub fn lt(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Boolean(a < b)),
-			(UniResult::String(a), UniResult::String(b))
-				=> Ok(UniResult::Boolean(a < b)),
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Boolean(a < b)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a < b)),
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -356,7 +362,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -365,7 +371,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -380,11 +386,11 @@ impl UniResult {
 
 	pub fn gt(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
-			(&UniResult::Number(a), &UniResult::Number(b))
-				=> Ok(UniResult::Boolean(a > b)),
-			(UniResult::String(a), UniResult::String(b))
-				=> Ok(UniResult::Boolean(a > b)),
-			(b @ UniResult::Number(..), UniResult::Tuple(values)) => {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Boolean(a > b)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a > b)),
+			(b @ Self::Number(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -393,7 +399,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values), b @ UniResult::Number(..)) => {
+			(Self::Tuple(values), b @ Self::Number(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -402,7 +408,7 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(UniResult::Tuple(values_a), UniResult::Tuple(values_b)) => {
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
@@ -415,11 +421,65 @@ impl UniResult {
 		}
 	}
 
+	pub fn log_and(&self, right: &Self) -> Result<Self, UniResultError> {
+		match (self, right) {
+			(&Self::Boolean(a), &Self::Boolean(b)) =>
+				Ok(Self::Boolean(a && b)),
+			(x @ Self::Boolean(_), Self::Tuple(values)) |
+			(Self::Tuple(values), x @ Self::Boolean(_)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(value.log_and(x)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.log_and(b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(UniResultError::IncompatibleOperationType),
+		}
+	}
+
+	pub fn log_or(&self, right: &Self) -> Result<Self, UniResultError> {
+		match (self, right) {
+			(&Self::Boolean(a), &Self::Boolean(b)) =>
+				Ok(Self::Boolean(a || b)),
+			(x @ Self::Boolean(_), Self::Tuple(values)) |
+			(Self::Tuple(values), x @ Self::Boolean(_)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(value.log_or(x)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(a.log_or(b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(UniResultError::IncompatibleOperationType),
+		}
+	}
+
 	pub fn neg(&self) -> Result<Self, UniResultError> {
 		match self {
-			&UniResult::Number(x)
-				=> Ok(UniResult::Number(-x)),
-			UniResult::Tuple(values) => {
+			&Self::Number(x)
+				=> Ok(Self::Number(-x)),
+			Self::Tuple(values) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -434,9 +494,9 @@ impl UniResult {
 
 	pub fn not(&self) -> Result<Self, UniResultError> {
 		match self {
-			&UniResult::Boolean(x)
-				=> Ok(UniResult::Boolean(!x)),
-			UniResult::Tuple(values) => {
+			&Self::Boolean(x)
+				=> Ok(Self::Boolean(!x)),
+			Self::Tuple(values) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -451,7 +511,7 @@ impl UniResult {
 
 	pub fn to_bool(&self) -> Result<bool, UniResultError> {
 		match self {
-			&UniResult::Boolean(x) => Ok(x),
+			&Self::Boolean(x) => Ok(x),
 			_ => Err(UniResultError::IncompatibleOperationType),
 		}
 	}

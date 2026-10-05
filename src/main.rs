@@ -180,7 +180,7 @@ fn format(code: &str) -> Result<(), AppError> {
 	println!("ast (with formatting) = {ast_str}");
 	println!("ast (without formatting) = {ast}");
 
-	ast = Optimizer::fold(&ast)?;
+	Optimizer::fold(&mut ast)?;
 
 	ast_str.clear();
 
@@ -221,7 +221,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	println!("ast = {ast_str}");
 
-	ast = Optimizer::fold(&ast)?;
+	Optimizer::fold(&mut ast)?;
 
 	ast_str.clear();
 

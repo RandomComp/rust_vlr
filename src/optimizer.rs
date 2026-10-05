@@ -1,10 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::mem;
 
-use crate::{lexer::TokenType, parser::{ASTNode, ASTNodeEnum}, uni_result::{UniResult, UniResultError, calc_binary_by_op}};
+use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_result::{UniResult, UniResultError, calc_binary_by_op}};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OptimizerError {
-	#[error("UniResult error: {0}")]
+	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
 }
 
@@ -16,171 +16,213 @@ impl Optimizer {
 	// 	Self {}
 	// }
 
-	pub fn fold(ast: &ASTNode) -> Result<ASTNode, OptimizerError> {
+	pub fn have_no_effects(ast: &ASTNode) -> bool {
+		match &ast.value {
+			ASTNodeEnum::Function { .. } |
+			ASTNodeEnum::FunctionDefinition { name: Some(_), .. } |
+			ASTNodeEnum::Binary {
+				left: _,
+				op: BinaryOp::Assignment |
+					BinaryOp::PlusAssignment |
+					BinaryOp::MinusAssignment |
+					BinaryOp::MultiplyAssignment |
+					BinaryOp::PowAssignment |
+					BinaryOp::DivideAssignment,
+				right: _
+			} => false,
+			ASTNodeEnum::Binary { left, op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr, right } => {
+				Self::have_no_effects(left) && Self::have_no_effects(right)
+			},
+			_ => true,
+		}
+	}
+
+	pub fn simplify(ast: &mut ASTNode) {
 		let (row, column) = (ast.row, ast.column);
 
-		let result = match &ast.value {
-			ASTNodeEnum::Binary { left, op: TokenType::TokenAssignment, right } => {
-				let right = Box::new(Self::fold(&right)?);
-
-				ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: TokenType::TokenAssignment, right: right.to_owned() }, row, column }
+		match &mut ast.value {
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::Plus | BinaryOp::Minus,
+				right
+			} if let ASTNodeEnum::Number(0.0) = right.value => {
+				 *ast = mem::take(left);
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenPlusAssignment, right } => {
-				let right = Box::new(Self::fold(&right)?);
-
-				ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: TokenType::TokenPlusAssignment, right: right.to_owned() }, row, column }
+			// ASTNodeEnum::Binary {
+			// 	left,
+			// 	op: TokenType::TokenMinus,
+			// 	right
+			// } if left => {
+			// 	*ast = ASTNode { value: ASTNodeEnum::Number(0.0), row, column };
+			// },
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::LogicalAnd,
+				right
+			} => {
+				match (&left.value, &right.value) {
+					(ASTNodeEnum::Boolean(false), _) => {
+						ast.value = ASTNodeEnum::Boolean(false);
+					},
+					(_, ASTNodeEnum::Boolean(false)) if Self::have_no_effects(left) => {
+						ast.value = ASTNodeEnum::Boolean(false);
+					},
+					(_, ASTNodeEnum::Boolean(true)) => {
+						*ast = mem::take(left);
+					},
+					(ASTNodeEnum::Boolean(true), _) => {
+						*ast = mem::take(right);
+					},
+					_ => {},
+				}
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenMinusAssignment, right } => {
-				let right = Box::new(Self::fold(&right)?);
-
-				ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: TokenType::TokenMinusAssignment, right: right.to_owned() }, row, column }
+			ASTNodeEnum::Binary {
+				left,
+				op: BinaryOp::LogicalOr,
+				right
+			} => {
+				match (&left.value, &right.value) {
+					(ASTNodeEnum::Boolean(true), _) |
+					(_, ASTNodeEnum::Boolean(true)) if Self::have_no_effects(left) && Self::have_no_effects(right) => {
+						ast.value = ASTNodeEnum::Boolean(true);
+					},
+					(_, ASTNodeEnum::Boolean(false)) => {
+						*ast = mem::take(left);
+					},
+					(ASTNodeEnum::Boolean(false), _) => {
+						*ast = mem::take(right);
+					},
+					_ => {},
+				}
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenMultiplyAssignment, right } => {
-				let right = Box::new(Self::fold(&right)?);
+			_ => {},
+		}
+	}
 
-				ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: TokenType::TokenMultiplyAssignment, right: right.to_owned() }, row, column }
+	pub fn fold(ast: &mut ASTNode) -> Result<(), OptimizerError> {
+		let (row, column) = (ast.row, ast.column);
+
+		match &mut ast.value {
+			ASTNodeEnum::Binary {
+				left: _, op:BinaryOp::Assignment |
+							BinaryOp::PlusAssignment |
+							BinaryOp::MinusAssignment |
+							BinaryOp::MultiplyAssignment |
+							BinaryOp::PowAssignment |
+							BinaryOp::DivideAssignment,
+				right } => {
+				Self::fold(right)?;
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenDivideAssignment, right } => {
-				let right = Box::new(Self::fold(&right)?);
+			ASTNodeEnum::Unary { op: UnaryOp::Minus, value } => {
+				Self::fold(value)?;
 
-				ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: TokenType::TokenDivideAssignment, right: right.to_owned() }, row, column }
+				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
+					Self::simplify(ast);
+
+					return Ok(())
+				};
+
+				ast.value = value.neg()?.try_into()?;
 			},
 			ASTNodeEnum::Binary { left, op, right } => {
-				let left_folded = Self::fold(left);
-				let right_folded = Self::fold(right);
+				let left_is_err = Self::fold(left).is_err();
+				let right_is_err = Self::fold(right).is_err();
 
-				let Ok(left) = left_folded else {
-					return Ok(ASTNode { value: ASTNodeEnum::Binary { left: left.to_owned(), op: op.to_owned(), right: right.to_owned() }, row, column })
-				};
+				if left_is_err || right_is_err {
+					Self::simplify(ast);
 
-				let Ok(right) = right_folded else {
-					return Ok(ASTNode { value: ASTNodeEnum::Binary { left: Box::new(left), op: op.to_owned(), right: right.to_owned() }, row, column })
-				};
-
-				let result = match (left.clone().try_into() as Result<UniResult, _>, right.clone().try_into() as Result<UniResult, _>) {
-					(Ok(left), Ok(right)) =>
-						calc_binary_by_op(&left, &right, op)?.try_into()?,
-					(Ok(left), Err(_)) =>
-						ASTNodeEnum::Binary {
-							left: Box::new(ASTNode { value: left.try_into()?, row, column }),
-							op: op.to_owned(),
-							right: Box::new(right)
-						},
-					(Err(_), Ok(right)) =>
-						ASTNodeEnum::Binary {
-							left: Box::new(left),
-							op: op.to_owned(),
-							right: Box::new(ASTNode { value: right.try_into()?, row, column })
-						},
-					(Err(_), Err(_)) =>
-						ASTNodeEnum::Binary {
-							left: Box::new(ASTNode { value: left.value, row, column }),
-							op: op.to_owned(),
-							right: Box::new(ASTNode { value: right.value, row, column })
-						},
-				};
-
-				ASTNode { value: result, row, column }
-			},
-			ASTNodeEnum::Tuple(values) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(Self::fold(&value)?);
+					return Ok(())
 				}
 
-				ASTNode { value: ASTNodeEnum::Tuple(result), row, column }
-			},
-			ASTNodeEnum::Function { name, arg } => {
-				let arg = Box::new(Self::fold(&arg)?);
+				let Ok(left) = &(**left).clone().try_into() else {
+					Self::simplify(ast);
 
-				ASTNode { value: ASTNodeEnum::Function { name: name.to_owned(), arg }, row, column }
-			},
-			ASTNodeEnum::FunctionDefinition { name, args, block } => {
-				let block = Box::new(Self::fold(block)?);
+					return Ok(())
+				};
 
-				ASTNode { value: ASTNodeEnum::FunctionDefinition { name: name.to_owned(), args: args.to_owned(), block }, row, column }
+				let Ok(right) = &(**right).clone().try_into() else {
+					Self::simplify(ast);
+
+					return Ok(())
+				};
+
+				*ast = calc_binary_by_op(left, right, op)?.try_into()?;
+			},
+			ASTNodeEnum::Tuple(values) => {
+				for value in values {
+					Self::fold(value)?;
+				}
+			},
+			ASTNodeEnum::Function { name: _, arg } => {
+				Self::fold(arg)?;
+			},
+			ASTNodeEnum::FunctionDefinition { name: _, args: _, block } => {
+				Self::fold(block)?;
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
-				let block = Self::fold(&*block)?;
+				Self::fold(block)?;
 
-				let condition_folded: Result<UniResult, UniResultError> = Self::fold(&*condition)?.try_into();
+				Self::fold(condition)?;
+
+				let condition_folded: Result<UniResult, _> = (**condition).clone().try_into();
 
 				if let Ok(condition) = condition_folded {
 					if condition.to_bool()? {
-						block
+						*ast = *block.clone();
 					} else {
-						ASTNode { value: ASTNodeEnum::None, row, column }
+						ast.value = ASTNodeEnum::None;
 					}
-				} else {
-					ASTNode { value: ASTNodeEnum::If { condition: condition.to_owned(), block: Box::new(block), block_else: None }, row, column }
 				}
 			},
 			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
-				let condition_folded: Result<UniResult, UniResultError> = Self::fold(condition)?.try_into();
-				let block = Self::fold(&*block)?;
-				let block_else = Self::fold(&*block_else)?;
+				Self::fold(condition)?;
+
+				let condition_folded: Result<UniResult, UniResultError> = (**condition).clone().try_into();
+				Self::fold(block)?;
+				Self::fold(block_else)?;
 
 				if let Ok(condition) = condition_folded {
 					if condition.to_bool()? {
-						block
+						*ast = *block.clone();
 					} else {
-						block_else
+						*ast = *block_else.clone();
 					}
-				} else {
-					ASTNode { value: ASTNodeEnum::If { condition: condition.to_owned(), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row, column }
 				}
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
-				let block = Self::fold(&*block)?;
+				Self::fold(block)?;
 
-				let Ok(condition): Result<UniResult, _> = Self::fold(&*condition)?.try_into() else {
-					return Ok(ASTNode { value: ASTNodeEnum::While { condition: condition.to_owned(), block: Box::new(block), block_else: None }, row, column })
+				Self::fold(condition)?;
+
+				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
+					return Ok(())
 				};
 
-				if condition.to_bool()? {
-					ASTNode {
-						value: ASTNodeEnum::While {
-							condition: Box::new(ASTNodeEnum::Boolean(true).into()),
-							block: Box::new(block),
-							block_else: None,
-						},
-						row, column
-					}
-				} else {
-					ASTNode { value: ASTNodeEnum::None, row, column }
+				if !condition.to_bool()? {
+					*ast = ASTNode { value: ASTNodeEnum::None, row, column };
 				}
-
-				// let condition = Box::new(Self::fold(*condition)?);
-				// let block = Box::new(Self::fold(*block)?);
-
-				// ASTNode { value: ASTNodeEnum::While { condition, block, block_else: None }, row, column }
 			},
 			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
-				let condition = Box::new(Self::fold(&*condition)?);
-				let block = Box::new(Self::fold(&*block)?);
-				let block_else = Box::new(Self::fold(&*block_else)?);
+				Self::fold(condition)?;
+				Self::fold(block)?;
+				Self::fold(block_else)?;
 
-				ASTNode { value: ASTNodeEnum::While { condition, block, block_else: Some(block_else) }, row, column }
+				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
+					return Ok(())
+				};
+
+				if !condition.to_bool()? {
+					*ast = ASTNode { value: ASTNodeEnum::None, row, column };
+				}
 			},
 			ASTNodeEnum::Block(exprs) => {
-				let mut result = VecDeque::new();
-
 				for expr in exprs {
-					let expr_folded: ASTNode = Self::fold(&expr)?;
-
-					if let ASTNodeEnum::None = expr_folded.value {
-						continue;
-					}
-
-					result.push_back(expr_folded);
+					Self::fold(expr)?;
 				}
-
-				ASTNode { value: ASTNodeEnum::Block(result), row, column }
 			},
-			_ => ast.to_owned(),
-		};
+			_ => {},
+		}
 
-		Ok(result)
+		Ok(())
 	}
 }

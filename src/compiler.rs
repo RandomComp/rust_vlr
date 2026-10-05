@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{lexer::TokenType, parser::{ASTNode, ASTNodeEnum}};
+use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
 
 #[derive(PartialEq)]
 pub struct Bytecode(u8);
@@ -11,8 +11,9 @@ impl Bytecode {
 	pub const PUSH_STRING: u8 = 0x02;
 	pub const PUSH_FALSE: u8 = 0x03;
 	pub const PUSH_TRUE: u8 = 0x04;
-	pub const LOOK: u8 = 0x05; // Copy to head from N
-	pub const LOAD: u8 = 0x06; // Load value to N
+	pub const LOOK: u8 = 0x05; // Copy value from N
+	pub const LOAD: u8 = 0x06; // Copy value to N
+	pub const REMOVE: u8 = 0x07; // Remove value
 	pub const PUSH_ARG_END: u8 = 0x0F;
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
@@ -29,28 +30,30 @@ impl Bytecode {
 	pub const POW: u8 = 0xC0;
 	pub const NEG: u8 = 0xC3;
 	pub const NOT: u8 = 0xD0;
+	pub const LOG_AND: u8 = 0xD3;
+	pub const LOG_OR: u8 = 0xE0;
 	// pub const POP: u8 = 0x10;
 
-	pub fn from_unary_op(op: TokenType) -> u8 {
+	pub fn from_unary_op(op: UnaryOp) -> u8 {
 		match op {
-			TokenType::TokenMinus => Self::NEG,
+			UnaryOp::Minus => Self::NEG,
 			x => todo!("{}", x),
 		}
 	}
 
-	pub fn from_binary_op(op: TokenType) -> u8 {
+	pub fn from_binary_op(op: BinaryOp) -> u8 {
 		match op {
-			TokenType::TokenNumber(_) => Self::PUSH_NUMBER,
-			TokenType::TokenString(_) => Self::PUSH_STRING,
-			TokenType::TokenPlus => Self::ADD,
-			TokenType::TokenMinus => Self::SUB,
-			TokenType::TokenMultiply => Self::MUL,
-			TokenType::TokenDivide => Self::DIV,
-			TokenType::TokenPow => Self::POW,
-			TokenType::TokenEquals => Self::EQ,
-			TokenType::TokenNotEquals => Self::NEQ,
-			TokenType::TokenLess => Self::LT,
-			TokenType::TokenGreat => Self::GT,
+			BinaryOp::Plus => Self::ADD,
+			BinaryOp::Minus => Self::SUB,
+			BinaryOp::Multiply => Self::MUL,
+			BinaryOp::Divide => Self::DIV,
+			BinaryOp::Pow => Self::POW,
+			BinaryOp::Equals => Self::EQ,
+			BinaryOp::NotEquals => Self::NEQ,
+			BinaryOp::Less => Self::LT,
+			BinaryOp::Great => Self::GT,
+			BinaryOp::LogicalAnd => Self::LOG_AND,
+			BinaryOp::LogicalOr => Self::LOG_OR,
 			x => todo!("{}", x),
 		}
 	}
@@ -146,8 +149,6 @@ impl Compiler {
 	}
 
 	fn load(&mut self, stack_pos: u32, result: &mut Vec<u8>) {
-		self.stack_pos -= 1;
-
 		result.push(Bytecode::LOAD);
 		result.extend(stack_pos.to_le_bytes());
 	}
@@ -215,12 +216,16 @@ impl Compiler {
 		Ok(())
 	}
 
-	fn jit(pos: i32, result: &mut Vec<u8>) {
+	fn jit(&mut self, pos: i32, result: &mut Vec<u8>) {
+		self.stack_pos -= 1;
+
 		result.push(Bytecode::JIT);
 		result.extend(pos.to_le_bytes());
 	}
 
-	fn jif(pos: i32, result: &mut Vec<u8>) {
+	fn jif(&mut self, pos: i32, result: &mut Vec<u8>) {
+		self.stack_pos -= 1;
+
 		result.push(Bytecode::JIF);
 		result.extend(pos.to_le_bytes());
 	}
@@ -266,12 +271,12 @@ impl Compiler {
 			ASTNodeEnum::Tuple(values) => {
 				self.native_call("tuple", values, result)?;
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenRange, right } => {
+			ASTNodeEnum::Binary { left, op: BinaryOp::Range, right } => {
 				let args = vec![*left.clone(), *right.clone()];
 
 				self.native_call("range", &args, result)?;
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenAssignment, right } => if let ASTNodeEnum::Variable(name) = &left.value {
+			ASTNodeEnum::Binary { left, op: BinaryOp::Assignment, right } => if let ASTNodeEnum::Variable(name) = &left.value {
 				if let Some(&stack_pos) = self.scope.get(name) {
 					self.compile(right, result)?;
 
@@ -284,13 +289,15 @@ impl Compiler {
 			} else {
 				return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
 			},
-			ASTNodeEnum::Binary { left, op: TokenType::TokenPlusAssignment, right } =>
+			ASTNodeEnum::Binary { left, op: BinaryOp::PlusAssignment, right } =>
 				self.compile_assignment(left, right, Bytecode::ADD, result)?,
-			ASTNodeEnum::Binary { left, op: TokenType::TokenMinusAssignment, right } =>
+			ASTNodeEnum::Binary { left, op: BinaryOp::MinusAssignment, right } =>
 				self.compile_assignment(left, right, Bytecode::SUB, result)?,
-			ASTNodeEnum::Binary { left, op: TokenType::TokenMultiplyAssignment, right } =>
+			ASTNodeEnum::Binary { left, op: BinaryOp::MultiplyAssignment, right } =>
 				self.compile_assignment(left, right, Bytecode::MUL, result)?,
-			ASTNodeEnum::Binary { left, op: TokenType::TokenDivideAssignment, right } =>
+			ASTNodeEnum::Binary { left, op: BinaryOp::PowAssignment, right } =>
+				self.compile_assignment(left, right, Bytecode::POW, result)?,
+			ASTNodeEnum::Binary { left, op: BinaryOp::DivideAssignment, right } =>
 				self.compile_assignment(left, right, Bytecode::DIV, result)?,
 			ASTNodeEnum::Variable(name) => if let Some(&stack_pos) = self.scope.get(name) {
 				self.look(stack_pos, result);
@@ -301,6 +308,7 @@ impl Compiler {
 				self.compile(right, result)?;
 				self.compile(left, result)?;
 
+				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
 				result.push(Bytecode::from_binary_op(op.clone()));
@@ -316,8 +324,6 @@ impl Compiler {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
-				self.stack_pos -= 1;
-
 				let mut compiled_block = Vec::new();
 				self.compile(block, &mut compiled_block)?;
 
@@ -327,7 +333,7 @@ impl Compiler {
 
 				result.extend(compiled_condition);
 
-				Self::jif(compiled_block_size + 5, result);
+				self.jif(compiled_block_size + 5, result);
 
 				result.extend(compiled_block);
 				Self::jmp(-compiled_block_size - compiled_condition_size - 10, result);
@@ -351,7 +357,7 @@ impl Compiler {
 
 				self.stack_pos -= 1;
 
-				Self::jif(else_offset, result);
+				self.jif(else_offset, result);
 
 				result.extend(compiled_block);
 				Self::jmp(else_block_size, result);
@@ -369,16 +375,20 @@ impl Compiler {
 
 				self.compile(condition, result)?;
 
-				self.stack_pos -= 1;
-
-				Self::jif(i32_len, result);
+				self.jif(i32_len, result);
 
 				result.extend(compiled_block);
 			},
 			ASTNodeEnum::Block(statements) => {
-				for statement in statements {
+				let statements_len = statements.len();
+
+				for (i, statement) in statements.iter().enumerate() {
+					println!("statement = {statement}");
+
 					self.compile(statement, result)?;
 				}
+
+				// result.push(Bytecode::REMOVE);
 			},
 			_ => todo!("{}", ast)
 		}

@@ -140,6 +140,13 @@ impl VM {
 
 				true
 			},
+			Some(Bytecode::REMOVE) => {
+				self.consume_next(1);
+
+				println!("remove");
+
+				true
+			},
 			Some(Bytecode::PUSH_ARG_END) => {
 				self.consume_next(1);
 
@@ -207,6 +214,20 @@ impl VM {
 				self.consume_next(1);
 
 				println!("gt");
+
+				true
+			},
+			Some(Bytecode::LOG_AND) => {
+				self.consume_next(1);
+
+				println!("log_and");
+
+				true
+			},
+			Some(Bytecode::LOG_OR) => {
+				self.consume_next(1);
+
+				println!("log_or");
 
 				true
 			},
@@ -318,7 +339,7 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, VMError> {
-		// self.disasm_inst_nochange()?;
+		self.disasm_inst_nochange()?;
 
 		let result = match self.peek(0) {
 			Some(Bytecode::PUSH_FALSE) => {
@@ -376,10 +397,17 @@ impl VM {
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
 				if index < self.stack.len() {
-					let value = self.stack.pop_back().unwrap();
+					let value = self.stack.back().unwrap();
 
-					*self.stack.index_mut(index) = value;
+					*self.stack.index_mut(index) = value.clone();
 				}
+
+				true
+			},
+			Some(Bytecode::REMOVE) => {
+				self.consume_next(1);
+
+				self.stack.pop_back();
 
 				true
 			},
@@ -477,6 +505,26 @@ impl VM {
 				let right = self.stack.pop_back().unwrap();
 
 				self.stack.push_back(left.gt(&right)?);
+
+				true
+			},
+			Some(Bytecode::LOG_AND) => {
+				self.consume_next(1);
+
+				let left = self.stack.pop_back().unwrap();
+				let right = self.stack.pop_back().unwrap();
+
+				self.stack.push_back(left.log_and(&right)?);
+
+				true
+			},
+			Some(Bytecode::LOG_OR) => {
+				self.consume_next(1);
+
+				let left = self.stack.pop_back().unwrap();
+				let right = self.stack.pop_back().unwrap();
+
+				self.stack.push_back(left.log_or(&right)?);
 
 				true
 			},
@@ -580,7 +628,7 @@ impl VM {
 		self.pc = 0;
 
 		while self.exec_inst()? {
-			// self.dump_stack();
+			self.dump_stack();
 		}
 
 		Ok(self.stack.pop_back())

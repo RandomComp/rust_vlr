@@ -1,6 +1,6 @@
 use std::{fmt::Write, collections::VecDeque, mem, num::ParseFloatError};
 
-use crate::lexer::{LexerError, OpAssoc, Token, TokenType};
+use crate::lexer::{LexerError, Token, TokenType};
 
 impl From<ParseFloatError> for LexerError {
 	fn from(err: ParseFloatError) -> LexerError {
@@ -16,6 +16,179 @@ pub enum ParserError {
 	ExpectedToken {row: usize, column: usize, token_type: TokenType, found: TokenType},
 	#[error("line {row} at {column}: token {token_type} unexpected")]
 	UnexpectedToken {row: usize, column: usize, token_type: TokenType},
+	#[error("Cannot convert from {0:?} to BinaryOp")]
+	CannotConvertToBinaryOp(TokenType),
+	#[error("Cannot convert from {0:?} to UnaryOp")]
+	CannotConvertToUnaryOp(TokenType),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum OpAssoc {
+	Left,
+	Right
+}
+
+impl std::fmt::Display for OpAssoc {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Left => write!(f, "left"),
+			Self::Right => write!(f, "right")
+		}
+	}
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BinaryOp {
+	Plus,
+	Minus,
+	Pow,
+	Multiply,
+	Divide,
+	Remainder,
+
+	Assignment,
+	PlusAssignment,
+	MinusAssignment,
+	PowAssignment,
+	MultiplyAssignment,
+	DivideAssignment,
+	RemainderAssignment,
+
+	Equals,
+	NotEquals,
+	Great,
+	Less,
+	GreatOrEquals,
+	LessOrEquals,
+	LogicalAnd,
+	LogicalOr,
+
+	Range,
+}
+
+impl BinaryOp {
+	pub fn precedence(&self) -> usize {
+		match self {
+			Self::Range => 1,
+			Self::Pow => 2,
+			Self::Remainder |
+			Self::Divide |
+			Self::Multiply => 3,
+			Self::Plus |
+			Self::Minus => 4,
+
+			Self::Equals |
+			Self::NotEquals |
+			Self::GreatOrEquals |
+			Self::LessOrEquals |
+			Self::Great |
+			Self::Less => 5,
+
+			Self::LogicalAnd |
+			Self::LogicalOr => 6,
+
+			Self::Assignment |
+			Self::PlusAssignment |
+			Self::MinusAssignment |
+			Self::PowAssignment |
+			Self::MultiplyAssignment |
+			Self::DivideAssignment |
+			Self::RemainderAssignment => 7,
+		}
+	}
+
+	pub fn assoc(&self) -> OpAssoc {
+		match self {
+			Self::Pow => OpAssoc::Right,
+			_ => OpAssoc::Left,
+		}
+	}
+}
+
+impl std::fmt::Display for BinaryOp {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			Self::Assignment => write!(f, "="),
+			Self::PlusAssignment => write!(f, "+="),
+			Self::MinusAssignment => write!(f, "-="),
+			Self::PowAssignment => write!(f, "**="),
+			Self::MultiplyAssignment => write!(f, "*="),
+			Self::DivideAssignment => write!(f, "/="),
+			Self::RemainderAssignment => write!(f, "%="),
+
+			Self::Plus => write!(f, "+"),
+			Self::Minus => write!(f, "-"),
+			Self::Multiply => write!(f, "*"),
+			Self::Pow => write!(f, "**"),
+			Self::Divide => write!(f, "/"),
+			Self::Remainder => write!(f, "%"),
+
+			Self::Equals => write!(f, "=="),
+			Self::NotEquals => write!(f, "!="),
+			Self::GreatOrEquals => write!(f, ">="),
+			Self::LessOrEquals => write!(f, "<="),
+			Self::Great => write!(f, ">"),
+			Self::Less => write!(f, "<"),
+
+			Self::LogicalAnd => write!(f, "&&"),
+			Self::LogicalOr => write!(f, "||"),
+
+			Self::Range => write!(f, ".."),
+		}
+	}
+}
+
+impl TryFrom<TokenType> for BinaryOp {
+	type Error = ParserError;
+
+	fn try_from(value: TokenType) -> Result<Self, Self::Error> {
+		let result = match value {
+			TokenType::Assignment => Self::Assignment,
+			TokenType::PlusAssignment => Self::PlusAssignment,
+			TokenType::MinusAssignment => Self::MinusAssignment,
+			TokenType::PowAssignment => Self::PowAssignment,
+			TokenType::MultiplyAssignment => Self::MultiplyAssignment,
+			TokenType::DivideAssignment => Self::DivideAssignment,
+			TokenType::RemainderAssignment => Self::RemainderAssignment,
+
+			TokenType::Plus => Self::Plus,
+			TokenType::Minus => Self::Minus,
+			TokenType::Multiply => Self::Multiply,
+			TokenType::Pow => Self::Pow,
+			TokenType::Divide => Self::Divide,
+			TokenType::Remainder => Self::Remainder,
+
+			TokenType::Equals => Self::Equals,
+			TokenType::NotEquals => Self::NotEquals,
+			TokenType::GreatOrEquals => Self::GreatOrEquals,
+			TokenType::LessOrEquals => Self::LessOrEquals,
+			TokenType::Great => Self::Great,
+			TokenType::Less => Self::Less,
+
+			TokenType::LogicalAnd => Self::LogicalAnd,
+			TokenType::LogicalOr => Self::LogicalOr,
+
+			TokenType::Range => Self::Range,
+			v => return Err(ParserError::CannotConvertToBinaryOp(v))
+		};
+
+		Ok(result)
+	}
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UnaryOp {
+	Plus,
+	Minus,
+}
+
+impl std::fmt::Display for UnaryOp {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			Self::Plus => write!(f, "+"),
+			Self::Minus => write!(f, "-"),
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -40,19 +213,13 @@ pub enum ASTNodeEnum {
 		block: Box<ASTNode>,
 		block_else: Option<Box<ASTNode>>
 	},
-	// Ternary {
-	// 	left: Box<ASTNode>,
-	// 	op: TokenType,
-	// 	center: Box<ASTNode>,
-	// 	right: Box<ASTNode>,
-	// },
 	Binary {
 		left: Box<ASTNode>,
-		op: TokenType,
+		op: BinaryOp,
 		right: Box<ASTNode>,
 	},
 	Unary {
-		op: TokenType,
+		op: UnaryOp,
 		value: Box<ASTNode>,
 	},
 	Function {
@@ -70,6 +237,12 @@ pub enum ASTNodeEnum {
 pub struct ASTNode {
 	pub value: ASTNodeEnum,
 	pub row: usize, pub column: usize,
+}
+
+impl Default for ASTNode {
+	fn default() -> Self {
+    	ASTNode::NONE
+	}
 }
 
 impl From<ASTNodeEnum> for ASTNode {
@@ -380,11 +553,11 @@ impl Parser {
 	}
 
 	fn parse_block(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		self.consume(&TokenType::TokenLBrace)?;
+		self.consume(&TokenType::LBrace)?;
 
 		let result = self.parse_instructions();
 
-		self.consume(&TokenType::TokenRBrace)?;
+		self.consume(&TokenType::RBrace)?;
 
 		result
 	}
@@ -398,7 +571,7 @@ impl Parser {
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
 		loop {
-			if let Some(Token { token_type: TokenType::TokenRBrace | TokenType::TokenEOF, .. }) = self.peek(0) {
+			if let Some(Token { token_type: TokenType::RBrace | TokenType::Eof, .. }) = self.peek(0) {
 				break;
 			}
 
@@ -406,8 +579,8 @@ impl Parser {
 
 			result.push_back(value);
 
-			if let Some(Token { token_type: TokenType::TokenSemicolon, .. }) = self.peek(0) {
-				self.skip(&TokenType::TokenSemicolon);
+			if let Some(Token { token_type: TokenType::Semicolon, .. }) = self.peek(0) {
+				self.skip(&TokenType::Semicolon);
 			}
 		}
 
@@ -421,13 +594,13 @@ impl Parser {
 	}
 
 	fn parse_tuple(&mut self) -> Result<ASTNode, ParserError> {
-		self.consume(&TokenType::TokenLPar)?;
+		self.consume(&TokenType::LPar)?;
 
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		loop {
-			if let Some(&Token { token_type: TokenType::TokenRPar, column, row }) = self.peek(0) {
-				self.consume(&TokenType::TokenRPar)?;
+			if let Some(&Token { token_type: TokenType::RPar, column, row }) = self.peek(0) {
+				self.consume(&TokenType::RPar)?;
 
 				return Ok(ASTNode { value: ASTNodeEnum::Tuple(result), row, column });
 			}
@@ -435,13 +608,13 @@ impl Parser {
 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 			match self.peek(0) {
-				Some(Token { token_type: TokenType::TokenComma, .. }) => {
+				Some(Token { token_type: TokenType::Comma, .. }) => {
 					result.push(value);
 
 					self.consume_next();
 				},
-				Some(Token { token_type: TokenType::TokenRPar, column, row }) if result.is_empty() => {
-					self.consume(&TokenType::TokenRPar)?;
+				Some(Token { token_type: TokenType::RPar, column, row }) if result.is_empty() => {
+					self.consume(&TokenType::RPar)?;
 
 					return Ok(value)
 				},
@@ -479,7 +652,7 @@ impl Parser {
 		let Some(cur) = self.peek(0) else { return Ok(None) };
 
 		match (cur, self.peek(1)) {
-			(&Token {token_type: TokenType::TokenTrue, column, row}, ..) => {
+			(&Token {token_type: TokenType::True, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -487,7 +660,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenFalse, column, row}, ..) => {
+			(&Token {token_type: TokenType::False, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -495,7 +668,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenReturn, column, row}, ..) => {
+			(&Token {token_type: TokenType::Return, column, row}, ..) => {
 				self.consume_next();
 
 				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -505,7 +678,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenBreak, column, row}, ..) => {
+			(&Token {token_type: TokenType::Break, column, row}, ..) => {
 				self.consume_next();
 
 				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -515,14 +688,14 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenIf, column, row}, ..) => {
+			(&Token {token_type: TokenType::If, column, row}, ..) => {
 				self.consume_next();
 
 				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&Token { token_type: TokenType::TokenElse, row, column }) => {
+					Some(&Token { token_type: TokenType::Else, row, column }) => {
 						self.consume_next();
 
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -538,14 +711,14 @@ impl Parser {
 				}
 			}
 
-			(&Token {token_type: TokenType::TokenWhile, column, row}, ..) => {
+			(&Token {token_type: TokenType::While, column, row}, ..) => {
 				self.consume_next();
 
 				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&Token { token_type: TokenType::TokenElse, row, column }) => {
+					Some(&Token { token_type: TokenType::Else, row, column }) => {
 						self.consume_next();
 
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
@@ -561,30 +734,30 @@ impl Parser {
 				}
 			}
 
-			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenWord(name), .. })) => {
+			(&Token {token_type: TokenType::Def, column, row}, Some(Token { token_type: TokenType::Word(name), .. })) => {
 				let name = name.clone();
 
 				self.consume_next();
 				self.consume_next();
-				self.consume(&TokenType::TokenLPar)?;
+				self.consume(&TokenType::LPar)?;
 
 				let mut args = Vec::new();
 
 				while let Some(Token { token_type, .. }) = self.peek(0) {
 					match token_type {
-						TokenType::TokenWord(arg) => {
+						TokenType::Word(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
 						}
-						TokenType::TokenComma => {
+						TokenType::Comma => {
 							self.consume_next();
 						},
 						_ => break,
 					}
 				}
 
-				self.consume(&TokenType::TokenRPar)?;
+				self.consume(&TokenType::RPar)?;
 
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
@@ -594,27 +767,27 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenDef, column, row}, Some(Token { token_type: TokenType::TokenLPar, row: _, column: _ })) => {
+			(&Token {token_type: TokenType::Def, column, row}, Some(Token { token_type: TokenType::LPar, row: _, column: _ })) => {
 				self.consume_next();
-				self.consume(&TokenType::TokenLPar)?;
+				self.consume(&TokenType::LPar)?;
 
 				let mut args = Vec::new();
 
 				while let Some(Token { token_type, column: _, row: _ }) = self.peek(0) {
 					match token_type {
-						TokenType::TokenWord(arg) => {
+						TokenType::Word(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
 						}
-						TokenType::TokenComma => {
+						TokenType::Comma => {
 							self.consume_next();
 						},
 						_ => break,
 					}
 				}
 
-				self.consume(&TokenType::TokenRPar)?;
+				self.consume(&TokenType::RPar)?;
 
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
@@ -624,7 +797,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenEverything, column, row}, ..) => {
+			(&Token {token_type: TokenType::Everything, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -632,7 +805,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenNumber(value), column, row}, _) => {
+			(&Token {token_type: TokenType::Number(value), column, row}, _) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -640,7 +813,7 @@ impl Parser {
 				))
 			}
 
-			(Token {token_type: TokenType::TokenString(value), column, row}, ..) => {
+			(Token {token_type: TokenType::String(value), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let value = value.clone();
 
@@ -651,31 +824,31 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenPlus, ..}, ..) => {
+			(&Token {token_type: TokenType::Plus, ..}, ..) => {
 				self.consume_next();
 
 				self.parse_unary()
 			}
 
-			(&Token {token_type: TokenType::TokenMinus, column, row}, ..) => {
+			(&Token {token_type: TokenType::Minus, column, row}, ..) => {
 				self.consume_next();
 
 				let Some(value) = self.parse_unary()? else { return Ok(None) };
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: TokenType::TokenMinus, value: Box::new(value) }, row, column  }
+					ASTNode { value: ASTNodeEnum::Unary { op: UnaryOp::Minus, value: Box::new(value) }, row, column  }
 				))
 			}
 
-			(&Token {token_type: TokenType::TokenLPar, ..}, ..) => {
+			(&Token {token_type: TokenType::LPar, ..}, ..) => {
 				self.parse_tuple().map(Some)
 			}
 
-			(&Token {token_type: TokenType::TokenLBrace, ..}, ..) => {
+			(&Token {token_type: TokenType::LBrace, ..}, ..) => {
 				self.parse_block()
 			}
 
-			(Token {token_type: TokenType::TokenWord(word), column, row}, Some(Token { token_type: TokenType::TokenLPar, column: _, row: _ })) => {
+			(Token {token_type: TokenType::Word(word), column, row}, Some(Token { token_type: TokenType::LPar, column: _, row: _ })) => {
 				let (row, column) = (*row, *column);
 
 				let word = word.to_owned();
@@ -689,7 +862,7 @@ impl Parser {
 				))
 			}
 
-			(Token {token_type: TokenType::TokenWord(word), column, row}, ..) => {
+			(Token {token_type: TokenType::Word(word), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let word = word.to_owned();
 
@@ -715,24 +888,30 @@ impl Parser {
 
 		let cur = &mut first;
 
-		loop {
-			match self.peek(0) {
-				Some(x) if x.token_type.precedence() == Some(precedence) => {
-					let op = x.token_type.clone();
+		while let Some(x) = self.peek(0) {
+			let Ok(op) = BinaryOp::try_from(x.token_type.clone()) else {
+				break;
+			};
 
-					let right_precedence = if x.token_type.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
-
-					let old_cur = mem::replace(cur, ASTNode::NONE);
-
-					self.consume_next();
-
-					let right = self.parse(right_precedence)?;
-
-					let new_cur = ASTNode { value: ASTNodeEnum::Binary { left: Box::new(old_cur), op, right: Box::new(right) }, row, column };
-					*cur = new_cur;
-				},
-				_ => break
+			if op.precedence() != precedence {
+				break;
 			}
+
+			let right_precedence = if op.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
+
+			self.consume_next();
+
+			let left = mem::take(cur);
+			let right = self.parse(right_precedence)?;
+
+			*cur = ASTNode {
+				value: ASTNodeEnum::Binary {
+					left: Box::new(left),
+					op,
+					right: Box::new(right)
+				},
+				row, column
+			};
 		}
 
 		Ok(first)
