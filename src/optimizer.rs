@@ -124,6 +124,17 @@ impl Optimizer {
 
 				ast.value = value.neg()?.try_into()?;
 			},
+			ASTNodeEnum::Unary { op: UnaryOp::Not, value } => {
+				Self::fold(value)?;
+
+				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
+					Self::simplify(ast);
+
+					return Ok(())
+				};
+
+				ast.value = value.not()?.try_into()?;
+			},
 			ASTNodeEnum::Binary { left, op, right } => {
 				let left_is_err = Self::fold(left).is_err();
 				let right_is_err = Self::fold(right).is_err();

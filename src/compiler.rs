@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, iter, slice::Iter};
 
 use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
 
@@ -6,11 +6,11 @@ use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
 pub struct Bytecode(u8);
 
 impl Bytecode {
-	pub const NOP: u8 = 0x00; pub const NOP_FF: u8 = 0xFF;
-	pub const PUSH_NUMBER: u8 = 0x01;
-	pub const PUSH_STRING: u8 = 0x02;
-	pub const PUSH_FALSE: u8 = 0x03;
-	pub const PUSH_TRUE: u8 = 0x04;
+	pub const NOP: u8 = 0x00; pub const NOP_FF: u8 = 0xFF; // Do nothing
+	pub const PUSH_NUMBER: u8 = 0x01; // Pushes number
+	pub const PUSH_STRING: u8 = 0x02; // Pushes string to stack (needing len)
+	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
+	pub const PUSH_TRUE: u8 = 0x04; // Pushes true to stack
 	pub const LOOK: u8 = 0x05; // Copy value from N
 	pub const LOAD: u8 = 0x06; // Copy value to N
 	pub const REMOVE: u8 = 0x07; // Remove value
@@ -18,30 +18,30 @@ impl Bytecode {
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
-	pub const EQ: u8 = 0x50;
-	pub const NEQ: u8 = 0x51;
+	pub const EQ: u8 = 0x50; // Equals
+	pub const NEQ: u8 = 0x51; // Not equals
 	pub const LT: u8 = 0x52; // Less than
 	pub const GT: u8 = 0x53; // Great than
 	pub const NATIVE_CALL: u8 = 0x80;
-	pub const ADD: u8 = 0xA0;
-	pub const SUB: u8 = 0xA3;
-	pub const MUL: u8 = 0xB0;
-	pub const DIV: u8 = 0xB3;
-	pub const POW: u8 = 0xC0;
-	pub const NEG: u8 = 0xC3;
-	pub const NOT: u8 = 0xD0;
-	pub const LOG_AND: u8 = 0xD3;
-	pub const LOG_OR: u8 = 0xE0;
+	pub const ADD: u8 = 0xA0; // Additive
+	pub const SUB: u8 = 0xA3; // Subtraction
+	pub const MUL: u8 = 0xB0; // Multiplication
+	pub const DIV: u8 = 0xB3; // Division
+	pub const POW: u8 = 0xC0; // Power of
+	pub const NEG: u8 = 0xC3; // Negative value (-)
+	pub const NOT: u8 = 0xD0; // Logical not
+	pub const LOG_AND: u8 = 0xD3; // Logical AND
+	pub const LOG_OR: u8 = 0xE0; // Logical OR
 	// pub const POP: u8 = 0x10;
 
-	pub fn from_unary_op(op: UnaryOp) -> u8 {
+	pub fn from_unary_op(op: &UnaryOp) -> u8 {
 		match op {
 			UnaryOp::Minus => Self::NEG,
-			x => todo!("{}", x),
+			UnaryOp::Not => Self::NOT,
 		}
 	}
 
-	pub fn from_binary_op(op: BinaryOp) -> u8 {
+	pub fn from_binary_op(op: &BinaryOp) -> u8 {
 		match op {
 			BinaryOp::Plus => Self::ADD,
 			BinaryOp::Minus => Self::SUB,
@@ -148,7 +148,7 @@ impl Compiler {
 		result.extend(stack_pos.to_le_bytes());
 	}
 
-	fn load(&mut self, stack_pos: u32, result: &mut Vec<u8>) {
+	fn load(stack_pos: u32, result: &mut Vec<u8>) {
 		result.push(Bytecode::LOAD);
 		result.extend(stack_pos.to_le_bytes());
 	}
@@ -184,27 +184,12 @@ impl Compiler {
 		Ok(())
 	}
 
-	fn native_call_with_arg(&mut self, name: &str, arg: &ASTNode, result: &mut Vec<u8>) -> Result<(), CompilerError> {
+	fn native_call<'a, T: DoubleEndedIterator<Item=&'a ASTNode>>(&mut self, name: &str, args: T, result: &mut Vec<u8>) -> Result<(), CompilerError> {
 		self.stack_pos += 1;
 
 		result.push(Bytecode::PUSH_ARG_END);
 
-		self.compile(arg, result)?;
-
-		result.push(Bytecode::NATIVE_CALL);
-		result.extend(Self::get_native_call_id_by_name(name).ok_or(
-			CompilerError::UnknownNativeFunctionCall(name.to_owned())
-		)?.to_le_bytes());
-
-		Ok(())
-	}
-
-	fn native_call(&mut self, name: &str, args: &[ASTNode], result: &mut Vec<u8>) -> Result<(), CompilerError> {
-		self.stack_pos += 1;
-
-		result.push(Bytecode::PUSH_ARG_END);
-
-		for arg in args.iter().rev() {
+		for arg in args.rev() {
 			self.compile(arg, result)?;
 		}
 
@@ -241,15 +226,15 @@ impl Compiler {
 		};
 
 		let Some(&stack_pos) = self.scope.get(name) else {
-			return Err(CompilerError::NotKnownAtThisScope(name.clone()));
+			return Err(CompilerError::NotKnownAtThisScope(name.to_owned()));
 		};
 
-		self.look(stack_pos, result);
 		self.compile(right, result)?;
+		self.look(stack_pos, result);
 
 		result.push(op);
 
-		self.load(stack_pos, result);
+		Self::load(stack_pos, result);
 
 		Ok(())
 	}
@@ -269,18 +254,16 @@ impl Compiler {
 				self.push_string(x, result)?;
 			},
 			ASTNodeEnum::Tuple(values) => {
-				self.native_call("tuple", values, result)?;
+				self.native_call("tuple", values.iter(), result)?;
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::Range, right } => {
-				let args = vec![*left.clone(), *right.clone()];
-
-				self.native_call("range", &args, result)?;
+				self.native_call("range", [&**left, &**right].into_iter(), result)?;
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::Assignment, right } => if let ASTNodeEnum::Variable(name) = &left.value {
 				if let Some(&stack_pos) = self.scope.get(name) {
 					self.compile(right, result)?;
 
-					self.load(stack_pos, result);
+					Self::load(stack_pos, result);
 				} else {
 					self.scope.insert(name.to_owned(), self.stack_pos);
 
@@ -304,6 +287,11 @@ impl Compiler {
 			} else {
 				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
 			},
+			ASTNodeEnum::Unary { op, value } => {
+				self.compile(value, result)?;
+
+				result.push(Bytecode::from_unary_op(op));
+			},
 			ASTNodeEnum::Binary { left, op, right } => {
 				self.compile(right, result)?;
 				self.compile(left, result)?;
@@ -311,10 +299,13 @@ impl Compiler {
 				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
-				result.push(Bytecode::from_binary_op(op.clone()));
+				result.push(Bytecode::from_binary_op(op));
+			},
+			ASTNodeEnum::Function { name, arg } if let ASTNodeEnum::Tuple(values) = &arg.value => {
+				self.native_call(name, values.iter(), result)?;
 			},
 			ASTNodeEnum::Function { name, arg } => {
-				self.native_call_with_arg(name, arg, result)?;
+				self.native_call(name, iter::once(&**arg), result)?;
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
 				let mut compiled_condition = Vec::new();
@@ -355,8 +346,6 @@ impl Compiler {
 
 				self.compile(condition, result)?;
 
-				self.stack_pos -= 1;
-
 				self.jif(else_offset, result);
 
 				result.extend(compiled_block);
@@ -383,12 +372,8 @@ impl Compiler {
 				let statements_len = statements.len();
 
 				for (i, statement) in statements.iter().enumerate() {
-					println!("statement = {statement}");
-
 					self.compile(statement, result)?;
 				}
-
-				// result.push(Bytecode::REMOVE);
 			},
 			_ => todo!("{}", ast)
 		}

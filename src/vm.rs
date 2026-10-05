@@ -308,8 +308,10 @@ impl VM {
 
 	fn print(args: Vec<UniResult>) -> UniResult {
 		for arg in args {
-			println!("{arg}");
+			print!("{arg} ");
 		}
+
+		println!();
 
 		UniResult::None
 	}
@@ -339,7 +341,7 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, VMError> {
-		self.disasm_inst_nochange()?;
+		// self.disasm_inst_nochange()?;
 
 		let result = match self.peek(0) {
 			Some(Bytecode::PUSH_FALSE) => {
@@ -628,7 +630,7 @@ impl VM {
 		self.pc = 0;
 
 		while self.exec_inst()? {
-			self.dump_stack();
+			// self.dump_stack();
 		}
 
 		Ok(self.stack.pop_back())

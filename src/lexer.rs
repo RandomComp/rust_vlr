@@ -8,6 +8,7 @@ pub enum TokenType {
 	String(String),
 	Plus,
 	Minus,
+	Exclamation,
 	Pow,
 	Multiply,
 	Divide,
@@ -70,6 +71,7 @@ impl TokenType {
 
 		(Self::Plus, "+"),
 		(Self::Minus, "-"),
+		(Self::Exclamation, "!"),
 		(Self::Pow, "**"),
 		(Self::Multiply, "*"),
 		(Self::Divide, "/"),
@@ -122,6 +124,7 @@ impl std::fmt::Display for TokenType {
 
 			Self::Plus => write!(f, "+"),
 			Self::Minus => write!(f, "-"),
+			Self::Exclamation => write!(f, "!"),
 			Self::Multiply => write!(f, "*"),
 			Self::Pow => write!(f, "**"),
 			Self::Divide => write!(f, "/"),

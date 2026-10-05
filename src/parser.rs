@@ -138,10 +138,10 @@ impl std::fmt::Display for BinaryOp {
 	}
 }
 
-impl TryFrom<TokenType> for BinaryOp {
+impl TryFrom<&TokenType> for BinaryOp {
 	type Error = ParserError;
 
-	fn try_from(value: TokenType) -> Result<Self, Self::Error> {
+	fn try_from(value: &TokenType) -> Result<Self, Self::Error> {
 		let result = match value {
 			TokenType::Assignment => Self::Assignment,
 			TokenType::PlusAssignment => Self::PlusAssignment,
@@ -169,7 +169,7 @@ impl TryFrom<TokenType> for BinaryOp {
 			TokenType::LogicalOr => Self::LogicalOr,
 
 			TokenType::Range => Self::Range,
-			v => return Err(ParserError::CannotConvertToBinaryOp(v))
+			v => return Err(ParserError::CannotConvertToBinaryOp(v.clone()))
 		};
 
 		Ok(result)
@@ -178,15 +178,15 @@ impl TryFrom<TokenType> for BinaryOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnaryOp {
-	Plus,
 	Minus,
+	Not,
 }
 
 impl std::fmt::Display for UnaryOp {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			Self::Plus => write!(f, "+"),
 			Self::Minus => write!(f, "-"),
+			Self::Not => write!(f, "!"),
 		}
 	}
 }
@@ -824,6 +824,8 @@ impl Parser {
 				))
 			}
 
+			// TODO: сделать генерацию парсинга унарных операторов
+
 			(&Token {token_type: TokenType::Plus, ..}, ..) => {
 				self.consume_next();
 
@@ -837,6 +839,16 @@ impl Parser {
 
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Unary { op: UnaryOp::Minus, value: Box::new(value) }, row, column  }
+				))
+			}
+
+			(&Token {token_type: TokenType::Exclamation, column, row}, ..) => {
+				self.consume_next();
+
+				let Some(value) = self.parse_unary()? else { return Ok(None) };
+
+				Ok(Some(
+					ASTNode { value: ASTNodeEnum::Unary { op: UnaryOp::Not, value: Box::new(value) }, row, column  }
 				))
 			}
 
@@ -888,15 +900,9 @@ impl Parser {
 
 		let cur = &mut first;
 
-		while let Some(x) = self.peek(0) {
-			let Ok(op) = BinaryOp::try_from(x.token_type.clone()) else {
-				break;
-			};
-
-			if op.precedence() != precedence {
-				break;
-			}
-
+		while let Some(x) = self.peek(0) &&
+			let Ok(op) = BinaryOp::try_from(&x.token_type) &&
+			op.precedence() == precedence {
 			let right_precedence = if op.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
 
 			self.consume_next();
