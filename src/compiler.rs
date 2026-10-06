@@ -1,173 +1,69 @@
-use std::{collections::HashMap, fmt::Display, iter, num::TryFromIntError, vec::IntoIter};
+use std::{collections::HashMap, fmt::Display, iter};
 
-use crate::{parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp}};
+use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Bytecode {
-	Nop, // Do nothing
-	PushFloat(f64), // Pushes number
-	PushString(String), // Pushes string to stack (needing len)
-	PushFalse, // Pushes false to stack
-	PushTrue, // Pushes true to stack
-	Look(u32), // Copy value from stack N
-	Load(u32), // Copy value to stack at N
-	Remove, // Remove value
-	PushArgEnd, // Sentinel for native functions arguments
-	Jit(u32), // Jump if condition
-	Jif(u32), // Jump if not condition
-	Jmp(u32), // Jump without condition
-	Call(u32), // Jump to pc from stack
-	Ret, // Jump to pc from stack
-	Eq, // Equals
-	Neq, // Not equals
-	Lt, // Less than
-	Gt, // Great than
+	/// Do nothing
+	Halt,
+	/// Pushes number
+	PushFloat(f64),
+	/// Pushes string to stack
+	PushString(String),
+	/// Pushes boolean to stack
+	PushBoolean(bool),
+	/// Copy value from stack N
+	Look(u32),
+	/// Copy value to stack at N
+	Load(u32),
+	/// Remove value from stack upper
+	Remove,
+	/// Sentinel for native functions arguments
+	PushArgEnd,
+	/// Jump if condition
+	Jit(u32),
+	/// Jump if not condition
+	Jif(u32),
+	/// Jump without condition
+	Jmp(u32),
+	/// Jump to pc from stack
+	Call(u32),
+	/// Jump to pc from stack
+	Ret,
+	/// Equals
+	Eq,
+	/// Not equals
+	Neq,
+	/// Less than
+	Lt,
+	/// Great than
+	Gt,
 	NativeCall(NativeFunctionId),
-	Add, // Additive
-	Sub, // Subtraction
-	Mul, // Multiplication
-	Div, // Division
-	Pow, // Power of
-	Neg, // Negative value (-)
-	Not, // Logical not
-	LogicalAnd, // Logical AND
-	LogicalOr, // Logical OR
-}
-
-// impl TryFrom<u8> for Bytecode {
-// 	type Error = ();
-
-// 	fn try_from(value: u8) -> Result<Self, Self::Error> {
-// 		let result = match value {
-// 			0x00 | 0xFF => Self::Nop, // Do nothing
-// 			0x01 => Self::PushFloat, // Pushes number
-// 			0x02 => Self::PushString, // Pushes string to stack (needing len)
-// 			0x03 => Self::PushFalse, // Pushes false to stack
-// 			0x04 => Self::PushTrue, // Pushes true to stack
-// 			0x05 => Self::Look, // Copy value from N
-// 			0x06 => Self::Load, // Copy value to N
-// 			0x07 => Self::Remove, // Remove value
-// 			0x0F => Self::PushArgEnd,
-// 			0x20 => Self::Jit, // Jump if condition
-// 			0x21 => Self::Jif, // Jump if not condition
-// 			0x28 => Self::Jmp, // Jump without condition
-// 			0x2A => Self::Call, // Jump to pc from stack
-// 			0x2B => Self::Ret, // Jump to pc from stack
-// 			0x50 => Self::Eq, // Equals
-// 			0x51 => Self::Neq, // Not equals
-// 			0x52 => Self::Lt, // Less than
-// 			0x53 => Self::Gt, // Great than
-// 			0x80 => Self::NativeCall,
-// 			0xA0 => Self::Add, // Additive
-// 			0xA3 => Self::Sub, // Subtraction
-// 			0xB0 => Self::Mul, // Multiplication
-// 			0xB3 => Self::Div, // Division
-// 			0xC0 => Self::Pow, // Power of
-// 			0xC3 => Self::Neg, // Negative value (-)
-// 			0xD0 => Self::Not, // Logical not
-// 			0xD3 => Self::LogicalAnd, // Logical AND
-// 			0xE0 => Self::LogicalOr, // Logical OR
-// 			_ => return Err(()),
-// 		};
-
-// 		Ok(result)
-// 	}
-// }
-
-impl TryFrom<Bytecode> for u8 {
-	type Error = ();
-
-	fn try_from(value: Bytecode) -> Result<Self, Self::Error> {
-		let result = match value {
-			Bytecode::Nop 			=> 0x00, // Do nothing
-			Bytecode::PushFalse 	=> 0x03, // Pushes false to stack
-			Bytecode::PushTrue 		=> 0x04, // Pushes true to stack
-			Bytecode::Remove 		=> 0x07, // Remove value
-			Bytecode::PushArgEnd 	=> 0x0F,
-			Bytecode::Ret 			=> 0x2B, // Jump to pc from stack
-			Bytecode::Eq 			=> 0x50, // Equals
-			Bytecode::Neq 			=> 0x51, // Not equals
-			Bytecode::Lt 			=> 0x52, // Less than
-			Bytecode::Gt 			=> 0x53, // Great than
-			Bytecode::Add 			=> 0xA0, // Additive
-			Bytecode::Sub 			=> 0xA3, // Subtraction
-			Bytecode::Mul 			=> 0xB0, // Multiplication
-			Bytecode::Div 			=> 0xB3, // Division
-			Bytecode::Pow 			=> 0xC0, // Power of
-			Bytecode::Neg 			=> 0xC3, // Negative value (-)
-			Bytecode::Not 			=> 0xD0, // Logical not
-			Bytecode::LogicalAnd 	=> 0xD3, // Logical AND
-			Bytecode::LogicalOr 	=> 0xE0, // Logical OR
-			_ => return Err(())
-		};
-
-		Ok(result)
-	}
-}
-
-impl TryFrom<Bytecode> for Vec<u8> {
-	type Error = ();
-
-	fn try_from(value: Bytecode) -> Result<Self, Self::Error> {
-		let mut result = Vec::new();
-
-		match value {
-			Bytecode::PushFloat(x) => {
-				result.push(0x01);
-
-				result.extend(x.to_le_bytes());
-			}, // Pushes number
-			Bytecode::PushString(text) => {
-				let u32_len = u32::try_from(text.len()).unwrap();
-
-				result.extend(u32_len.to_le_bytes());
-				result.extend(text.bytes());
-
-			}, // Pushes string to stack
-			Bytecode::Look(stack_pos) => {
-				result.push(0x05);
-				result.extend(stack_pos.to_le_bytes());
-			}, // Copy value from N
-			Bytecode::Load(stack_pos) => {
-				result.push(0x06);
-				result.extend(stack_pos.to_le_bytes());
-			}, // Copy value to N
-			Bytecode::Jit(pos) => {
-				result.push(0x20);
-				result.extend(pos.to_le_bytes());
-			}, // Jump if condition
-			Bytecode::Jif(pos) => {
-				result.push(0x21);
-				result.extend(pos.to_le_bytes());
-			}, // Jump if not condition
-			Bytecode::Jmp(pos) => {
-				result.push(0x28);
-				result.extend(pos.to_le_bytes());
-			}, // Jump without condition
-			Bytecode::Call(pos) => {
-				result.push(0x2A);
-				result.extend(pos.to_le_bytes());
-			}, // Jump to pc from stack
-			Bytecode::NativeCall(id) => {
-				result.push(0x80);
-				result.extend(id.to_le_bytes());
-			},
-			_ => result.push(u8::try_from(value)?),
-		}
-
-		Ok(result)
-	}
+	/// Additive
+	Add,
+	/// Subtraction
+	Sub,
+	/// Multiplication
+	Mul,
+	/// Division
+	Div,
+	/// Power of
+	Pow,
+	/// Negative value (-)
+	Neg,
+	/// Logical not
+	Not,
+	/// Logical AND
+	LogicalAnd,
+	/// Logical OR
+	LogicalOr,
 }
 
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Option<[u8; LEN]> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
 
-	for i in 0..LEN {
-		if let Some(x) = arr.next() {
-			result[i] = x;
-		} else {
-			return None
-		}
+	for val in &mut result {
+		*val = arr.next()?;
 	}
 
 	Some(result)
@@ -176,94 +72,78 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Option<[u8; 
 impl Display for Bytecode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Bytecode::Nop => Ok(()),
-			Bytecode::PushFalse => {
-				write!(f, "push false")
-			}
-			Bytecode::PushTrue => {
-				write!(f, "push true")
-			}
-			Bytecode::PushFloat(val) => {
-				write!(f, "push {val}")
-			},
-			Bytecode::PushString(text) => {
-				write!(f, "push \"{text}\"")
-			},
-			Bytecode::Look(stack_pos) => {
-				write!(f, "look {stack_pos}")
-			},
-			Bytecode::Load(stack_pos) => {
-				write!(f, "load {stack_pos}")
-			},
-			Bytecode::Remove => {
-				write!(f, "remove")
-			},
-			Bytecode::PushArgEnd => {
-				write!(f, "push args_end")
-			},
-			Bytecode::Add => {
-				write!(f, "add")
-			},
-			Bytecode::Sub => {
-				write!(f, "sub")
-			},
-			Bytecode::Mul => {
-				write!(f, "mul")
-			},
-			Bytecode::Div => {
-				write!(f, "div")
-			},
-			Bytecode::Pow => {
-				write!(f, "pow")
-			},
-			Bytecode::Eq => {
-				write!(f, "eq")
-			},
-			Bytecode::Neq => {
-				write!(f, "neq")
-			},
-			Bytecode::Lt => {
-				write!(f, "lt")
-			},
-			Bytecode::Gt => {
-				write!(f, "gt")
-			},
-			Bytecode::LogicalAnd => {
-				write!(f, "log_and")
-			},
-			Bytecode::LogicalOr => {
-				write!(f, "log_or")
-			},
-			Bytecode::Neg => {
-				write!(f, "neg")
-			},
-			Bytecode::Not => {
-				write!(f, "not")
-			},
-			Bytecode::Jit(pos) => {
-				write!(f, "jit {pos:02}")
-			},
-			Bytecode::Jif(pos) => {
-				write!(f, "jif {pos:02}")
-			},
-			Bytecode::Jmp(pos) => {
-				write!(f, "jmp {pos:02}")
-			},
-			Bytecode::Call(pos) => {
-				write!(f, "call {pos:02}")
-			},
-			Bytecode::Ret => {
-				write!(f, "ret")
-			},
-			Bytecode::NativeCall(id) => {
+			Bytecode::Halt =>
+				write!(f, "hlt"),
+			Bytecode::PushBoolean(v) =>
+				write!(f, "push {v}"),
+			Bytecode::PushFloat(val) =>
+				write!(f, "push {val}"),
+			Bytecode::PushString(text) =>
+				write!(f, "push \"{text}\""),
+			Bytecode::Look(stack_pos) =>
+				write!(f, "look {stack_pos}"),
+			Bytecode::Load(stack_pos) =>
+				write!(f, "load {stack_pos}"),
+			Bytecode::Remove =>
+				write!(f, "remove"),
+			Bytecode::PushArgEnd =>
+				write!(f, "push args_end"),
+			Bytecode::Add =>
+				write!(f, "add"),
+			Bytecode::Sub =>
+				write!(f, "sub"),
+			Bytecode::Mul =>
+				write!(f, "mul"),
+			Bytecode::Div =>
+				write!(f, "div"),
+			Bytecode::Pow =>
+				write!(f, "pow"),
+			Bytecode::Eq =>
+				write!(f, "eq"),
+			Bytecode::Neq =>
+				write!(f, "neq"),
+			Bytecode::Lt =>
+				write!(f, "lt"),
+			Bytecode::Gt =>
+				write!(f, "gt"),
+			Bytecode::LogicalAnd =>
+				write!(f, "log_and"),
+			Bytecode::LogicalOr =>
+				write!(f, "log_or"),
+			Bytecode::Neg =>
+				write!(f, "neg"),
+			Bytecode::Not =>
+				write!(f, "not"),
+			Bytecode::Jit(pos) =>
+				write!(f, "jit {pos:02}"),
+			Bytecode::Jif(pos) =>
+				write!(f, "jif {pos:02}"),
+			Bytecode::Jmp(pos) =>
+				write!(f, "jmp {pos:02}"),
+			Bytecode::Call(pos) =>
+				write!(f, "call {pos:02}"),
+			Bytecode::Ret =>
+				write!(f, "ret"),
+			Bytecode::NativeCall(id) =>
 				write!(f, "native_call {}", id.get_name())
-			}
 		}
 	}
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum BytecodeError {
+	#[error("Byte {byte:02X} at {pos:02} unexpected")]
+	UnexpectedByte {
+		pos: u32, byte: u8
+	},
+	#[error("Unexpected EOF at {pos}")]
+	UnexpectedEof {
+		pos: u32,
+	},
+}
+
 impl Bytecode {
-	pub const NOP: u8 = 0x00; pub const NOP_FF: u8 = 0xFF;  // Do nothing
+	pub const HLT: u8 = 0x00; pub const HLT_FF: u8 = 0xFF; // Halt VM
 	pub const PUSH_FLOAT: u8 = 0x01; // Pushes number
 	pub const PUSH_STRING: u8 = 0x02; // Pushes string to stack (needing len)
 	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
@@ -292,11 +172,86 @@ impl Bytecode {
 	pub const LOGICAL_AND: u8 =  0xD3; // Logical AND
 	pub const LOGICAL_OR: u8 =  0xE0; // Logical OR
 
-	pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, ()> {
+	fn get_opcode(&self) -> u8 {
+		match self {
+			Bytecode::Halt 					=> Self::HLT, // Halt VM
+			Bytecode::PushFloat(..) 		=> Self::PUSH_FLOAT, // Pushes number
+			Bytecode::PushString(..) 		=> Self::PUSH_STRING, // Pushes string to stack
+			Bytecode::PushBoolean(false) 	=> Self::PUSH_FALSE, // Pushes false to stack
+			Bytecode::PushBoolean(true) 	=> Self::PUSH_TRUE, // Pushes true to stack
+			Bytecode::Look(..) 				=> Self::LOOK, // Copy value from N
+			Bytecode::Load(..) 				=> Self::LOAD, // Copy value to N
+			Bytecode::Remove 				=> Self::REMOVE, // Remove value
+			Bytecode::PushArgEnd 			=> Self::PUSH_ARG_END,
+			Bytecode::Jit(..) 				=> Self::JIT, // Jump if condition
+			Bytecode::Jif(..) 				=> Self::JIF, // Jump if not condition
+			Bytecode::Jmp(..) 				=> Self::JMP, // Jump without condition
+			Bytecode::Call(..) 				=> Self::CALL, // Jump to pc from stack
+			Bytecode::Ret 					=> Self::RET, // Jump to pc from stack
+			Bytecode::Eq 					=> Self::EQ, // Equals
+			Bytecode::Neq 					=> Self::NEQ, // Not equals
+			Bytecode::Lt 					=> Self::LT, // Less than
+			Bytecode::Gt 					=> Self::GT, // Great than
+			Bytecode::NativeCall(..) 		=> Self::NATIVE_CALL,
+			Bytecode::Add 					=> Self::ADD, // Additive
+			Bytecode::Sub 					=> Self::SUB, // Subtraction
+			Bytecode::Mul 					=> Self::MUL, // Multiplication
+			Bytecode::Div 					=> Self::DIV, // Division
+			Bytecode::Pow 					=> Self::POW, // Power of
+			Bytecode::Neg 					=> Self::NEG, // Negative value (-)
+			Bytecode::Not 					=> Self::NOT, // Logical not
+			Bytecode::LogicalAnd 			=> Self::LOGICAL_AND, // Logical AND
+			Bytecode::LogicalOr 			=> Self::LOGICAL_OR, // Logical OR
+		}
+	}
+
+	fn asm_inst(value: Bytecode) -> Result<Vec<u8>, BytecodeError> {
+		let mut result = Vec::new();
+
+		result.push(value.get_opcode());
+
+		match value {
+			Bytecode::PushFloat(x) => {
+				result.extend(x.to_le_bytes());
+			}, // Pushes number
+			Bytecode::PushString(text) => {
+				let u32_len = u32::try_from(text.len()).unwrap();
+
+				result.extend(u32_len.to_le_bytes());
+				result.extend(text.bytes());
+			}, // Pushes string to stack
+			Bytecode::Look(stack_pos) => {
+				result.extend(stack_pos.to_le_bytes());
+			}, // Copy value from N
+			Bytecode::Load(stack_pos) => {
+				result.extend(stack_pos.to_le_bytes());
+			}, // Copy value to N
+			Bytecode::Jit(pos) => {
+				result.extend(pos.to_le_bytes());
+			}, // Jump if condition
+			Bytecode::Jif(pos) => {
+				result.extend(pos.to_le_bytes());
+			}, // Jump if not condition
+			Bytecode::Jmp(pos) => {
+				result.extend(pos.to_le_bytes());
+			}, // Jump without condition
+			Bytecode::Call(pos) => {
+				result.extend(pos.to_le_bytes());
+			}, // Jump to pc from stack
+			Bytecode::NativeCall(id) => {
+				result.extend(id.to_le_bytes());
+			},
+			_ => {},
+		}
+
+		Ok(result)
+	}
+
+	pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
 		let mut result = Vec::new();
 
 		for value in values {
-			let res: Vec<u8> = value.try_into()?;
+			let res: Vec<u8> = Self::asm_inst(value)?;
 
 			result.extend(res);
 		}
@@ -304,31 +259,71 @@ impl Bytecode {
 		Ok(result)
 	}
 
-	pub fn disasm_inst<T>(mut bytes: T) -> Result<Self, ()> where T: Iterator<Item = u8> {
-		let result = match bytes.next().ok_or(())? {
-			0x00 | 0xFF => Self::Nop, // Do nothing
-			0x01 => {
+	pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError> where T: Iterator<Item = u8> {
+		let Some(opcode) = bytes.next() else {
+			return Ok(None)
+		};
+
+		let result = match opcode {
+			Bytecode::HLT | Bytecode::HLT_FF => Self::Halt, // Do nothing
+			Bytecode::PUSH_FLOAT => { // Pushes number
 				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes).unwrap());
 
 				Self::PushFloat(value)
-			}, // Pushes number
-			// 0x02 => Self::PushString, // Pushes string to stack (needing len)
-			0x03 => Self::PushFalse, // Pushes false to stack
-			0x04 => Self::PushTrue, // Pushes true to stack
-			// 0x05 => Self::Look, // Copy value from N
-			// 0x06 => Self::Load, // Copy value to N
+			},
+			Bytecode::PUSH_STRING => { // Pushes string to stack (needing len)
+				let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				let utf8 = bytes.take(u32_len as usize).collect();
+
+				let text = String::from_utf8(utf8).unwrap();
+
+				Self::PushString(text)
+			},
+			0x03 => Self::PushBoolean(false), // Pushes false to stack
+			0x04 => Self::PushBoolean(true), // Pushes true to stack
+			0x05 => { // Copy value from N
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Look(stack_pos)
+			},
+			0x06 => { // Copy value to N
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Load(stack_pos)
+			},
 			0x07 => Self::Remove, // Remove value
 			0x0F => Self::PushArgEnd,
-			// 0x20 => Self::Jit, // Jump if condition
-			// 0x21 => Self::Jif, // Jump if not condition
-			// 0x28 => Self::Jmp, // Jump without condition
-			// 0x2A => Self::Call, // Jump to pc from stack
+			0x20 => { // Jump if condition
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Jit(pos)
+			},
+			0x21 => { // Jump if not condition
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Jif(pos)
+			},
+			0x28 => { // Jump without condition
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Jmp(pos)
+			},
+			0x2A => { // Call subprogram (like jmp, but before pushes pc)
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+
+				Self::Call(pos)
+			},
 			0x2B => Self::Ret, // Jump to pc from stack
 			0x50 => Self::Eq, // Equals
 			0x51 => Self::Neq, // Not equals
 			0x52 => Self::Lt, // Less than
 			0x53 => Self::Gt, // Great than
-			// 0x80 => Self::NativeCall,
+			0x80 => {
+				let id = NativeFunctionId::try_from(bytes.nth(0).unwrap()).unwrap();
+
+				Self::NativeCall(id)
+			},
 			0xA0 => Self::Add, // Additive
 			0xA3 => Self::Sub, // Subtraction
 			0xB0 => Self::Mul, // Multiplication
@@ -338,8 +333,18 @@ impl Bytecode {
 			0xD0 => Self::Not, // Logical not
 			0xD3 => Self::LogicalAnd, // Logical AND
 			0xE0 => Self::LogicalOr, // Logical OR
-			_ => return Err(()),
+			x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }),
 		};
+
+		Ok(Some(result))
+	}
+
+	pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> {
+		let mut result = Vec::new();
+
+		while let Some(val) = Self::disasm_inst(&mut bytes)? {
+			result.push(val);
+		}
 
 		Ok(result)
 	}
@@ -423,6 +428,32 @@ impl NativeFunctionId {
 	}
 }
 
+impl TryFrom<u8> for NativeFunctionId {
+	type Error = ();
+
+	fn try_from(value: u8) -> Result<Self, Self::Error> {
+		match value {
+			0 => Ok(NativeFunctionId::Print),
+			1 => Ok(NativeFunctionId::Tuple),
+			2 => Ok(NativeFunctionId::Range),
+			_ => Err(()),
+		}
+	}
+}
+
+impl TryFrom<&str> for NativeFunctionId {
+	type Error = ();
+
+	fn try_from(name: &str) -> Result<Self, Self::Error> {
+		match name {
+			"print" => Ok(NativeFunctionId::Print),
+			"tuple" => Ok(NativeFunctionId::Tuple),
+			"range" => Ok(NativeFunctionId::Range),
+			_ => Err(()),
+		}
+	}
+}
+
 struct CompilerContext<'a> {
 	functions: HashMap<String, u32>,
 	scope: HashMap<String, u32>,
@@ -471,15 +502,6 @@ impl Compiler {
 		Self {stack_pos: 0, pc: 0}
 	}
 
-	pub fn get_native_call_id_by_name(name: &str) -> Option<NativeFunctionId> {
-		match name {
-			"print" => Some(NativeFunctionId::Print),
-			"tuple" => Some(NativeFunctionId::Tuple),
-			"range" => Some(NativeFunctionId::Range),
-			_ => None,
-		}
-	}
-
 	fn look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
 		self.stack_pos += 1;
 
@@ -497,11 +519,7 @@ impl Compiler {
 	fn push_bool(&mut self, val: bool, result: &mut Vec<Bytecode>) {
 		self.stack_pos += 1;
 
-		if val {
-			result.push(Bytecode::PushTrue);
-		} else {
-			result.push(Bytecode::PushFalse);
-		}
+		result.push(Bytecode::PushBoolean(val));
 
 		self.pc += 1;
 	}
@@ -537,7 +555,7 @@ impl Compiler {
 	}
 
 	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> where T: DoubleEndedIterator<Item=&'a ASTNode> {
-		if let Some(id) = Self::get_native_call_id_by_name(name) {
+		if let Ok(id) = NativeFunctionId::try_from(name) {
 			self.push_arg_end(result);
 
 			let mut len = 1;
@@ -689,7 +707,7 @@ impl Compiler {
 			ASTNodeEnum::Unary { op, value } => {
 				self.compile(value, result, context)?;
 
-				result.push(Bytecode::from_unary_op(op).into());
+				result.push(Bytecode::from_unary_op(op));
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::LessOrEquals, right } => {
 				self.compile(right, result, context)?;
