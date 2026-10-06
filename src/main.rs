@@ -21,7 +21,7 @@ mod vm;
 
 use crate::optimizer::{Optimizer, OptimizerError};
 use crate::vm::{VM, VMError};
-use crate::compiler::{Compiler, CompilerError};
+use crate::compiler::{Bytecode, Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 
@@ -67,7 +67,7 @@ impl Debug for AppError {
 fn repl() -> Result<(), AppError> {
 	let mut rl = DefaultEditor::new()?;
 
-	// let mut compiler = Compiler::new();
+	let mut compiler = Compiler::new();
 
 	let mut vm = VM::new(None);
 
@@ -147,8 +147,6 @@ fn run_file(file: &str) -> Result<(), AppError> {
 	}
 
 	let mut interpreter = VM::new(Some((&bytecode[start_index..]).into()));
-
-	interpreter.disasm()?;
 
 	if let Some(result) = interpreter.exec()? {
 		println!("result = {result}");
@@ -243,10 +241,10 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 	compiler.compile_loop(&ast, &mut bytes)?;
 
 	for byte in &bytes {
-		print!("{byte:02X} ");
+		println!("{byte}");
 	}
 
-	println!();
+	let bytes = Bytecode::to_bytes(bytes).unwrap();
 
 	Ok(bytes)
 }
