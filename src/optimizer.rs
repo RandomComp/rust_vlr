@@ -6,17 +6,18 @@ use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_type::{UniRes
 pub enum OptimizerError {
 	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
-	#[error("'{0}' variable is not known in current scope")]
-	NotKnownAtThisScope(String),
+	// #[error("'{0}' variable is not known in current scope")]
+	// NotKnownAtThisScope(String),
 }
 
 pub struct Optimizer {
-	constants: HashMap<String, UniResult>,
+	pub unused_vars: Vec<String>,
+	// constants: HashMap<String, UniResult>,
 }
 
 impl Optimizer {
 	pub fn new() -> Self {
-		Self {constants: HashMap::new()}
+		Self {unused_vars: Vec::new()} // constants: HashMap::new()}
 	}
 
 	pub fn have_no_effects(ast: &ASTNode) -> bool {
@@ -96,11 +97,9 @@ impl Optimizer {
 				op: BinaryOp::Plus,
 				right
 			} if left.value == right.value => {
-				let left = mem::take(left);
-
 				*ast = ASTNode {
 					value: ASTNodeEnum::Binary {
-						left,
+						left: mem::take(left),
 						op: BinaryOp::Multiply,
 						right: Box::new(ASTNode { value: ASTNodeEnum::Float(2.0), row, column }),
 					},
@@ -176,24 +175,29 @@ impl Optimizer {
 		let (row, column) = (ast.row, ast.column);
 
 		match &mut ast.value {
-			// ASTNodeEnum::Variable(name) => {
-			// 	let constant_value = self.constants.get(name).ok_or(OptimizerError::NotKnownAtThisScope(name.to_owned()))?;
-			// 	ast.value = constant_value.clone().try_into()?;
-			// },
-			// ASTNodeEnum::Binary { left, op:BinaryOp::Assignment, right } if let ASTNodeEnum::Variable(name) = &left.value => {
-			// 	self.fold(right)?;
+			ASTNodeEnum::Variable(name) => {
+				if let Some(index) = self.unused_vars.iter().position(|v| v == name) {
+					self.unused_vars.remove(index);
+				}
 
-			// 	let Ok(constant_value): Result<UniResult, _> = (**right).clone().try_into() else {
-			// 		return Ok(())
-			// 	};
+				// let constant_value = self.constants.get(name).ok_or(OptimizerError::NotKnownAtThisScope(name.to_owned()))?;
+				// ast.value = constant_value.clone().try_into()?;
+			},
+			ASTNodeEnum::Binary { left, op:BinaryOp::Assignment, right } if let ASTNodeEnum::Variable(name) = &left.value => {
+				self.fold(right)?;
 
-			// 	self.constants.insert(name.to_owned(), constant_value);
+				self.unused_vars.push(name.to_owned());
 
-			// 	ast.value = ASTNodeEnum::None;
-			// },
+				// let Ok(constant_value): Result<UniResult, _> = (**right).clone().try_into() else {
+				// 	return Ok(())
+				// };
+
+				// self.constants.insert(name.to_owned(), constant_value);
+
+				// ast.value = ASTNodeEnum::None;
+			},
 			ASTNodeEnum::Binary {
-				left: _, op:BinaryOp::Assignment |
-							BinaryOp::PlusAssignment |
+				left: _, op:BinaryOp::PlusAssignment |
 							BinaryOp::MinusAssignment |
 							BinaryOp::MultiplyAssignment |
 							BinaryOp::PowAssignment |

@@ -117,7 +117,7 @@ fn repl() -> Result<(), AppError> {
 
 		let mut result = Vec::new();
 
-		if let Err(e) = compiler.compile(&ast, &mut result) {
+		if let Err(e) = compiler.compile_loop(&ast, &mut result) {
 			eprintln!("Compiler error: {e}");
 
 			continue;
@@ -138,16 +138,12 @@ fn repl() -> Result<(), AppError> {
 }
 
 fn run_file(file: &str) -> Result<(), AppError> {
-	let bytecode = std::fs::read(file).unwrap_or_else(|e| {
-		eprintln!("{e}");
-
-		process::exit(e.raw_os_error().unwrap());
-	});
+	let bytecode = std::fs::read(file)?;
 
 	let mut start_index = 0;
 
-	if bytecode.starts_with(b"#!") {
-		start_index = bytecode.iter().position(|&c| c == b'\n').unwrap() + 1;
+	if bytecode.starts_with(b"#!") && let Some(shabang_pos) = bytecode.iter().position(|&c| c == b'\n') {
+		start_index = shabang_pos + 1;
 	}
 
 	let mut interpreter = VM::new(Some((&bytecode[start_index..]).into()));
@@ -178,11 +174,9 @@ fn format(code: &str) -> Result<(), AppError> {
 
 	let mut parser = Parser::new(tokens);
 
-	let mut ast = parser.parse_instructions().unwrap_or_else(|e| {
-		eprintln!("Parser error: {e}");
-
-		process::exit(1);
-	}).unwrap();
+	let Some(mut ast) = parser.parse_instructions()? else {
+		return Ok(())
+	};
 
 	let mut ast_str = String::new();
 
@@ -238,11 +232,15 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	println!("ast after optimizer = {ast_str}");
 
+	for var in optimizer.unused_vars {
+		println!("'{var}' unused");
+	}
+
 	let mut compiler = Compiler::new();
 
 	let mut bytes = Vec::new();
 
-	compiler.compile(&ast, &mut bytes)?;
+	compiler.compile_loop(&ast, &mut bytes)?;
 
 	for byte in &bytes {
 		print!("{byte:02X} ");

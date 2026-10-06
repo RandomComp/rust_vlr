@@ -4,16 +4,33 @@ use crate::{compiler::{Bytecode, NativeFunctionId}, uni_type::{UniResult, UniRes
 
 #[derive(Debug, thiserror::Error)]
 pub enum VMError {
-	#[error("UniResult error: {0}")]
+	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
-	#[error("invalid UTF-8: {0}")]
+	#[error("{0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
-	#[error("fmt::Error: {0}")]
+	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
-	// #[error("Unknown native function with id {0} call")]
-	// UnknownNativeFunctionCall(NativeFunctionId),
+	#[error("Unknown native function with id {0} call")]
+	UnknownNativeFunctionCall(u8),
 	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
 	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionId, found: u8, expected: u8 },
+	#[error("Stack empty, but expected value")]
+	StackEmptyButExpectedValue,
+}
+
+impl TryFrom<u8> for NativeFunctionId {
+	type Error = VMError;
+
+	fn try_from(value: u8) -> Result<Self, Self::Error> {
+		let result = match value {
+			0 => NativeFunctionId::Print,
+			1 => NativeFunctionId::Tuple,
+			2 => NativeFunctionId::Range,
+			x => return Err(Self::Error::UnknownNativeFunctionCall(x)),
+		};
+
+		Ok(result)
+	}
 }
 
 pub struct VM {
@@ -82,23 +99,31 @@ impl VM {
 	}
 
 	fn disasm_inst(&mut self, f: &mut String) -> Result<bool, VMError> {
-		let result = match self.peek(0) {
-			Some(Bytecode::NOP | Bytecode::NOP_FF) => true,
-			Some(Bytecode::PUSH_FALSE) => {
+		let Some(opcode) = self.peek(0) else {
+			return Ok(false)
+		};
+
+		let Ok(opcode): Result<Bytecode, _> = opcode.try_into() else {
+			panic!("invalid instruction byte 0x{opcode:02X} at {}", self.pc)
+		};
+
+		let result = match opcode {
+			Bytecode::Nop => true,
+			Bytecode::PushFalse => {
 				self.consume_next(1);
 
 				write!(f, "push false")?;
 
 				true
 			}
-			Some(Bytecode::PUSH_TRUE) => {
+			Bytecode::PushTrue => {
 				self.consume_next(1);
 
 				write!(f, "push true")?;
 
 				true
 			}
-			Some(Bytecode::PUSH_FLOAT) => {
+			Bytecode::PushFloat => {
 				self.consume_next(1);
 
 				let bytes = self.consume_const_bytes_and_get::<8>();
@@ -109,10 +134,10 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::PUSH_STRING) => {
+			Bytecode::PushString => {
 				self.consume_next(1);
 
-				let len = u16::from_le_bytes(self.consume_const_bytes_and_get::<2>()) as usize;
+				let len = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
 				let bytes = self.consume_bytes_and_get(len);
 
@@ -122,7 +147,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::LOOK) => {
+			Bytecode::Look => {
 				self.consume_next(1);
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
@@ -131,7 +156,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::LOAD) => {
+			Bytecode::Load => {
 				self.consume_next(1);
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
@@ -140,112 +165,112 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::REMOVE) => {
+			Bytecode::Remove => {
 				self.consume_next(1);
 
 				write!(f, "remove")?;
 
 				true
 			},
-			Some(Bytecode::PUSH_ARG_END) => {
+			Bytecode::PushArgEnd => {
 				self.consume_next(1);
 
 				write!(f, "push args_end")?;
 
 				true
 			},
-			Some(Bytecode::ADD) => {
+			Bytecode::Add => {
 				self.consume_next(1);
 
 				write!(f, "add")?;
 
 				true
 			},
-			Some(Bytecode::SUB) => {
+			Bytecode::Sub => {
 				self.consume_next(1);
 
 				write!(f, "sub")?;
 
 				true
 			},
-			Some(Bytecode::MUL) => {
+			Bytecode::Mul => {
 				self.consume_next(1);
 
 				write!(f, "mul")?;
 
 				true
 			},
-			Some(Bytecode::DIV) => {
+			Bytecode::Div => {
 				self.consume_next(1);
 
 				write!(f, "div")?;
 
 				true
 			},
-			Some(Bytecode::POW) => {
+			Bytecode::Pow => {
 				self.consume_next(1);
 
 				write!(f, "pow")?;
 
 				true
 			},
-			Some(Bytecode::EQ) => {
+			Bytecode::Eq => {
 				self.consume_next(1);
 
 				write!(f, "eq")?;
 
 				true
 			},
-			Some(Bytecode::NEQ) => {
+			Bytecode::Neq => {
 				self.consume_next(1);
 
 				write!(f, "neq")?;
 
 				true
 			},
-			Some(Bytecode::LT) => {
+			Bytecode::Lt => {
 				self.consume_next(1);
 
 				write!(f, "lt")?;
 
 				true
 			},
-			Some(Bytecode::GT) => {
+			Bytecode::Gt => {
 				self.consume_next(1);
 
 				write!(f, "gt")?;
 
 				true
 			},
-			Some(Bytecode::LOG_AND) => {
+			Bytecode::LogicalAnd => {
 				self.consume_next(1);
 
 				write!(f, "log_and")?;
 
 				true
 			},
-			Some(Bytecode::LOG_OR) => {
+			Bytecode::LogicalOr => {
 				self.consume_next(1);
 
 				write!(f, "log_or")?;
 
 				true
 			},
-			Some(Bytecode::NEG) => {
+			Bytecode::Neg => {
 				self.consume_next(1);
 
 				write!(f, "neg")?;
 
 				true
 			},
-			Some(Bytecode::NOT) => {
+			Bytecode::Not => {
 				self.consume_next(1);
 
 				write!(f, "not")?;
 
 				true
 			},
-			Some(Bytecode::JIT) => {
+			Bytecode::Jit => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -254,7 +279,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::JIF) => {
+			Bytecode::Jif => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -263,7 +288,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::JMP) => {
+			Bytecode::Jmp => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -272,7 +297,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::CALL) => {
+			Bytecode::Call => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -281,24 +306,22 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::RET) => {
+			Bytecode::Ret => {
 				self.consume_next(1);
 
 				write!(f, "ret")?;
 
 				true
 			},
-			Some(Bytecode::NATIVE_CALL) => {
+			Bytecode::NativeCall => {
 				self.consume_next(1);
 
 				let id = u8::from_le_bytes(self.consume_const_bytes_and_get::<1>());
 
-				write!(f, "native_call {}", NativeFunctionId::from(id).get_name())?;
+				write!(f, "native_call {}", NativeFunctionId::try_from(id)?.get_name())?;
 
 				true
 			}
-			Some(x) => panic!("invalid instruction byte 0x{x:02X} at {}", self.pc),
-			None => false,
 		};
 
 		Ok(result)
@@ -309,7 +332,9 @@ impl VM {
 
 		let mut buf = String::new();
 
-		println!("{:02}:", index);
+		print!("{:02}: ", self.pc);
+
+		buf.clear();
 
 		if self.disasm_inst(&mut buf)? {
 			println!("{buf}");
@@ -326,13 +351,14 @@ impl VM {
 		let mut buf = String::new();
 
 		loop {
+			print!("{:02}: ", self.pc);
+
+			buf.clear();
+
 			if !self.disasm_inst(&mut buf)? {
 				break;
 			}
 
-			buf.clear();
-
-			println!("{:02}:", self.pc);
 			println!("{buf}");
 		}
 
@@ -375,25 +401,38 @@ impl VM {
 		}
 	}
 
-	fn exec_inst(&mut self) -> Result<bool, VMError> {
-		self.disasm_inst_nochange()?;
+	fn stack_pop(&mut self) -> Result<UniResult, VMError> {
+		self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)
+	}
 
-		let result = match self.peek(0) {
-			Some(Bytecode::PUSH_FALSE) => {
+	fn exec_inst(&mut self) -> Result<bool, VMError> {
+		// self.disasm_inst_nochange()?;
+
+		let Some(opcode) = self.peek(0) else {
+			return Ok(false)
+		};
+
+		let Ok(opcode): Result<Bytecode, _> = opcode.try_into() else {
+			panic!("invalid instruction byte 0x{opcode:02X} at {}", self.pc)
+		};
+
+		let result = match opcode {
+			Bytecode::Nop => false,
+			Bytecode::PushFalse => {
 				self.consume_next(1);
 
 				self.stack.push_back(false.into());
 
 				true
 			},
-			Some(Bytecode::PUSH_TRUE) => {
+			Bytecode::PushTrue => {
 				self.consume_next(1);
 
 				self.stack.push_back(true.into());
 
 				true
 			},
-			Some(Bytecode::PUSH_FLOAT) => {
+			Bytecode::PushFloat => {
 				self.consume_next(1);
 
 				let bytes = self.consume_const_bytes_and_get::<8>();
@@ -404,10 +443,10 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::PUSH_STRING) => {
+			Bytecode::PushString => {
 				self.consume_next(1);
 
-				let len = u16::from_le_bytes(self.consume_const_bytes_and_get::<2>()) as usize;
+				let len = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
 				let bytes = self.consume_bytes_and_get(len);
 
@@ -417,7 +456,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::LOOK) => {
+			Bytecode::Look => {
 				self.consume_next(1);
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
@@ -428,184 +467,182 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::LOAD) => {
+			Bytecode::Load => {
 				self.consume_next(1);
 
 				let index = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>()) as usize;
 
 				if index < self.stack.len() {
-					let value = self.stack.back().unwrap();
-
-					*self.stack.index_mut(index) = value.clone();
+					*self.stack.index_mut(index) = self.stack_pop()?;
 				}
 
 				true
 			},
-			Some(Bytecode::REMOVE) => {
+			Bytecode::Remove => {
 				self.consume_next(1);
 
-				self.stack.pop_back();
+				self.stack_pop()?;
 
 				true
 			},
-			Some(Bytecode::PUSH_ARG_END) => {
+			Bytecode::PushArgEnd => {
 				self.consume_next(1);
 
 				self.stack.push_back(UniResult::ArgsEnd);
 
 				true
 			},
-			Some(Bytecode::ADD) => {
+			Bytecode::Add => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.add(&right)?);
 
 				true
 			},
-			Some(Bytecode::SUB) => {
+			Bytecode::Sub => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.sub(&right)?);
 
 				true
 			},
-			Some(Bytecode::MUL) => {
+			Bytecode::Mul => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.mul(&right)?);
 
 				true
 			},
-			Some(Bytecode::DIV) => {
+			Bytecode::Div => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.div(&right)?);
 
 				true
 			},
-			Some(Bytecode::POW) => {
+			Bytecode::Pow => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.pow(&right)?);
 
 				true
 			},
-			Some(Bytecode::EQ) => {
+			Bytecode::Eq => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.eq(&right)?);
 
 				true
 			},
-			Some(Bytecode::NEQ) => {
+			Bytecode::Neq => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.neq(&right)?);
 
 				true
 			},
-			Some(Bytecode::LT) => {
+			Bytecode::Lt => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.lt(&right)?);
 
 				true
 			},
-			Some(Bytecode::GT) => {
+			Bytecode::Gt => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.gt(&right)?);
 
 				true
 			},
-			Some(Bytecode::LOG_AND) => {
+			Bytecode::LogicalAnd => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.log_and(&right)?);
 
 				true
 			},
-			Some(Bytecode::LOG_OR) => {
+			Bytecode::LogicalOr => {
 				self.consume_next(1);
 
-				let left = self.stack.pop_back().unwrap();
-				let right = self.stack.pop_back().unwrap();
+				let left = self.stack_pop()?;
+				let right = self.stack_pop()?;
 
 				self.stack.push_back(left.log_or(&right)?);
 
 				true
 			},
-			Some(Bytecode::NEG) => {
+			Bytecode::Neg => {
 				self.consume_next(1);
 
-				if let Some(value) = self.stack.pop_back() {
-					self.stack.push_back(value.neg()?);
-				}
+				let value = self.stack_pop()?;
+
+				self.stack.push_back(value.neg()?);
 
 				true
 			},
-			Some(Bytecode::NOT) => {
+			Bytecode::Not => {
 				self.consume_next(1);
 
-				if let Some(value) = self.stack.pop_back() {
-					self.stack.push_back(value.not()?);
-				}
+				let value = self.stack_pop()?;
+
+				self.stack.push_back(value.not()?);
 
 				true
 			},
-			Some(Bytecode::JIT) => {
+			Bytecode::Jit => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				if self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
+				if self.stack_pop()?.to_bool()? {
 					self.pc = jump as usize;
 				}
 
 				true
 			},
-			Some(Bytecode::JIF) => {
+			Bytecode::Jif => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
 
-				if !self.stack.pop_back().expect("Expected condition in stack (boolean value)").to_bool()? {
+				if !self.stack_pop()?.to_bool()? {
 					self.pc = jump as usize;
 				}
 
 				true
 			},
-			Some(Bytecode::JMP) => {
+			Bytecode::Jmp => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -614,7 +651,7 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::CALL) => {
+			Bytecode::Call => {
 				self.consume_next(1);
 
 				let jump = u32::from_le_bytes(self.consume_const_bytes_and_get::<4>());
@@ -625,31 +662,29 @@ impl VM {
 
 				true
 			},
-			Some(Bytecode::RET) => {
+			Bytecode::Ret => {
 				self.consume_next(1);
 
-				let pos = self.stack.pop_back().unwrap().to_u32()?;
+				let pos = self.stack_pop()?.to_u32()?;
 
 				self.pc = pos as usize;
 
 				true
 			},
-			Some(Bytecode::NATIVE_CALL) => {
+			Bytecode::NativeCall => {
 				self.consume_next(1);
 
 				let id = u8::from_le_bytes(self.consume_const_bytes_and_get::<1>());
 
 				let args = self.pop_stack_until_value(&UniResult::ArgsEnd);
 
-				match Self::call_native(id.into(), args)? {
+				match Self::call_native(id.try_into()?, args)? {
 					UniResult::None => {},
 					val => self.stack.push_back(val),
 				}
 
 				true
 			}
-			Some(Bytecode::NOP | Bytecode::NOP_FF) | None => false,
-			Some(x) => panic!("invalid instruction byte 0x{x:02X} at {:02X}", self.pc),
 		};
 
 		Ok(result)
@@ -673,7 +708,7 @@ impl VM {
 		self.pc = 0;
 
 		while self.exec_inst()? {
-			self.dump_stack();
+			// self.dump_stack();
 		}
 
 		Ok(self.stack.pop_back())

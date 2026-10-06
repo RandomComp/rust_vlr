@@ -1,7 +1,9 @@
-x = 123
+x = 2 + 2 * 1
 
-def test() {
-	print("Hello, world!")
+if x > 5 {
+	print("x > 5")
 }
 
-test()
+if x < 5 {
+	print("x < 5")
+}
