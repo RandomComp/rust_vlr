@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, iter, num::TryFromIntError};
+use std::{collections::HashMap, fmt::Display, iter, num::TryFromIntError, vec::IntoIter};
 
 use crate::{parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp}};
 
@@ -159,18 +159,18 @@ impl TryFrom<Bytecode> for Vec<u8> {
 	}
 }
 
-impl TryFrom<Vec<u8>> for Bytecode {
-	type Error = ();
+fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Option<[u8; LEN]> where T: Iterator<Item=u8> {
+	let mut result = [0u8; LEN];
 
-	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-
+	for i in 0..LEN {
+		if let Some(x) = arr.next() {
+			result[i] = x;
+		} else {
+			return None
+		}
 	}
-}
 
-impl TryFrom<Vec<u8>> for Vec<Bytecode> {
-	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-
-	}
+	Some(result)
 }
 
 impl Display for Bytecode {
@@ -263,7 +263,36 @@ impl Display for Bytecode {
 }
 
 impl Bytecode {
-	pub fn to_bytes(values: Vec<Bytecode>) -> Result<Vec<u8>, ()> {
+	pub const NOP: u8 = 0x00; pub const NOP_FF: u8 = 0xFF;  // Do nothing
+	pub const PUSH_FLOAT: u8 = 0x01; // Pushes number
+	pub const PUSH_STRING: u8 = 0x02; // Pushes string to stack (needing len)
+	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
+	pub const PUSH_TRUE: u8 = 0x04; // Pushes true to stack
+	pub const LOOK: u8 = 0x05; // Copy value from N
+	pub const LOAD: u8 = 0x06; // Copy value to N
+	pub const REMOVE: u8 = 0x07; // Remove value
+	pub const PUSH_ARG_END: u8 = 0x0F;
+	pub const JIT: u8 = 0x20; // Jump if condition
+	pub const JIF: u8 = 0x21; // Jump if not condition
+	pub const JMP: u8 = 0x28; // Jump without condition
+	pub const CALL: u8 = 0x2A; // Jump to pc from stack
+	pub const RET: u8 = 0x2B; // Jump to pc from stack
+	pub const EQ: u8 = 0x50; // Equals
+	pub const NEQ: u8 = 0x51; // Not equals
+	pub const LT: u8 =  0x52; // Less than
+	pub const GT: u8 =  0x53; // Great than
+	pub const NATIVE_CALL: u8 =  0x80;
+	pub const ADD: u8 =  0xA0; // Additive
+	pub const SUB: u8 =  0xA3; // Subtraction
+	pub const MUL: u8 =  0xB0; // Multiplication
+	pub const DIV: u8 =  0xB3; // Division
+	pub const POW: u8 =  0xC0; // Power of
+	pub const NEG: u8 =  0xC3; // Negative value (-)
+	pub const NOT: u8 =  0xD0; // Logical not
+	pub const LOGICAL_AND: u8 =  0xD3; // Logical AND
+	pub const LOGICAL_OR: u8 =  0xE0; // Logical OR
+
+	pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, ()> {
 		let mut result = Vec::new();
 
 		for value in values {
@@ -271,6 +300,46 @@ impl Bytecode {
 
 			result.extend(res);
 		}
+
+		Ok(result)
+	}
+
+	pub fn disasm_inst<T>(mut bytes: T) -> Result<Self, ()> where T: Iterator<Item = u8> {
+		let result = match bytes.next().ok_or(())? {
+			0x00 | 0xFF => Self::Nop, // Do nothing
+			0x01 => {
+				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes).unwrap());
+
+				Self::PushFloat(value)
+			}, // Pushes number
+			// 0x02 => Self::PushString, // Pushes string to stack (needing len)
+			0x03 => Self::PushFalse, // Pushes false to stack
+			0x04 => Self::PushTrue, // Pushes true to stack
+			// 0x05 => Self::Look, // Copy value from N
+			// 0x06 => Self::Load, // Copy value to N
+			0x07 => Self::Remove, // Remove value
+			0x0F => Self::PushArgEnd,
+			// 0x20 => Self::Jit, // Jump if condition
+			// 0x21 => Self::Jif, // Jump if not condition
+			// 0x28 => Self::Jmp, // Jump without condition
+			// 0x2A => Self::Call, // Jump to pc from stack
+			0x2B => Self::Ret, // Jump to pc from stack
+			0x50 => Self::Eq, // Equals
+			0x51 => Self::Neq, // Not equals
+			0x52 => Self::Lt, // Less than
+			0x53 => Self::Gt, // Great than
+			// 0x80 => Self::NativeCall,
+			0xA0 => Self::Add, // Additive
+			0xA3 => Self::Sub, // Subtraction
+			0xB0 => Self::Mul, // Multiplication
+			0xB3 => Self::Div, // Division
+			0xC0 => Self::Pow, // Power of
+			0xC3 => Self::Neg, // Negative value (-)
+			0xD0 => Self::Not, // Logical not
+			0xD3 => Self::LogicalAnd, // Logical AND
+			0xE0 => Self::LogicalOr, // Logical OR
+			_ => return Err(()),
+		};
 
 		Ok(result)
 	}

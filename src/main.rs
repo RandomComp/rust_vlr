@@ -17,10 +17,10 @@ mod parser;
 mod optimizer;
 mod uni_type;
 mod compiler;
-mod vm;
+// mod vm;
 
 use crate::optimizer::{Optimizer, OptimizerError};
-use crate::vm::{VM, VMError};
+// use crate::vm::{VM, VMError};
 use crate::compiler::{Bytecode, Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
@@ -46,8 +46,8 @@ enum AppError {
 	Optimizer(#[from] OptimizerError),
 	#[error("Compiler error: {0}")]
 	Compiler(#[from] CompilerError),
-	#[error("VM error: {0}")]
-	VM(#[from] VMError),
+	// #[error("VM error: {0}")]
+	// VM(#[from] VMError),
 	#[error("IO error: {0}")]
 	IO(#[from] io::Error),
 	#[error("Fmt error: {0}")]
@@ -69,7 +69,7 @@ fn repl() -> Result<(), AppError> {
 
 	let mut compiler = Compiler::new();
 
-	let mut vm = VM::new(None);
+	// let mut vm = VM::new(None);
 
 	loop {
 		// println!("Tokenizing expr '{}'", code);
@@ -123,15 +123,15 @@ fn repl() -> Result<(), AppError> {
 			continue;
 		}
 
-		vm.bytecode = Some(result);
+		// vm.bytecode = Some(Bytecode::asm(result).unwrap());
 
-		let result = vm.exec();
+		// let result = vm.exec();
 
-		if let Ok(Some(result)) = result {
-			println!("{result}");
-		} else if let Err(e) = result {
-			eprintln!("VM error: {e}");
-		}
+		// if let Ok(Some(result)) = result {
+		// 	println!("{result}");
+		// } else if let Err(e) = result {
+		// 	eprintln!("VM error: {e}");
+		// }
 
 		rl.add_history_entry(code)?;
 	}
@@ -146,11 +146,11 @@ fn run_file(file: &str) -> Result<(), AppError> {
 		start_index = shabang_pos + 1;
 	}
 
-	let mut interpreter = VM::new(Some((&bytecode[start_index..]).into()));
+	// let mut interpreter = VM::new(Some((&bytecode[start_index..]).into()));
 
-	if let Some(result) = interpreter.exec()? {
-		println!("result = {result}");
-	}
+	// if let Some(result) = interpreter.exec()? {
+	// 	println!("result = {result}");
+	// }
 
 	Ok(())
 }
@@ -244,7 +244,13 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		println!("{byte}");
 	}
 
-	let bytes = Bytecode::to_bytes(bytes).unwrap();
+	let bytes = Bytecode::asm(bytes).unwrap();
+
+	println!("bytes = {bytes:?}");
+
+	let disassembled = Bytecode::disasm_inst(bytes.iter().copied()).unwrap();
+
+	println!("disassembled = {disassembled}");
 
 	Ok(bytes)
 }
