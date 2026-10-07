@@ -16,12 +16,14 @@ mod lexer;
 mod parser;
 mod optimizer;
 mod uni_type;
+mod bytecode;
 mod compiler;
 mod vm;
 
 use crate::optimizer::{Optimizer, OptimizerError};
 use crate::vm::{VM, VMError};
-use crate::compiler::{Bytecode, BytecodeError, Compiler, CompilerError};
+use crate::bytecode::{Bytecode, BytecodeError};
+use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 
@@ -246,7 +248,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		println!("{byte}");
 	}
 
-	let bytes = Bytecode::asm(bytes)?;
+	let bytes = Bytecode::asm(bytes);
 
 	Ok(bytes)
 }

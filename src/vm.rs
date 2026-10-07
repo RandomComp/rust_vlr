@@ -1,6 +1,8 @@
 use std::{collections::VecDeque, string::FromUtf8Error};
 
-use crate::{compiler::{Bytecode, NativeFunctionId}, uni_type::{UniResult, UniResultError}};
+use crate::bytecode::Bytecode;
+use crate::compiler::{NativeFunctionId};
+use crate::uni_type::{UniResult, UniResultError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VMError {
