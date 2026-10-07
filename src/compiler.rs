@@ -199,7 +199,11 @@ impl Compiler {
 
 				let mut body_context = CompilerContext::new(Some(context));
 
-				self.compile(body, result, context)?;
+				for arg in args {
+					body_context.insert_var(arg, stack_pos);
+				}
+
+				self.compile(body, result, &mut body_context)?;
 
 				result.push(Bytecode::Ret);
 
@@ -238,10 +242,8 @@ impl Compiler {
 
 				result.push(Bytecode::PushString(x.clone()));
 			},
-			ASTNodeEnum::Tuple(values) => {
-				if !values.is_empty() {
-					self.call_func("tuple", values.iter(), result, context)?;
-				}
+			ASTNodeEnum::Tuple(values) => if !values.is_empty() {
+				self.call_func("tuple", values.iter(), result, context)?;
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::Range, right } => {
 				self.call_func("range", [&**left, &**right].into_iter(), result, context)?;
