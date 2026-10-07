@@ -28,7 +28,9 @@ pub enum Bytecode {
 	Jmp(u32),
 	/// Jump to pc from stack
 	Call(u32),
-	/// Jump to pc from stack
+	/// Starts subprogram (pushes stack value to interal ret stack)
+	Subprogram,
+	/// Returns from subprogram
 	Ret,
 	/// Equals
 	Eq,
@@ -122,6 +124,8 @@ impl Display for Bytecode {
 				write!(f, "jmp {pos:02}"),
 			Bytecode::Call(pos) =>
 				write!(f, "call {pos:02}"),
+			Bytecode::Subprogram =>
+				write!(f, "subprogram"),
 			Bytecode::Ret =>
 				write!(f, "ret"),
 			Bytecode::NativeCall(id) =>
@@ -156,7 +160,8 @@ impl Bytecode {
 	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
 	pub const CALL: u8 = 0x2A; // Jump to pc from stack
-	pub const RET: u8 = 0x2B; // Jump to pc from stack
+	pub const SUBPROGRAM: u8 = 0x2B;
+	pub const RET: u8 = 0x2C; // Jump to pc from stack
 	pub const EQ: u8 = 0x50; // Equals
 	pub const NEQ: u8 = 0x51; // Not equals
 	pub const LT: u8 =  0x52; // Less than
@@ -216,6 +221,7 @@ impl Bytecode {
 			Self::Jif(..) 				=> Self::JIF, // Jump if not condition
 			Self::Jmp(..) 				=> Self::JMP, // Jump without condition
 			Self::Call(..) 				=> Self::CALL, // Jump to pc from stack
+			Self::Subprogram 			=> Self::SUBPROGRAM, // Jump to pc from stack
 			Self::Ret 					=> Self::RET, // Jump to pc from stack
 			Self::Eq 					=> Self::EQ, // Equals
 			Self::Neq 					=> Self::NEQ, // Not equals
@@ -299,59 +305,60 @@ impl Bytecode {
 
 				Self::PushString(text)
 			},
-			0x03 => Self::PushBoolean(false), // Pushes false to stack
-			0x04 => Self::PushBoolean(true), // Pushes true to stack
-			0x05 => { // Copy value from N
+			Self::PUSH_FALSE => Self::PushBoolean(false), // Pushes false to stack
+			Self::PUSH_TRUE => Self::PushBoolean(true), // Pushes true to stack
+			Self::LOOK => { // Copy value from N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Look(stack_pos)
 			},
-			0x06 => { // Copy value to N
+			Self::LOAD => { // Copy value to N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Load(stack_pos)
 			},
-			0x07 => Self::Remove, // Remove value
-			0x0F => Self::PushArgEnd,
-			0x20 => { // Jump if condition
+			Self::REMOVE => Self::Remove, // Remove value
+			Self::PUSH_ARG_END => Self::PushArgEnd,
+			Self::JIT => { // Jump if condition
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Jit(pos)
 			},
-			0x21 => { // Jump if not condition
+			Self::JIF => { // Jump if not condition
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Jif(pos)
 			},
-			0x28 => { // Jump without condition
+			Self::JMP => { // Jump without condition
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Jmp(pos)
 			},
-			0x2A => { // Call subprogram (like jmp, but before pushes pc)
+			Self::CALL => { // Call subprogram (like jmp, but before pushes pc)
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 
 				Self::Call(pos)
 			},
-			0x2B => Self::Ret, // Jump to pc from stack
-			0x50 => Self::Eq, // Equals
-			0x51 => Self::Neq, // Not equals
-			0x52 => Self::Lt, // Less than
-			0x53 => Self::Gt, // Great than
-			0x80 => {
+			Self::SUBPROGRAM => Self::Subprogram,
+			Self::RET => Self::Ret, // Jump to pc from stack
+			Self::EQ => Self::Eq, // Equals
+			Self::NEQ => Self::Neq, // Not equals
+			Self::LT => Self::Lt, // Less than
+			Self::GT => Self::Gt, // Great than
+			Self::NATIVE_CALL => {
 				let id = NativeFunctionId::try_from(bytes.nth(0).unwrap()).unwrap();
 
 				Self::NativeCall(id)
 			},
-			0xA0 => Self::Add, // Additive
-			0xA3 => Self::Sub, // Subtraction
-			0xB0 => Self::Mul, // Multiplication
-			0xB3 => Self::Div, // Division
-			0xC0 => Self::Pow, // Power of
-			0xC3 => Self::Neg, // Negative value (-)
-			0xD0 => Self::Not, // Logical not
-			0xD3 => Self::LogicalAnd, // Logical AND
-			0xE0 => Self::LogicalOr, // Logical OR
+			Self::ADD 			=> Self::Add, // Additive
+			Self::SUB 			=> Self::Sub, // Subtraction
+			Self::MUL 			=> Self::Mul, // Multiplication
+			Self::DIV 			=> Self::Div, // Division
+			Self::POW 			=> Self::Pow, // Power of
+			Self::NEG 			=> Self::Neg, // Negative value (-)
+			Self::NOT 			=> Self::Not, // Logical not
+			Self::LOGICAL_AND 	=> Self::LogicalAnd, // Logical AND
+			Self::LOGICAL_OR 	=> Self::LogicalOr, // Logical OR
 			x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }),
 		};
 

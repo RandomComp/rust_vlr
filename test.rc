@@ -1,13 +1,9 @@
-x = 0
+print("Fuck")
 
-res = 2
+x = 2 + 2 * 2
 
-while x < 4 {
-	res *= res
-
-	# if res > 32768 {
-	# 	break ()
-	# }
-
-	x += 1
+def sum() {
+	return 123 + 456 * 789
 }
+
+print(sum())

@@ -641,7 +641,9 @@ impl Parser {
 	// }
 
 	fn parse_unary(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		let Some(cur) = self.peek(0) else { return Ok(None) };
+		let Some(cur) = self.peek(0) else {
+			return Ok(None)
+		};
 
 		match (cur, self.peek(1)) {
 			(&Token {token_type: TokenType::True, column, row}, ..) => {
@@ -884,7 +886,11 @@ impl Parser {
 
 	fn parse(&mut self, precedence: usize) -> Result<ASTNode, ParserError> {
 		if precedence == 0 {
-			return Ok(self.parse_unary()?.expect("Outside of array"));
+			if let Some(result) = self.parse_unary()? {
+				return Ok(result)
+			}
+
+			return Ok(ASTNode::NONE)
 		}
 
 		let mut first = self.parse(precedence - 1)?;

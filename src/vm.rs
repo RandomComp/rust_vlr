@@ -1,4 +1,6 @@
-use std::{collections::VecDeque, string::FromUtf8Error};
+use std::string::FromUtf8Error;
+use std::thread::sleep;
+use std::time::Duration;
 
 use crate::bytecode::Bytecode;
 use crate::compiler::{NativeFunctionId};
@@ -23,18 +25,19 @@ pub enum VMError {
 pub struct VM {
 	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
-	stack: VecDeque<UniResult>,
+	stack: Vec<UniResult>,
+	ret_stack: Vec<u32>,
 }
 
 impl VM {
 	pub fn new(bytecode: Option<Vec<Bytecode>>) -> Self {
-		Self {pc: 0, bytecode, stack: VecDeque::new()}
+		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn pop_stack_until_value(stack: &mut VecDeque<UniResult>, value: &UniResult) -> Vec<UniResult> {
+	fn pop_stack_until_value(stack: &mut Vec<UniResult>, value: &UniResult) -> Vec<UniResult> {
 		let mut result = Vec::new();
 
-		while let Some(x) = stack.pop_back() && &x != value {
+		while let Some(x) = stack.pop() && &x != value {
 			result.push(x);
 		}
 
@@ -103,23 +106,23 @@ impl VM {
 		match inst {
 			Bytecode::Halt => return Ok((false, false)),
 			Bytecode::PushArgEnd =>
-				self.stack.push_back(UniResult::ArgsEnd),
+				self.stack.push(UniResult::ArgsEnd),
 			&Bytecode::PushBoolean(val) => {
-				self.stack.push_back(val.into());
+				self.stack.push(val.into());
 			},
 			&Bytecode::PushFloat(val) => {
-				self.stack.push_back(val.into());
+				self.stack.push(val.into());
 			},
 			Bytecode::PushString(val) => {
-				self.stack.push_back(val.clone().into());
+				self.stack.push(val.clone().into());
 			},
 			&Bytecode::Look(stack_pos) => {
 				let val = self.stack.get(stack_pos as usize).ok_or(VMError::InvalidStackPosition(stack_pos))?;
 
-				self.stack.push_back(val.clone());
+				self.stack.push(val.clone());
 			},
 			&Bytecode::Load(stack_pos) => {
-				let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
 				if let Some(val) = self.stack.get_mut(stack_pos as usize) {
 					*val = value;
@@ -128,17 +131,17 @@ impl VM {
 				}
 			},
 			Bytecode::Remove => {
-				self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+				self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 			},
 			&Bytecode::Jif(dest_pc) => {
-				if !self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+				if !self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
 				}
 			},
 			&Bytecode::Jit(dest_pc) => {
-				if self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+				if self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
@@ -150,14 +153,19 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::Call(dest_pc) => {
-				self.stack.push_back(self.pc.into());
+				self.stack.push((self.pc + 1).into());
 
 				self.pc = dest_pc;
 
 				pc_changed = true;
 			},
+			&Bytecode::Subprogram => {
+				let pc = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
+
+				self.ret_stack.push(pc);
+			},
 			&Bytecode::Ret => {
-				self.pc = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
+				self.pc = self.ret_stack.pop().unwrap();
 
 				pc_changed = true;
 			},
@@ -177,20 +185,20 @@ impl VM {
 			Bytecode::Div |
 			Bytecode::LogicalAnd |
 			Bytecode::LogicalOr => {
-				let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-				let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let left = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let right = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
 				let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
 
-				self.stack.push_back(result);
+				self.stack.push(result);
 			},
 			Bytecode::Neg |
 			Bytecode::Not => {
-				let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
 				let result = value.calc_unary_by_op(&inst.to_unary_op().unwrap())?;
 
-				self.stack.push_back(result);
+				self.stack.push(result);
 			},
 		}
 
@@ -206,8 +214,10 @@ impl VM {
 			if !pc_changed {
 				self.pc += 1;
 			}
+
+			// sleep(Duration::from_millis(100));
 		}
 
-		Ok(self.stack.pop_back())
+		Ok(self.stack.pop())
 	}
 }
