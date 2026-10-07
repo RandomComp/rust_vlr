@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::IndexMut, string::FromUtf8Error};
+use std::{collections::VecDeque, string::FromUtf8Error};
 
 use crate::{compiler::{Bytecode, NativeFunctionId}, uni_type::{UniResult, UniResultError}};
 
@@ -10,8 +10,6 @@ pub enum VMError {
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
-	#[error("Unknown native function with id {0} call")]
-	UnknownNativeFunctionCall(u8),
 	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
 	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionId, found: u8, expected: u8 },
 	#[error("Stack empty, but expected value")]
@@ -21,7 +19,7 @@ pub enum VMError {
 }
 
 pub struct VM {
-	pc: usize,
+	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
 	stack: VecDeque<UniResult>,
 }
@@ -39,26 +37,6 @@ impl VM {
 		}
 
 		result
-	}
-
-	fn disasm_inst(&self) {
-		let Some(bytecode) = &self.bytecode else {
-			return
-		};
-
-		if let Some(inst) = bytecode.get(self.pc) {
-			print!("{:02}: {inst}", self.pc);
-		}
-	}
-
-	pub fn disasm(&mut self) {
-		let Some(bytecode) = &self.bytecode else {
-			return
-		};
-
-		for inst in bytecode {
-			print!("{:02}: {inst}", self.pc);
-		}
 	}
 
 	fn print(args: Vec<UniResult>) -> UniResult {
@@ -93,10 +71,6 @@ impl VM {
 			NativeFunctionId::Tuple => Ok(Self::tuple(args)),
 			NativeFunctionId::Range => Self::range(&args),
 		}
-	}
-
-	fn stack_pop(&mut self) -> Result<UniResult, VMError> {
-		self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)
 	}
 
 	fn dump_stack(&self) {
@@ -153,129 +127,53 @@ impl VM {
 				},
 				&Bytecode::Jif(dest_pc) => {
 					if !self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
-						self.pc = dest_pc as usize;
+						self.pc = dest_pc;
 					}
 				},
 				&Bytecode::Jit(dest_pc) => {
 					if self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
-						self.pc = dest_pc as usize;
+						self.pc = dest_pc;
 					}
 				},
 				&Bytecode::Jmp(dest_pc) => {
-					self.pc = dest_pc as usize;
+					self.pc = dest_pc;
 				},
 				&Bytecode::Call(dest_pc) => {
-					self.stack.push_back((self.pc as u32).into());
+					self.stack.push_back(self.pc.into());
 
-					self.pc = dest_pc as usize;
+					self.pc = dest_pc;
 				},
 				&Bytecode::Ret => {
-					self.pc = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()? as usize;
+					self.pc = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
 				},
 				&Bytecode::NativeCall(id) => {
 					let args = Self::pop_stack_until_value(&mut self.stack, &UniResult::ArgsEnd);
 
 					Self::call_native(id, args)?;
 				},
-				Bytecode::Add => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.add(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Sub => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.sub(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Mul => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.mul(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Pow => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.pow(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Div => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.div(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::LogicalAnd => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.log_and(&right)?;
-
-					self.stack.push_back(result);
-				},
+				Bytecode::Eq |
+				Bytecode::Neq |
+				Bytecode::Lt |
+				Bytecode::Gt |
+				Bytecode::Add |
+				Bytecode::Sub |
+				Bytecode::Mul |
+				Bytecode::Pow |
+				Bytecode::Div |
+				Bytecode::LogicalAnd |
 				Bytecode::LogicalOr => {
 					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
 					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
 
-					let result = left.log_or(&right)?;
+					let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
 
 					self.stack.push_back(result);
 				},
-				Bytecode::Neg => {
-					let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = value.neg()?;
-
-					self.stack.push_back(result);
-				},
+				Bytecode::Neg |
 				Bytecode::Not => {
 					let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
 
-					let result = value.not()?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Eq => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.eq(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Neq => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.neq(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Lt => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.lt(&right)?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Gt => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.gt(&right)?;
+					let result = value.calc_unary_by_op(&inst.to_unary_op().unwrap())?;
 
 					self.stack.push_back(result);
 				},

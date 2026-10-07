@@ -1,13 +1,13 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp};
+use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UniResultError {
-	#[error("incompatible operation")]
+	#[error("Incompatible operation")]
 	IncompatibleOperationType,
-	#[error("Unknown operation '{0}'")]
-	UnknownOperation(BinaryOp),
+	#[error("Unsupported operation '{0}'")]
+	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
 	CannotConvertToUniResult(ASTNodeEnum),
 	#[error("Cannot convert to {0:?} from UniResult")]
@@ -84,23 +84,6 @@ impl TryFrom<ASTNode> for UniResult {
 	}
 }
 
-pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
-	match op {
-		BinaryOp::Plus => left.add(right),
-		BinaryOp::Minus => left.sub(right),
-		BinaryOp::Multiply => left.mul(right),
-		BinaryOp::Pow => left.pow(right),
-		BinaryOp::Divide => left.div(right),
-		BinaryOp::Equals => left.eq(right),
-		BinaryOp::NotEquals => left.neq(right),
-		BinaryOp::Great => left.gt(right),
-		BinaryOp::Less => left.lt(right),
-		BinaryOp::LogicalAnd => left.log_and(right),
-		BinaryOp::LogicalOr => left.log_or(right),
-		_ => Err(UniResultError::UnknownOperation(op.to_owned())),
-	}
-}
-
 impl Display for UniResult {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
@@ -131,6 +114,30 @@ impl Display for UniResult {
 }
 
 impl UniResult {
+	pub fn calc_binary_by_op(&self, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
+		match op {
+			BinaryOp::Plus 			=> self.add(right),
+			BinaryOp::Minus 		=> self.sub(right),
+			BinaryOp::Multiply 		=> self.mul(right),
+			BinaryOp::Pow 			=> self.pow(right),
+			BinaryOp::Divide 		=> self.div(right),
+			BinaryOp::Equals 		=> self.eq(right),
+			BinaryOp::NotEquals 	=> self.neq(right),
+			BinaryOp::Great 		=> self.gt(right),
+			BinaryOp::Less 			=> self.lt(right),
+			BinaryOp::LogicalAnd 	=> self.log_and(right),
+			BinaryOp::LogicalOr 	=> self.log_or(right),
+			_ => Err(UniResultError::UnsupportedOperation(op.to_owned())),
+		}
+	}
+
+	pub fn calc_unary_by_op(&self, op: &UnaryOp) -> Result<UniResult, UniResultError> {
+		match op {
+			UnaryOp::Minus => self.neg(),
+			UnaryOp::Not => self.not(),
+		}
+	}
+
 	pub fn add(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
 			(Self::Float(a), &Self::Float(b))

@@ -4,7 +4,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use std::fmt::{Debug, write};
+use std::fmt::Debug;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -26,7 +26,7 @@ use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 
 #[derive(argh::FromArgs, Debug)]
-/// An programming language made by RDevel in Rust
+#[argh(description="An programming language made by RDevel in Rust")]
 struct Args {
 	#[argh(option, description = "run bytecode file", short = 'r')]
 	run: Option<String>,
@@ -68,8 +68,6 @@ impl Debug for AppError {
 
 fn repl() -> Result<(), AppError> {
 	let mut rl = DefaultEditor::new()?;
-
-	let mut compiler = Compiler::new();
 
 	let mut vm = VM::new(None);
 

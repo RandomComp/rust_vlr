@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem};
 
-use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_type::{UniResult, UniResultError, calc_binary_by_op}};
+use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNodeEnum}, uni_type::{UniResult, UniResultError}};
 
 #[derive(thiserror::Error, Debug)]
 pub enum OptimizerError {
@@ -237,19 +237,19 @@ impl Optimizer {
 					return Ok(())
 				}
 
-				let Ok(left) = &(**left).clone().try_into() else {
+				let Ok(left) = UniResult::try_from((**left).clone()) else {
 					Self::simplify(ast);
 
 					return Ok(())
 				};
 
-				let Ok(right) = &(**right).clone().try_into() else {
+				let Ok(right) = UniResult::try_from((**right).clone()) else {
 					Self::simplify(ast);
 
 					return Ok(())
 				};
 
-				*ast = calc_binary_by_op(left, right, op)?.try_into()?;
+				*ast = left.calc_binary_by_op(&right, op)?.try_into()?;
 			},
 			ASTNodeEnum::Tuple(values) => {
 				for value in values {
