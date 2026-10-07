@@ -117,14 +117,18 @@ impl VM {
 				self.stack.push(val.clone().into());
 			},
 			&Bytecode::Look(stack_pos) => {
-				let val = self.stack.get(stack_pos as usize).ok_or(VMError::InvalidStackPosition(stack_pos))?;
+				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
+
+				let val = self.stack.get(usize_stack_pos).ok_or(VMError::InvalidStackPosition(stack_pos))?;
 
 				self.stack.push(val.clone());
 			},
 			&Bytecode::Load(stack_pos) => {
+				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
+
 				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
-				if let Some(val) = self.stack.get_mut(stack_pos as usize) {
+				if let Some(val) = self.stack.get_mut(usize_stack_pos) {
 					*val = value;
 				} else {
 					return Err(VMError::InvalidStackPosition(stack_pos));
@@ -172,7 +176,9 @@ impl VM {
 			&Bytecode::NativeCall(id) => {
 				let args = Self::pop_stack_until_value(&mut self.stack, &UniResult::ArgsEnd);
 
-				Self::call_native(id, args)?;
+				let result = Self::call_native(id, args)?;
+
+				self.stack.push(result);
 			},
 			Bytecode::Eq |
 			Bytecode::Neq |
@@ -185,8 +191,8 @@ impl VM {
 			Bytecode::Div |
 			Bytecode::LogicalAnd |
 			Bytecode::LogicalOr => {
-				let left = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 				let right = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let left = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
 				let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
 

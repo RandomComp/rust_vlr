@@ -12,9 +12,9 @@ pub enum Bytecode {
 	PushString(String),
 	/// Pushes boolean to stack
 	PushBoolean(bool),
-	/// Copy value from stack N
+	/// Copy value from stack, uses indirect index
 	Look(u32),
-	/// Copy value to stack at N
+	/// Copy value to stack, uses indirect index
 	Load(u32),
 	/// Remove value from stack upper
 	Remove,
@@ -26,7 +26,7 @@ pub enum Bytecode {
 	Jif(u32),
 	/// Jump without condition
 	Jmp(u32),
-	/// Jump to pc from stack
+	/// Call subprogram (pushes current PC and jump's on subprogram)
 	Call(u32),
 	/// Starts subprogram (pushes stack value to interal ret stack)
 	Subprogram,
@@ -40,6 +40,7 @@ pub enum Bytecode {
 	Lt,
 	/// Great than
 	Gt,
+	/// Call vm builtin-in function (like print)
 	NativeCall(NativeFunctionId),
 	/// Additive
 	Add,
@@ -83,9 +84,9 @@ impl Display for Bytecode {
 			Bytecode::PushString(text) =>
 				write!(f, "push \"{text}\""),
 			Bytecode::Look(stack_pos) =>
-				write!(f, "look {stack_pos}"),
+				write!(f, "look -{stack_pos}"),
 			Bytecode::Load(stack_pos) =>
-				write!(f, "load {stack_pos}"),
+				write!(f, "load -{stack_pos}"),
 			Bytecode::Remove =>
 				write!(f, "remove"),
 			Bytecode::PushArgEnd =>
@@ -144,6 +145,8 @@ pub enum BytecodeError {
 	UnexpectedEof {
 		pos: u32,
 	},
+	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
+	StringTooLong,
 }
 
 impl Bytecode {
@@ -240,7 +243,7 @@ impl Bytecode {
 		}
 	}
 
-	fn asm_inst(value: Self) -> Vec<u8> {
+	fn asm_inst(value: Self) -> Result<Vec<u8>, BytecodeError> {
 		let mut result = Vec::new();
 
 		result.push(value.get_opcode());
@@ -250,7 +253,9 @@ impl Bytecode {
 				result.extend(x.to_le_bytes());
 			}, // Pushes number
 			Self::PushString(text) => {
-				let u32_len = u32::try_from(text.len()).unwrap();
+				let Ok(u32_len) = u32::try_from(text.len()) else {
+					return Err(BytecodeError::StringTooLong)
+				};
 
 				result.extend(u32_len.to_le_bytes());
 				result.extend(text.bytes());
@@ -269,19 +274,19 @@ impl Bytecode {
 			_ => {},
 		}
 
-		result
+		Ok(result)
 	}
 
-	pub fn asm(values: Vec<Self>) -> Vec<u8> {
+	pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
 		let mut result = Vec::new();
 
 		for value in values {
-			let res: Vec<u8> = Self::asm_inst(value);
+			let res: Vec<u8> = Self::asm_inst(value)?;
 
 			result.extend(res);
 		}
 
-		result
+		Ok(result)
 	}
 
 	pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError> where T: Iterator<Item = u8> {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, iter, panic};
+use std::{collections::HashMap, fmt::Display, iter};
 
 use crate::{bytecode::Bytecode, parser::{ASTNode, ASTNodeEnum, BinaryOp}};
 
@@ -74,38 +74,39 @@ impl TryFrom<&str> for NativeFunctionId {
 	}
 }
 
+#[derive(Debug)]
 struct CompilerContext<'a> {
 	functions: HashMap<String, u32>,
-	scope: HashMap<String, u32>,
+	vars: HashMap<String, u32>,
 	parent: Option<&'a CompilerContext<'a>>,
 }
 
 impl<'a> CompilerContext<'a> {
-	fn new(parent: Option<&'a CompilerContext>) -> Self {
-		Self {scope: HashMap::new(), functions: HashMap::new(), parent}
+	fn new(parent: Option<&'a Self>) -> Self {
+		Self {vars: HashMap::new(), functions: HashMap::new(), parent}
 	}
 
 	fn get_var(&self, name: &str) -> Option<u32> {
-		if let Some(value) = self.scope.get(name) {
-			Some(*value)
+		if let Some(&value) = self.vars.get(name) {
+			Some(value)
 		} else if let Some(parent) = self.parent {
-			parent.scope.get(name).copied()
+			parent.get_var(name)
 		} else {
 			None
 		}
 	}
 	fn get_function(&self, name: &str) -> Option<u32> {
-		if let Some(value) = self.functions.get(name) {
-			Some(*value)
+		if let Some(&value) = self.functions.get(name) {
+			Some(value)
 		} else if let Some(parent) = self.parent {
-			parent.functions.get(name).copied()
+			parent.get_function(name)
 		} else {
 			None
 		}
 	}
 
 	fn insert_var<T>(&mut self, name: T, stack_pos: u32) where T: Into<String> {
-		self.scope.insert(name.into(), stack_pos);
+		self.vars.insert(name.into(), stack_pos);
 	}
 	fn insert_function<T>(&mut self, name: T, pos: u32) where T: Into<String> {
 		self.functions.insert(name.into(), pos);
@@ -127,15 +128,15 @@ impl Compiler {
 	}
 
 	fn look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		self.stack += 1;
+		result.push(Bytecode::Look(self.stack - stack_pos - 1));
 
-		result.push(Bytecode::Look(stack_pos));
+		self.stack += 1;
 	}
 
 	fn load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		self.stack -= 1;
+		result.push(Bytecode::Load(self.stack - stack_pos - 1));
 
-		result.push(Bytecode::Load(stack_pos));
+		self.stack -= 1;
 	}
 
 	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<u32, CompilerError> where T: DoubleEndedIterator<Item=&'a ASTNode> {
@@ -158,6 +159,10 @@ impl Compiler {
 
 			result.push(Bytecode::NativeCall(id));
 		} else if let Some(pos) = context.get_function(name) {
+			for arg in args.rev() {
+				self.compile(arg, result, context)?;
+			}
+
 			result.push(Bytecode::Call(pos));
 		} else {
 			return Err(CompilerError::UnknownFunctionCall(name.to_owned()))
@@ -175,8 +180,8 @@ impl Compiler {
 			return Err(CompilerError::NotKnownAtThisScope(name.to_owned()));
 		};
 
-		self.compile(right, result, context)?;
 		self.look(stack_pos, result);
+		self.compile(right, result, context)?;
 
 		result.push(op);
 
@@ -186,7 +191,9 @@ impl Compiler {
 	}
 
 	fn compile(&mut self, ast: &ASTNode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
-		println!("stack_pos = {}; ast = {ast}", self.stack);
+		// println!("stack_pos = {}; ast = {ast}", self.stack);
+
+		// println!("context = {context:?}");
 
 		match &ast.value {
 			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
@@ -199,8 +206,10 @@ impl Compiler {
 
 				let mut body_context = CompilerContext::new(Some(context));
 
-				for arg in args {
-					body_context.insert_var(arg, stack_pos);
+				for (i, arg) in args.iter().enumerate() {
+					self.stack += 1;
+
+					body_context.insert_var(arg, i as u32);
 				}
 
 				self.compile(body, result, &mut body_context)?;
@@ -289,8 +298,8 @@ impl Compiler {
 				result.push(Bytecode::from_unary_op(op));
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::LessOrEquals, right } => {
-				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
+				self.compile(right, result, context)?;
 
 				self.stack -= 1;
 
@@ -298,8 +307,8 @@ impl Compiler {
 				result.push(Bytecode::Not);
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::GreatOrEquals, right } => {
-				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
+				self.compile(right, result, context)?;
 
 				self.stack -= 1;
 
@@ -307,8 +316,8 @@ impl Compiler {
 				result.push(Bytecode::Not);
 			},
 			ASTNodeEnum::Binary { left, op, right } => {
-				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
+				self.compile(right, result, context)?;
 
 				self.stack -= 1;
 

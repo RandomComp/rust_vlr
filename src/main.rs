@@ -248,7 +248,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		println!("{i:02}: {byte}");
 	}
 
-	let bytes = Bytecode::asm(bytes);
+	let bytes = Bytecode::asm(bytes)?;
 
 	Ok(bytes)
 }

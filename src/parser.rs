@@ -1,4 +1,4 @@
-use std::{fmt::Write, collections::VecDeque, mem, num::ParseFloatError};
+use std::{collections::VecDeque, fmt::{self, Write}, mem, num::ParseFloatError};
 
 use crate::lexer::{LexerError, Token, TokenType};
 
@@ -14,12 +14,30 @@ pub enum ParserError {
 	// InvalidSyntax {row: usize, column: usize},
 	#[error("line {row} at {column}: expected {token_type} token, found {found}")]
 	ExpectedToken {row: usize, column: usize, token_type: TokenType, found: TokenType},
+	#[error("line {row} at {column}: expected {} token, found {found}", Self::get_tokens_fmt(types)?)]
+	ExpectedTokens {row: usize, column: usize, types: &'static [TokenType], found: TokenType},
 	#[error("line {row} at {column}: token {token_type} unexpected")]
 	UnexpectedToken {row: usize, column: usize, token_type: TokenType},
 	#[error("Cannot convert from {0:?} to BinaryOp")]
 	CannotConvertToBinaryOp(TokenType),
 	#[error("Cannot convert from {0:?} to UnaryOp")]
 	CannotConvertToUnaryOp(TokenType),
+}
+
+impl ParserError {
+	fn get_tokens_fmt(types: &[TokenType]) -> Result<String, fmt::Error> {
+		let mut result = String::new();
+
+		for (i, token) in types.iter().enumerate() {
+			if i > 0 {
+				write!(result, " or ")?;
+			}
+
+			write!(result, "'{token}'")?;
+		}
+
+		Ok(result)
+	}
 }
 
 #[derive(Debug, PartialEq)]
@@ -465,7 +483,7 @@ impl ASTNodeEnum {
 
 				write!(f, ") ")?;
 
-				body.format_human_readable(f, true, tab_level + 1)?;
+				body.format_human_readable(f, true, tab_level)?;
 
 				Ok(())
 			},
@@ -482,7 +500,7 @@ impl ASTNodeEnum {
 
 				write!(f, ") ")?;
 
-				body.format_human_readable(f, true, tab_level + 1)
+				body.format_human_readable(f, true, tab_level)
 			},
 		}
 	}
@@ -536,6 +554,20 @@ impl Parser {
 		}
 	}
 
+	fn consumes(&mut self, expected: &'static [TokenType]) -> Result<(), ParserError> {
+		match self.peek(0) {
+			Some(Token { token_type, .. }) if expected.contains(token_type) => {
+				self.consume_next();
+
+				Ok(())
+			},
+			Some(Token { token_type, row, column }) => {
+				Err(ParserError::ExpectedTokens { row: *row, column: *column, types: expected, found: token_type.clone() })
+			},
+			None => panic!("Outside of array"),
+		}
+	}
+
 	fn _token_exists_until_token(&self, expected_token_type: &TokenType, until_token_type: &TokenType) -> bool {
 		let mut index = 0;
 
@@ -552,11 +584,7 @@ impl Parser {
 	fn parse_block(&mut self) -> Result<Option<ASTNode>, ParserError> {
 		self.consume(&TokenType::LBrace)?;
 
-		let result = self.parse_instructions();
-
-		self.consume(&TokenType::RBrace)?;
-
-		result
+		self.parse_instructions()
 	}
 
 	pub fn parse_instructions(&mut self) -> Result<Option<ASTNode>, ParserError> {
@@ -566,14 +594,14 @@ impl Parser {
 
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
-		self.skip(&TokenType::Semicolon);
-
 		while let Some(cur) = self.peek(0) && !matches!(cur.token_type, TokenType::RBrace | TokenType::Eof) {
+			self.skip(&TokenType::Semicolon);
+
 			result.push_back(
 				self.parse(TokenType::MAX_PRECEDENCE)?
 			);
 
-			self.skip(&TokenType::Semicolon);
+			self.consumes(&[TokenType::Semicolon, TokenType::RBrace])?;
 		}
 
 		if result.len() > 1 {

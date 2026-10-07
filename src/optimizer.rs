@@ -174,6 +174,8 @@ impl Optimizer {
 	pub fn fold(&mut self, ast: &mut ASTNode) -> Result<(), OptimizerError> {
 		let (row, column) = (ast.row, ast.column);
 
+		Self::simplify(ast);
+
 		match &mut ast.value {
 			ASTNodeEnum::None | ASTNodeEnum::Boolean(..) |
 			ASTNodeEnum::Float(..) | ASTNodeEnum::String(..) => {},
@@ -211,8 +213,6 @@ impl Optimizer {
 				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
-					Self::simplify(ast);
-
 					return Ok(())
 				};
 
@@ -222,8 +222,6 @@ impl Optimizer {
 				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
-					Self::simplify(ast);
-
 					return Ok(())
 				};
 
@@ -234,24 +232,22 @@ impl Optimizer {
 				let right_is_err = self.fold(right).is_err();
 
 				if left_is_err || right_is_err {
-					Self::simplify(ast);
-
 					return Ok(())
 				}
 
-				let Ok(left) = UniResult::try_from((**left).clone()) else {
-					Self::simplify(ast);
-
+				let Ok(left) = UniResult::try_from(*left.clone()) else {
 					return Ok(())
 				};
 
-				let Ok(right) = UniResult::try_from((**right).clone()) else {
-					Self::simplify(ast);
-
+				let Ok(right) = UniResult::try_from(*right.clone()) else {
 					return Ok(())
 				};
 
-				*ast = left.calc_binary_by_op(&right, op)?.try_into()?;
+				*ast = match left.calc_binary_by_op(&right, op)?.try_into() {
+					Ok(x) => x,
+					Err(UniResultError::UnsupportedOperation(..)) => return Ok(()),
+					Err(e) => return Err(e.into()),
+				};
 			},
 			ASTNodeEnum::Tuple(values) => {
 				for value in values {
