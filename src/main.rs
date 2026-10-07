@@ -24,8 +24,8 @@ use crate::optimizer::{Optimizer, OptimizerError};
 use crate::vm::{VM, VMError};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::compiler::{Compiler, CompilerError};
-use crate::lexer::{Lexer, LexerError};
-use crate::parser::{Parser, ParserError};
+use crate::lexer::{Lexer, LexerError, TokenType};
+use crate::parser::{BinaryOp, Parser, ParserError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]

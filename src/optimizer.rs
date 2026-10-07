@@ -243,9 +243,11 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = match left.calc_binary_by_op(&right, op)?.try_into() {
-					Ok(x) => x,
+				*ast = match left.calc_binary_by_op(&right, op).map(UniResult::try_into) {
+					Ok(Ok(x)) => x,
+					Ok(Err(UniResultError::UnsupportedOperation(..))) |
 					Err(UniResultError::UnsupportedOperation(..)) => return Ok(()),
+					Ok(Err(e)) |
 					Err(e) => return Err(e.into()),
 				};
 			},

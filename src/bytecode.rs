@@ -18,8 +18,6 @@ pub enum Bytecode {
 	Load(u32),
 	/// Remove value from stack upper
 	Remove,
-	/// Sentinel for native functions arguments
-	PushArgEnd,
 	/// Jump if condition
 	Jit(u32),
 	/// Jump if not condition
@@ -89,8 +87,6 @@ impl Display for Bytecode {
 				write!(f, "load -{stack_pos}"),
 			Bytecode::Remove =>
 				write!(f, "remove"),
-			Bytecode::PushArgEnd =>
-				write!(f, "push args_end"),
 			Bytecode::Add =>
 				write!(f, "add"),
 			Bytecode::Sub =>
@@ -158,7 +154,6 @@ impl Bytecode {
 	pub const LOOK: u8 = 0x05; // Copy value from N
 	pub const LOAD: u8 = 0x06; // Copy value to N
 	pub const REMOVE: u8 = 0x07; // Remove value
-	pub const PUSH_ARG_END: u8 = 0x0F;
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
@@ -219,7 +214,6 @@ impl Bytecode {
 			Self::Look(..) 				=> Self::LOOK, // Copy value from N
 			Self::Load(..) 				=> Self::LOAD, // Copy value to N
 			Self::Remove 				=> Self::REMOVE, // Remove value
-			Self::PushArgEnd 			=> Self::PUSH_ARG_END,
 			Self::Jit(..) 				=> Self::JIT, // Jump if condition
 			Self::Jif(..) 				=> Self::JIF, // Jump if not condition
 			Self::Jmp(..) 				=> Self::JMP, // Jump without condition
@@ -323,7 +317,6 @@ impl Bytecode {
 				Self::Load(stack_pos)
 			},
 			Self::REMOVE => Self::Remove, // Remove value
-			Self::PUSH_ARG_END => Self::PushArgEnd,
 			Self::JIT => { // Jump if condition
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
 

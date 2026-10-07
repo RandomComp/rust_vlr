@@ -156,41 +156,45 @@ impl std::fmt::Display for BinaryOp {
 	}
 }
 
+macro_rules! bind_enum {
+	($value: expr, $token_type: ty, $binary_op: ty, $($t:ident),* $(,)?) => {
+		match $value {
+			$(
+				<$token_type>::$t => Some(<$binary_op>::$t),
+			)*
+			_ => None
+		}
+	};
+}
+
 impl TryFrom<&TokenType> for BinaryOp {
 	type Error = ParserError;
 
 	fn try_from(value: &TokenType) -> Result<Self, Self::Error> {
-		let result = match value {
-			TokenType::Assignment => Self::Assignment,
-			TokenType::PlusAssignment => Self::PlusAssignment,
-			TokenType::MinusAssignment => Self::MinusAssignment,
-			TokenType::PowAssignment => Self::PowAssignment,
-			TokenType::MultiplyAssignment => Self::MultiplyAssignment,
-			TokenType::DivideAssignment => Self::DivideAssignment,
-			TokenType::RemainderAssignment => Self::RemainderAssignment,
-
-			TokenType::Plus => Self::Plus,
-			TokenType::Minus => Self::Minus,
-			TokenType::Multiply => Self::Multiply,
-			TokenType::Pow => Self::Pow,
-			TokenType::Divide => Self::Divide,
-			TokenType::Remainder => Self::Remainder,
-
-			TokenType::Equals => Self::Equals,
-			TokenType::NotEquals => Self::NotEquals,
-			TokenType::GreatOrEquals => Self::GreatOrEquals,
-			TokenType::LessOrEquals => Self::LessOrEquals,
-			TokenType::Great => Self::Great,
-			TokenType::Less => Self::Less,
-
-			TokenType::LogicalAnd => Self::LogicalAnd,
-			TokenType::LogicalOr => Self::LogicalOr,
-
-			TokenType::Range => Self::Range,
-			v => return Err(ParserError::CannotConvertToBinaryOp(v.clone()))
-		};
-
-		Ok(result)
+		bind_enum!(value, TokenType, Self,
+			Assignment,
+			PlusAssignment,
+			MinusAssignment,
+			PowAssignment,
+			MultiplyAssignment,
+			DivideAssignment,
+			RemainderAssignment,
+			Plus,
+			Minus,
+			Multiply,
+			Pow,
+			Divide,
+			Remainder,
+			Equals,
+			NotEquals,
+			GreatOrEquals,
+			LessOrEquals,
+			Great,
+			Less,
+			LogicalAnd,
+			LogicalOr,
+			Range,
+		).ok_or(ParserError::CannotConvertToBinaryOp(value.clone()))
 	}
 }
 

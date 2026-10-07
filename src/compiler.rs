@@ -46,6 +46,14 @@ impl NativeFunctionId {
 			NativeFunctionId::Range => "range",
 		}
 	}
+
+	pub fn args(self) -> usize {
+		match self {
+			NativeFunctionId::Print => 1,
+			NativeFunctionId::Tuple => 2,
+			NativeFunctionId::Range => 3,
+		}
+	}
 }
 
 impl TryFrom<u8> for NativeFunctionId {
@@ -139,27 +147,21 @@ impl Compiler {
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<u32, CompilerError> where T: DoubleEndedIterator<Item=&'a ASTNode> {
-		let pc = Self::pc(result);
-
+	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError>
+	where T: DoubleEndedIterator<Item=&'a ASTNode> {
 		if let Ok(id) = NativeFunctionId::try_from(name) {
-			self.stack += 1;
+			let mut len = 0;
 
-			result.push(Bytecode::PushArgEnd);
-
-			let mut len = 1;
-
-			for arg in args.rev() {
+			for arg in args {
 				self.compile(arg, result, context)?;
 
 				len += 1;
 			}
 
-			self.stack -= len;
-
 			result.push(Bytecode::NativeCall(id));
+			self.stack -= len + 1;
 		} else if let Some(pos) = context.get_function(name) {
-			for arg in args.rev() {
+			for arg in args {
 				self.compile(arg, result, context)?;
 			}
 
@@ -168,7 +170,7 @@ impl Compiler {
 			return Err(CompilerError::UnknownFunctionCall(name.to_owned()))
 		}
 
-		Ok(pc)
+		Ok(())
 	}
 
 	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
@@ -191,9 +193,9 @@ impl Compiler {
 	}
 
 	fn compile(&mut self, ast: &ASTNode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
-		// println!("stack_pos = {}; ast = {ast}", self.stack);
+		println!("context = {context:?}");
 
-		// println!("context = {context:?}");
+		println!("stack_pos = {}; ast = {ast}", self.stack);
 
 		match &ast.value {
 			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
@@ -206,7 +208,7 @@ impl Compiler {
 
 				let mut body_context = CompilerContext::new(Some(context));
 
-				for (i, arg) in args.iter().enumerate() {
+				for (i, arg) in args.iter().enumerate().rev() {
 					self.stack += 1;
 
 					body_context.insert_var(arg, i as u32);

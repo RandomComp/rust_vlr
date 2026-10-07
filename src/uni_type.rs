@@ -16,7 +16,6 @@ pub enum UniResultError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniResult {
-	ArgsEnd,
 	None,
 	Boolean(bool),
 	NumberU32(u32),
@@ -87,7 +86,6 @@ impl TryFrom<ASTNode> for UniResult {
 impl Display for UniResult {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			UniResult::ArgsEnd => write!(f, "<args end>"),
 			UniResult::None => write!(f, "None"),
 			UniResult::Boolean(x) => write!(f, "{x}"),
 			UniResult::NumberU32(x) => write!(f, "{x}"),

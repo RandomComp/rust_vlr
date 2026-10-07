@@ -34,16 +34,6 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn pop_stack_until_value(stack: &mut Vec<UniResult>, value: &UniResult) -> Vec<UniResult> {
-		let mut result = Vec::new();
-
-		while let Some(x) = stack.pop() && &x != value {
-			result.push(x);
-		}
-
-		result
-	}
-
 	fn print(args: Vec<UniResult>) -> UniResult {
 		for arg in args {
 			print!("{arg} ");
@@ -70,7 +60,17 @@ impl VM {
 		}
 	}
 
-	fn call_native(id: NativeFunctionId, args: Vec<UniResult>) -> Result<UniResult, VMError> {
+	fn call_native(&mut self, id: NativeFunctionId) -> Result<UniResult, VMError> {
+		let mut args = Vec::new();
+
+		let mut i = 0;
+
+		while let Some(value) = self.stack.pop() && i < id.args() {
+			args.push(value);
+
+			i += 1;
+		}
+
 		match id {
 			NativeFunctionId::Print => Ok(Self::print(args)),
 			NativeFunctionId::Tuple => Ok(Self::tuple(args)),
@@ -105,8 +105,6 @@ impl VM {
 
 		match inst {
 			Bytecode::Halt => return Ok((false, false)),
-			Bytecode::PushArgEnd =>
-				self.stack.push(UniResult::ArgsEnd),
 			&Bytecode::PushBoolean(val) => {
 				self.stack.push(val.into());
 			},
@@ -174,9 +172,7 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::NativeCall(id) => {
-				let args = Self::pop_stack_until_value(&mut self.stack, &UniResult::ArgsEnd);
-
-				let result = Self::call_native(id, args)?;
+				let result = self.call_native(id)?;
 
 				self.stack.push(result);
 			},
