@@ -204,13 +204,13 @@ pub enum ASTNodeEnum {
 	Return(Box<ASTNode>),
 	If {
 		condition: Box<ASTNode>,
-		block: Box<ASTNode>,
-		block_else: Option<Box<ASTNode>>
+		body: Box<ASTNode>,
+		else_body: Option<Box<ASTNode>>
 	},
 	While {
 		condition: Box<ASTNode>,
-		block: Box<ASTNode>,
-		block_else: Option<Box<ASTNode>>
+		body: Box<ASTNode>,
+		else_body: Option<Box<ASTNode>>
 	},
 	Binary {
 		left: Box<ASTNode>,
@@ -228,7 +228,7 @@ pub enum ASTNodeEnum {
 	FunctionDefinition {
 		name: Option<String>,
 		args: Vec<String>,
-		block: Box<ASTNode>,
+		body: Box<ASTNode>,
 	},
 }
 
@@ -290,11 +290,11 @@ impl std::fmt::Display for ASTNodeEnum {
 
 				Ok(())
 			},
-			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
-				write!(f, "if {condition} {block} else {block_else}")
+			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
+				write!(f, "if {condition} {body} else {else_body}")
 			},
-			ASTNodeEnum::If { condition, block, block_else: None } => {
-				write!(f, "if {condition} {block}")
+			ASTNodeEnum::If { condition, body, else_body: None } => {
+				write!(f, "if {condition} {body}")
 			},
 			ASTNodeEnum::Break(value) => {
 				write!(f, "break {value}")
@@ -302,11 +302,11 @@ impl std::fmt::Display for ASTNodeEnum {
 			ASTNodeEnum::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
-				write!(f, "while {condition} {block} else {block_else}")
+			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
+				write!(f, "while {condition} {body} else {else_body}")
 			},
-			ASTNodeEnum::While { condition, block, block_else: None } => {
-				write!(f, "while {condition} {block}")
+			ASTNodeEnum::While { condition, body, else_body: None } => {
+				write!(f, "while {condition} {body}")
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
@@ -317,7 +317,7 @@ impl std::fmt::Display for ASTNodeEnum {
 			ASTNodeEnum::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -328,7 +328,7 @@ impl std::fmt::Display for ASTNodeEnum {
 					write!(f, "{arg}")?;
 				}
 
-				write!(f, ") {block}")?;
+				write!(f, ") {body}")?;
 
 				Ok(())
 			},
@@ -387,14 +387,14 @@ impl ASTNodeEnum {
 
 				write!(f, "{tab_level_syms}}}")
 			},
-			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
 
 				write!(f, " ")?;
 
-				block.format_human_readable(f, true, tab_level + 1)?;
+				body.format_human_readable(f, true, tab_level + 1)?;
 
 				write!(f, " ")?;
 
@@ -402,16 +402,16 @@ impl ASTNodeEnum {
 
 				write!(f, " ")?;
 
-				block_else.format_human_readable(f, true, tab_level + 1)
+				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNodeEnum::If { condition, block, block_else: None } => {
+			ASTNodeEnum::If { condition, body, else_body: None } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
 
 				write!(f, " ")?;
 
-				block.format_human_readable(f, true, tab_level)
+				body.format_human_readable(f, true, tab_level)
 			},
 			ASTNodeEnum::Break(value) => {
 				write!(f, "break {value}")
@@ -419,14 +419,14 @@ impl ASTNodeEnum {
 			ASTNodeEnum::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
 
 				write!(f, " ")?;
 
-				block.format_human_readable(f, false, tab_level + 1)?;
+				body.format_human_readable(f, false, tab_level + 1)?;
 
 				write!(f, " ")?;
 
@@ -434,16 +434,16 @@ impl ASTNodeEnum {
 
 				write!(f, " ")?;
 
-				block_else.format_human_readable(f, true, tab_level + 1)
+				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNodeEnum::While { condition, block, block_else: None } => {
+			ASTNodeEnum::While { condition, body, else_body: None } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
 
 				write!(f, " ")?;
 
-				block.format_human_readable(f, true, tab_level)
+				body.format_human_readable(f, true, tab_level)
 			},
 			ASTNodeEnum::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
@@ -452,7 +452,7 @@ impl ASTNodeEnum {
 			ASTNodeEnum::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -465,11 +465,11 @@ impl ASTNodeEnum {
 
 				write!(f, ") ")?;
 
-				block.format_human_readable(f, true, tab_level + 1)?;
+				body.format_human_readable(f, true, tab_level + 1)?;
 
 				Ok(())
 			},
-			ASTNodeEnum::FunctionDefinition { name: None, args, block } => {
+			ASTNodeEnum::FunctionDefinition { name: None, args, body } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -482,7 +482,7 @@ impl ASTNodeEnum {
 
 				write!(f, ") ")?;
 
-				block.format_human_readable(f, true, tab_level + 1)
+				body.format_human_readable(f, true, tab_level + 1)
 			},
 		}
 	}
@@ -695,12 +695,12 @@ impl Parser {
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row, column }
+							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), block: Box::new(block), block_else: None }, row, column }
+						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
 					))
 				}
 			}
@@ -718,12 +718,12 @@ impl Parser {
 						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: Some(Box::new(block_else)) }, row, column }
+							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), block: Box::new(block), block_else: None }, row, column }
+						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
 					))
 				}
 			}
@@ -756,7 +756,7 @@ impl Parser {
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-					ASTNodeEnum::FunctionDefinition { name: Some(name), args, block: Box::new(block) },
+					ASTNodeEnum::FunctionDefinition { name: Some(name), args, body: Box::new(block) },
 					row, column }
 				))
 			}
@@ -786,7 +786,7 @@ impl Parser {
 				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-						ASTNodeEnum::FunctionDefinition { name: None, args, block: Box::new(block) },
+						ASTNodeEnum::FunctionDefinition { name: None, args, body: Box::new(block) },
 					row, column }
 				))
 			}

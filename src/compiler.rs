@@ -6,8 +6,6 @@ use crate::{bytecode::Bytecode, parser::{ASTNode, ASTNodeEnum, BinaryOp}};
 pub enum CompilerError {
 	#[error("Unknown function '{0}' call")]
 	UnknownFunctionCall(String),
-	#[error("Block is too long for u32 type, that means block is bigger than 4 GB, try separate code for modules")]
-	BlockIsTooLong,
 	#[error("'{0}' variable is not known in current scope")]
 	NotKnownAtThisScope(String),
 	#[error("L-value of assignment should be variable name, not '{0}'")]
@@ -191,7 +189,7 @@ impl Compiler {
 		println!("stack_pos = {}; ast = {ast}", self.stack);
 
 		match &ast.value {
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
+			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
@@ -199,7 +197,9 @@ impl Compiler {
 
 				result.push(Bytecode::Subprogram);
 
-				self.compile(block, result, context)?;
+				let mut body_context = CompilerContext::new(Some(context));
+
+				self.compile(body, result, context)?;
 
 				result.push(Bytecode::Ret);
 
@@ -318,7 +318,7 @@ impl Compiler {
 			ASTNodeEnum::Function { name, arg } => {
 				self.call_func(name, iter::once(&**arg), result, context)?;
 			},
-			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -328,19 +328,19 @@ impl Compiler {
 
 				self.break_pos.push(None);
 
-				self.compile(block, result, context)?;
+				self.compile(body, result, context)?;
 
 				result.push(Bytecode::Jmp(cond));
 
 				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
 
-				self.compile(block_else, result, context)?;
+				self.compile(else_body, result, context)?;
 
 				if let Some(break_pos) = self.break_pos.pop().expect("Unexpected pop from self.break_pos") {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			ASTNodeEnum::While { condition, block, block_else: None } => {
+			ASTNodeEnum::While { condition, body, else_body: None } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -350,7 +350,7 @@ impl Compiler {
 
 				self.break_pos.push(None);
 
-				self.compile(block, result, context)?;
+				self.compile(body, result, context)?;
 
 				result.push(Bytecode::Jmp(cond));
 
@@ -360,24 +360,24 @@ impl Compiler {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
 				let jif = Self::pc(result);
 				result.push(Bytecode::Jif(0));
 
-				self.compile(block, result, context)?;
+				self.compile(body, result, context)?;
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
 				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
 
-				self.compile(block_else, result, context)?;
+				self.compile(else_body, result, context)?;
 
 				*result.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(Self::pc(result));
 			},
-			ASTNodeEnum::If { condition, block, block_else: None } => {
+			ASTNodeEnum::If { condition, body, else_body: None } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
@@ -385,7 +385,7 @@ impl Compiler {
 
 				result.push(Bytecode::Jif(0));
 
-				self.compile(block, result, context)?;
+				self.compile(body, result, context)?;
 
 				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
 			},

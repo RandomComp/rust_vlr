@@ -2,8 +2,8 @@ print("Fuck")
 
 x = 2 + 2 * 2
 
-def sum() {
-	return 123 + 456 * 789
+def sum(a, b) {
+	return a + b * b
 }
 
-print(sum())
+print(sum(2, 4))

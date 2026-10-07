@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
-use std::thread::sleep;
-use std::time::Duration;
+// use std::thread::sleep;
+// use std::time::Duration;
 
 use crate::bytecode::Bytecode;
 use crate::compiler::{NativeFunctionId};

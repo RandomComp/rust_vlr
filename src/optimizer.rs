@@ -175,6 +175,8 @@ impl Optimizer {
 		let (row, column) = (ast.row, ast.column);
 
 		match &mut ast.value {
+			ASTNodeEnum::None | ASTNodeEnum::Boolean(..) |
+			ASTNodeEnum::Float(..) | ASTNodeEnum::String(..) => {},
 			ASTNodeEnum::Variable(name) => {
 				if let Some(index) = self.unused_vars.iter().position(|v| v == name) {
 					self.unused_vars.remove(index);
@@ -259,11 +261,11 @@ impl Optimizer {
 			ASTNodeEnum::Function { name: _, arg } => {
 				self.fold(arg)?;
 			},
-			ASTNodeEnum::FunctionDefinition { name: _, args: _, block } => {
-				self.fold(block)?;
+			ASTNodeEnum::FunctionDefinition { name: _, args: _, body } => {
+				self.fold(body)?;
 			},
-			ASTNodeEnum::If { condition, block, block_else: None } => {
-				self.fold(block)?;
+			ASTNodeEnum::If { condition, body, else_body: None } => {
+				self.fold(body)?;
 
 				self.fold(condition)?;
 
@@ -271,29 +273,29 @@ impl Optimizer {
 
 				if let Ok(condition) = condition_folded {
 					if condition.to_bool()? {
-						*ast = *block.clone();
+						*ast = *body.clone();
 					} else {
 						ast.value = ASTNodeEnum::None;
 					}
 				}
 			},
-			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
 				self.fold(condition)?;
 
 				let condition_folded: Result<UniResult, UniResultError> = (**condition).clone().try_into();
-				self.fold(block)?;
-				self.fold(block_else)?;
+				self.fold(body)?;
+				self.fold(else_body)?;
 
 				if let Ok(condition) = condition_folded {
 					if condition.to_bool()? {
-						*ast = *block.clone();
+						*ast = *body.clone();
 					} else {
-						*ast = *block_else.clone();
+						*ast = *else_body.clone();
 					}
 				}
 			},
-			ASTNodeEnum::While { condition, block, block_else: None } => {
-				self.fold(block)?;
+			ASTNodeEnum::While { condition, body, else_body: None } => {
+				self.fold(body)?;
 
 				self.fold(condition)?;
 
@@ -305,10 +307,10 @@ impl Optimizer {
 					*ast = ASTNode { value: ASTNodeEnum::None, row, column };
 				}
 			},
-			ASTNodeEnum::While { condition, block, block_else: Some(block_else) } => {
+			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
 				self.fold(condition)?;
-				self.fold(block)?;
-				self.fold(block_else)?;
+				self.fold(body)?;
+				self.fold(else_body)?;
 
 				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
 					return Ok(())
@@ -317,13 +319,16 @@ impl Optimizer {
 				if !condition.to_bool()? {
 					*ast = ASTNode { value: ASTNodeEnum::None, row, column };
 				}
+			},
+			ASTNodeEnum::Break(value) |
+			ASTNodeEnum::Return(value) => {
+				self.fold(value)?;
 			},
 			ASTNodeEnum::Block(exprs) => {
 				for expr in exprs {
 					self.fold(expr)?;
 				}
 			},
-			_ => {},
 		}
 
 		Ok(())
