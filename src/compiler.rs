@@ -336,8 +336,8 @@ impl Compiler {
 				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
-				result.push(Bytecode::Gt.into());
-				result.push(Bytecode::Not.into());
+				result.push(Bytecode::Gt);
+				result.push(Bytecode::Not);
 			},
 			ASTNodeEnum::Binary { left, op: BinaryOp::GreatOrEquals, right } => {
 				self.compile(right, result, context)?;
@@ -346,8 +346,8 @@ impl Compiler {
 				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
-				result.push(Bytecode::Lt.into());
-				result.push(Bytecode::Not.into());
+				result.push(Bytecode::Lt);
+				result.push(Bytecode::Not);
 			},
 			ASTNodeEnum::Binary { left, op, right } => {
 				self.compile(right, result, context)?;
@@ -356,7 +356,7 @@ impl Compiler {
 				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
-				result.push(Bytecode::from_binary_op(op).into());
+				result.push(Bytecode::from_binary_op(op));
 			},
 			ASTNodeEnum::Function { name, arg } if let ASTNodeEnum::Tuple(values) = &arg.value => {
 				self.call_func(name, values.iter(), result, context)?;
