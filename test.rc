@@ -1,1 +1,13 @@
-print("hello, world!")
+x = 0
+
+res = 2
+
+while x < 4 {
+	res *= res
+
+	# if res > 32768 {
+	# 	break ()
+	# }
+
+	x += 1
+}

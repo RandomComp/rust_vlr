@@ -89,96 +89,122 @@ impl VM {
 		println!("]");
 	}
 
+	fn exec_inst(&mut self) -> Result<(bool, bool), VMError> {
+		let Some(bytecode) = &self.bytecode else {
+			return Ok((false, false))
+		};
+
+		let Some(inst) = bytecode.get(self.pc as usize) else {
+			return Ok((false, false))
+		};
+
+		let mut pc_changed = false;
+
+		match inst {
+			Bytecode::Halt => return Ok((false, false)),
+			Bytecode::PushArgEnd =>
+				self.stack.push_back(UniResult::ArgsEnd),
+			&Bytecode::PushBoolean(val) => {
+				self.stack.push_back(val.into());
+			},
+			&Bytecode::PushFloat(val) => {
+				self.stack.push_back(val.into());
+			},
+			Bytecode::PushString(val) => {
+				self.stack.push_back(val.clone().into());
+			},
+			&Bytecode::Look(stack_pos) => {
+				let val = self.stack.get(stack_pos as usize).ok_or(VMError::InvalidStackPosition(stack_pos))?;
+
+				self.stack.push_back(val.clone());
+			},
+			&Bytecode::Load(stack_pos) => {
+				let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+
+				if let Some(val) = self.stack.get_mut(stack_pos as usize) {
+					*val = value;
+				} else {
+					return Err(VMError::InvalidStackPosition(stack_pos));
+				}
+			},
+			Bytecode::Remove => {
+				self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+			},
+			&Bytecode::Jif(dest_pc) => {
+				if !self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+					self.pc = dest_pc;
+
+					pc_changed = true;
+				}
+			},
+			&Bytecode::Jit(dest_pc) => {
+				if self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+					self.pc = dest_pc;
+
+					pc_changed = true;
+				}
+			},
+			&Bytecode::Jmp(dest_pc) => {
+				self.pc = dest_pc;
+
+				pc_changed = true;
+			},
+			&Bytecode::Call(dest_pc) => {
+				self.stack.push_back(self.pc.into());
+
+				self.pc = dest_pc;
+
+				pc_changed = true;
+			},
+			&Bytecode::Ret => {
+				self.pc = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
+
+				pc_changed = true;
+			},
+			&Bytecode::NativeCall(id) => {
+				let args = Self::pop_stack_until_value(&mut self.stack, &UniResult::ArgsEnd);
+
+				Self::call_native(id, args)?;
+			},
+			Bytecode::Eq |
+			Bytecode::Neq |
+			Bytecode::Lt |
+			Bytecode::Gt |
+			Bytecode::Add |
+			Bytecode::Sub |
+			Bytecode::Mul |
+			Bytecode::Pow |
+			Bytecode::Div |
+			Bytecode::LogicalAnd |
+			Bytecode::LogicalOr => {
+				let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+
+				let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
+
+				self.stack.push_back(result);
+			},
+			Bytecode::Neg |
+			Bytecode::Not => {
+				let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
+
+				let result = value.calc_unary_by_op(&inst.to_unary_op().unwrap())?;
+
+				self.stack.push_back(result);
+			},
+		}
+
+		Ok((true, pc_changed))
+	}
+
 	pub fn exec(&mut self) -> Result<Option<UniResult>, VMError> {
 		self.pc = 0;
 
-		let Some(bytecode) = &self.bytecode else {
-			return Ok(None)
-		};
+		while let (is_not_hlt, pc_changed) = self.exec_inst()? && is_not_hlt {
+			self.dump_stack();
 
-		for inst in bytecode {
-			match inst {
-				Bytecode::Halt => break,
-				Bytecode::PushArgEnd =>
-					self.stack.push_back(UniResult::ArgsEnd),
-				&Bytecode::PushBoolean(val) => {
-					self.stack.push_back(val.into());
-				},
-				&Bytecode::PushFloat(val) => {
-					self.stack.push_back(val.into());
-				},
-				Bytecode::PushString(val) => {
-					self.stack.push_back(val.clone().into());
-				},
-				&Bytecode::Look(stack_pos) => {
-					let val = self.stack.get(stack_pos as usize).ok_or(VMError::InvalidStackPosition(stack_pos))?;
-
-					self.stack.push_back(val.clone());
-				},
-				&Bytecode::Load(stack_pos) => {
-					let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					if let Some(val) = self.stack.get_mut(stack_pos as usize) {
-						*val = value;
-					} else {
-						return Err(VMError::InvalidStackPosition(stack_pos));
-					}
-				},
-				Bytecode::Remove => {
-					return self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue).map(Some)
-				},
-				&Bytecode::Jif(dest_pc) => {
-					if !self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
-						self.pc = dest_pc;
-					}
-				},
-				&Bytecode::Jit(dest_pc) => {
-					if self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
-						self.pc = dest_pc;
-					}
-				},
-				&Bytecode::Jmp(dest_pc) => {
-					self.pc = dest_pc;
-				},
-				&Bytecode::Call(dest_pc) => {
-					self.stack.push_back(self.pc.into());
-
-					self.pc = dest_pc;
-				},
-				&Bytecode::Ret => {
-					self.pc = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
-				},
-				&Bytecode::NativeCall(id) => {
-					let args = Self::pop_stack_until_value(&mut self.stack, &UniResult::ArgsEnd);
-
-					Self::call_native(id, args)?;
-				},
-				Bytecode::Eq |
-				Bytecode::Neq |
-				Bytecode::Lt |
-				Bytecode::Gt |
-				Bytecode::Add |
-				Bytecode::Sub |
-				Bytecode::Mul |
-				Bytecode::Pow |
-				Bytecode::Div |
-				Bytecode::LogicalAnd |
-				Bytecode::LogicalOr => {
-					let left = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-					let right = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
-
-					self.stack.push_back(result);
-				},
-				Bytecode::Neg |
-				Bytecode::Not => {
-					let value = self.stack.pop_back().ok_or(VMError::StackEmptyButExpectedValue)?;
-
-					let result = value.calc_unary_by_op(&inst.to_unary_op().unwrap())?;
-
-					self.stack.push_back(result);
-				},
+			if !pc_changed {
+				self.pc += 1;
 			}
 		}
 

@@ -6,8 +6,6 @@ use crate::{bytecode::Bytecode, parser::{ASTNode, ASTNodeEnum, BinaryOp}};
 pub enum CompilerError {
 	#[error("Unknown function '{0}' call")]
 	UnknownFunctionCall(String),
-	#[error("String constant length is too long for u16 type, that means string is bigger than 65 KiB, try using dynamic string")]
-	StringTooLong,
 	#[error("Block is too long for u32 type, that means block is bigger than 4 GB, try separate code for modules")]
 	BlockIsTooLong,
 	#[error("'{0}' variable is not known in current scope")]
@@ -114,69 +112,36 @@ impl<'a> CompilerContext<'a> {
 
 pub struct Compiler {
 	stack_pos: u32,
-	pc: u32,
 }
 
 impl Compiler {
 	pub fn new() -> Self {
-		Self {stack_pos: 0, pc: 0}
+		Self {stack_pos: 0}
+	}
+
+	fn pc(result: &[Bytecode]) -> u32 {
+		result.len() as u32
 	}
 
 	fn look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
 		self.stack_pos += 1;
 
 		result.push(Bytecode::Look(stack_pos));
-
-		self.pc += 1 + 4;
 	}
 
 	fn load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
+		self.stack_pos -= 1;
+
 		result.push(Bytecode::Load(stack_pos));
-
-		self.pc += 1 + 4;
 	}
 
-	fn push_bool(&mut self, val: bool, result: &mut Vec<Bytecode>) {
-		self.stack_pos += 1;
+	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<u32, CompilerError> where T: DoubleEndedIterator<Item=&'a ASTNode> {
+		let pc = Self::pc(result);
 
-		result.push(Bytecode::PushBoolean(val));
-
-		self.pc += 1;
-	}
-
-	fn push_float(&mut self, val: f64, result: &mut Vec<Bytecode>) {
-		self.stack_pos += 1;
-
-		result.push(Bytecode::PushFloat(val));
-
-		self.pc += 1 + 8;
-	}
-
-	fn push_string(&mut self, val: String, result: &mut Vec<Bytecode>) -> Result<(), CompilerError> {
-		self.stack_pos += 1;
-
-		let Ok(len_u32) = u32::try_from(val.len()) else {
-			return Err(CompilerError::StringTooLong)
-		};
-
-		result.push(Bytecode::PushString(val));
-
-		self.pc += 1 + 2 + len_u32;
-
-		Ok(())
-	}
-
-	fn push_arg_end(&mut self, result: &mut Vec<Bytecode>) {
-		self.stack_pos += 1;
-
-		result.push(Bytecode::PushArgEnd);
-
-		self.pc += 1;
-	}
-
-	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> where T: DoubleEndedIterator<Item=&'a ASTNode> {
 		if let Ok(id) = NativeFunctionId::try_from(name) {
-			self.push_arg_end(result);
+			self.stack_pos += 1;
+
+			result.push(Bytecode::PushArgEnd);
 
 			let mut len = 1;
 
@@ -189,49 +154,13 @@ impl Compiler {
 			self.stack_pos -= len;
 
 			result.push(Bytecode::NativeCall(id));
-
-			self.pc += 1 + 1;
 		} else if let Some(pos) = context.get_function(name) {
-			self.call(pos, result);
+			result.push(Bytecode::Call(pos));
 		} else {
 			return Err(CompilerError::UnknownFunctionCall(name.to_owned()))
 		}
 
-		Ok(())
-	}
-
-	fn jit(&mut self, pos: u32, result: &mut Vec<Bytecode>) {
-		self.stack_pos -= 1;
-
-		result.push(Bytecode::Jit(pos));
-
-		self.pc += 1 + 4;
-	}
-
-	fn jif(&mut self, pos: u32, result: &mut Vec<Bytecode>) {
-		self.stack_pos -= 1;
-
-		result.push(Bytecode::Jif(pos));
-
-		self.pc += 1 + 4;
-	}
-
-	fn jmp(&mut self, pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::Jmp(pos));
-
-		self.pc += 1 + 4;
-	}
-
-	fn call(&mut self, pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::Call(pos));
-
-		self.pc += 1 + 4;
-	}
-
-	fn ret(&mut self, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::Ret);
-
-		self.pc += 1;
+		Ok(pc)
 	}
 
 	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
@@ -247,7 +176,6 @@ impl Compiler {
 		self.look(stack_pos, result);
 
 		result.push(op);
-		self.pc += 1;
 
 		self.load(stack_pos, result);
 
@@ -255,7 +183,7 @@ impl Compiler {
 	}
 
 	fn compile(&mut self, ast: &ASTNode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
-		println!("stack_pos = {}", self.stack_pos);
+		println!("stack_pos = {}; ast = {ast}", self.stack_pos);
 
 		match &ast.value {
 			ASTNodeEnum::FunctionDefinition { name: Some(name), args, block } => {
@@ -267,26 +195,32 @@ impl Compiler {
 					return Err(CompilerError::BlockIsTooLong)
 				};
 
-				self.jmp(self.pc + compiled_block_len + 6, result);
+				result.push(Bytecode::Jmp(0 + compiled_block_len + 6));
 
-				context.insert_function(name.to_owned(), self.pc);
+				context.insert_function(name.to_owned(), 0);
 
 				result.extend(compiled_block);
 
-				self.ret(result);
+				result.push(Bytecode::Ret);
 			},
 			ASTNodeEnum::While { block_else: Some(_), .. } |
 			ASTNodeEnum::Break(..) | ASTNodeEnum::Return(..) |
 			ASTNodeEnum::FunctionDefinition {..} => todo!("{}", ast.value),
 			ASTNodeEnum::None => return Ok(()),
 			&ASTNodeEnum::Boolean(x) => {
-				self.push_bool(x, result);
+				self.stack_pos += 1;
+
+				result.push(Bytecode::PushBoolean(x));
 			},
 			&ASTNodeEnum::Float(x) => {
-				self.push_float(x, result);
+				self.stack_pos += 1;
+
+				result.push(Bytecode::PushFloat(x));
 			},
 			ASTNodeEnum::String(x) => {
-				self.push_string(x.clone(), result)?;
+				self.stack_pos += 1;
+
+				result.push(Bytecode::PushString(x.clone()));
 			},
 			ASTNodeEnum::Tuple(values) => {
 				self.call_func("tuple", values.iter(), result, context)?;
@@ -309,16 +243,21 @@ impl Compiler {
 			} else {
 				return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::PlusAssignment, right } =>
-				self.compile_assignment(left, right, Bytecode::Add, result, context)?,
-			ASTNodeEnum::Binary { left, op: BinaryOp::MinusAssignment, right } =>
-				self.compile_assignment(left, right, Bytecode::Sub, result, context)?,
-			ASTNodeEnum::Binary { left, op: BinaryOp::MultiplyAssignment, right } =>
-				self.compile_assignment(left, right, Bytecode::Mul, result, context)?,
-			ASTNodeEnum::Binary { left, op: BinaryOp::PowAssignment, right } =>
-				self.compile_assignment(left, right, Bytecode::Pow, result, context)?,
-			ASTNodeEnum::Binary { left, op: BinaryOp::DivideAssignment, right } =>
-				self.compile_assignment(left, right, Bytecode::Div, result, context)?,
+			ASTNodeEnum::Binary { left, op: BinaryOp::PlusAssignment, right } => {
+				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
+			},
+			ASTNodeEnum::Binary { left, op: BinaryOp::MinusAssignment, right } => {
+				self.compile_assignment(left, right, Bytecode::Sub, result, context)?;
+			},
+			ASTNodeEnum::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
+				self.compile_assignment(left, right, Bytecode::Mul, result, context)?;
+			},
+			ASTNodeEnum::Binary { left, op: BinaryOp::PowAssignment, right } => {
+				self.compile_assignment(left, right, Bytecode::Pow, result, context)?;
+			},
+			ASTNodeEnum::Binary { left, op: BinaryOp::DivideAssignment, right } => {
+				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
+			},
 			ASTNodeEnum::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
 				self.look(stack_pos, result);
 			} else {
@@ -334,7 +273,6 @@ impl Compiler {
 				self.compile(left, result, context)?;
 
 				self.stack_pos -= 1;
-				self.stack_pos -= 1;
 
 				result.push(Bytecode::Gt);
 				result.push(Bytecode::Not);
@@ -344,7 +282,6 @@ impl Compiler {
 				self.compile(left, result, context)?;
 
 				self.stack_pos -= 1;
-				self.stack_pos -= 1;
 
 				result.push(Bytecode::Lt);
 				result.push(Bytecode::Not);
@@ -353,7 +290,6 @@ impl Compiler {
 				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
 
-				self.stack_pos -= 1;
 				self.stack_pos -= 1;
 
 				result.push(Bytecode::from_binary_op(op));
@@ -365,28 +301,17 @@ impl Compiler {
 				self.call_func(name, iter::once(&**arg), result, context)?;
 			},
 			ASTNodeEnum::While { condition, block, block_else: None } => {
-				let mut compiled_condition = Vec::new();
-				self.compile(condition, &mut compiled_condition, context)?;
+				let cond = Self::pc(result);
 
-				let Ok(compiled_condition_size) = u32::try_from(compiled_condition.len()) else {
-					return Err(CompilerError::BlockIsTooLong)
-				};
+				self.compile(condition, result, context)?;
 
-				let mut compiled_block = Vec::new();
-				self.compile(block, &mut compiled_block, context)?;
+				let jif = Self::pc(result);
 
-				let Ok(compiled_block_size) = u32::try_from(compiled_block.len()) else {
-					return Err(CompilerError::BlockIsTooLong)
-				};
+				self.compile(block, result, context)?;
 
-				let cond = self.pc;
+				result.push(Bytecode::Jmp(cond));
 
-				result.extend(compiled_condition);
-
-				self.jif(self.pc + compiled_block_size + 5, result);
-
-				result.extend(compiled_block);
-				self.jmp(cond, result);
+				result.insert(jif as usize, Bytecode::Jif(Self::pc(result) + 1));
 			},
 			ASTNodeEnum::If { condition, block, block_else: Some(block_else) } => {
 				let mut compiled_block = Vec::new();
@@ -405,27 +330,23 @@ impl Compiler {
 
 				self.compile(condition, result, context)?;
 
-				self.jif(self.pc + else_offset, result);
+				self.stack_pos -= 1;
+				result.push(Bytecode::Jif(0 + else_offset));
 
 				result.extend(compiled_block);
-				self.jmp(self.pc + else_block_size, result);
+				result.push(Bytecode::Jmp(0 + else_block_size));
 
 				result.extend(compiled_block_else);
 			},
 			ASTNodeEnum::If { condition, block, block_else: None } => {
-				let mut compiled_block = Vec::new();
-
-				self.compile(block, &mut compiled_block, context)?;
-
-				let Ok(u32_len) = u32::try_from(compiled_block.len()) else {
-					return Err(CompilerError::BlockIsTooLong)
-				};
-
 				self.compile(condition, result, context)?;
 
-				self.jif(self.pc + u32_len, result);
+				self.stack_pos -= 1;
+				let jif = Self::pc(result);
 
-				result.extend(compiled_block);
+				self.compile(block, result, context)?;
+
+				result.insert(jif as usize, Bytecode::Jif(Self::pc(result) + 1));
 			},
 			ASTNodeEnum::Block(statements) => {
 				let statements_len = statements.len();

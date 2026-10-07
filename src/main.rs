@@ -244,8 +244,8 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	compiler.compile_loop(&ast, &mut bytes)?;
 
-	for byte in &bytes {
-		println!("{byte}");
+	for (i, byte) in bytes.iter().enumerate() {
+		println!("{i:02}: {byte}");
 	}
 
 	let bytes = Bytecode::asm(bytes);
