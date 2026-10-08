@@ -1,9 +1,9 @@
 use std::{collections::HashMap, mem};
 
-use crate::{parser::{UnaryOp, BinaryOp, ASTNode, ASTNode}, uni_type::{UniResult, UniResultError}};
+use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, uni_type::UniResultError, wrapper::{ASTNode, OptimizerError, UniResult}};
 
-#[derive(thiserror::Error, Debug)]
-pub enum OptimizerError {
+#[derive(thiserror::Error, PartialEq, Debug)]
+pub enum RawOptimizerError {
 	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
 	// #[error("'{0}' variable is not known in current scope")]
@@ -21,10 +21,10 @@ impl Optimizer {
 	}
 
 	pub fn have_no_effects(ast: &ASTNode) -> bool {
-		match &ast.value {
-			ASTNode::Function { .. } |
-			ASTNode::FunctionDefinition { name: Some(_), .. } |
-			ASTNode::Binary {
+		match &ast.val {
+			RawASTNode::Function { .. } |
+			RawASTNode::FunctionDefinition { name: Some(_), .. } |
+			RawASTNode::Binary {
 				left: _,
 				op: BinaryOp::Assignment |
 					BinaryOp::PlusAssignment |
@@ -34,7 +34,7 @@ impl Optimizer {
 					BinaryOp::DivideAssignment,
 				right: _
 			} => false,
-			ASTNode::Binary { left, op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr, right } => {
+			RawASTNode::Binary { left, op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr, right } => {
 				Self::have_no_effects(left) && Self::have_no_effects(right)
 			},
 			_ => true,
@@ -42,126 +42,120 @@ impl Optimizer {
 	}
 
 	pub fn simplify(ast: &mut ASTNode) {
-		let (row, column) = (ast.row, ast.column);
+		let span = ast.span;
 
-		match &mut ast.value {
-			ASTNode::Binary {
+		match &mut ast.val {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Multiply,
 				right
-			} if left.value == ASTNode::Float(0.0) || right.value == ASTNode::Float(0.0) => {
-				ast.value = ASTNode::Float(0.0);
+			} if left.val == RawASTNode::Float(0.0) || right.val == RawASTNode::Float(0.0) => {
+				ast.val = RawASTNode::Float(0.0);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Multiply,
 				right
-			} if right.value == ASTNode::Float(1.0) => {
+			} if right.val == RawASTNode::Float(1.0) => {
 				 *ast = mem::take(left);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Multiply,
 				right
-			} if left.value == ASTNode::Float(1.0) => {
+			} if left.val == RawASTNode::Float(1.0) => {
 				 *ast = mem::take(right);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Plus,
 				right
-			} if let ASTNode::Float(0.0) = left.value => {
+			} if let RawASTNode::Float(0.0) = left.val => {
 				 *ast = mem::take(right);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Minus,
 				right
-			} if let ASTNode::Float(0.0) = left.value => {
-				*ast = ASTNode {
-					value: ASTNode::Unary {
-						op: UnaryOp::Minus, value: mem::take(right)
-					},
-					row, column
-				};
+			} if let RawASTNode::Float(0.0) = left.val => {
+				ast.val = RawASTNode::Unary {
+					op: UnaryOp::Minus, value: mem::take(right)
+				}
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Plus | BinaryOp::Minus,
 				right
-			} if let ASTNode::Float(0.0) = right.value => {
+			} if let RawASTNode::Float(0.0) = right.val => {
 				 *ast = mem::take(left);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Plus,
 				right
-			} if left.value == right.value => {
-				*ast = ASTNode {
-					value: ASTNode::Binary {
-						left: mem::take(left),
-						op: BinaryOp::Multiply,
-						right: Box::new(ASTNode { value: ASTNode::Float(2.0), row, column }),
-					},
-					row, column
-				};
+			} if left == right => {
+				ast.val = RawASTNode::Binary {
+					left: mem::take(left),
+					op: BinaryOp::Multiply,
+					right: Box::new(ASTNode::from(RawASTNode::Float(2.0)).with_pos_from(right)),
+				}
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Minus,
 				right
-			} if left.value == right.value => {
-				ast.value = ASTNode::Float(0.0);
+			} if left == right => {
+				ast.val = RawASTNode::Float(0.0);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Equals | BinaryOp::LessOrEquals | BinaryOp::GreatOrEquals,
 				right
-			} if left.value == right.value => {
-				ast.value = ASTNode::Boolean(true);
+			} if left == right => {
+				ast.val = RawASTNode::Boolean(true);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::Neq | BinaryOp::Less | BinaryOp::Great,
 				right
-			} if left.value == right.value => {
-				ast.value = ASTNode::Boolean(false);
+			} if left == right => {
+				ast.val = RawASTNode::Boolean(false);
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::LogicalAnd,
 				right
 			} => {
-				match (&left.value, &right.value) {
-					(ASTNode::Boolean(false), _) => {
-						ast.value = ASTNode::Boolean(false);
+				match (&left.val, &right.val) {
+					(RawASTNode::Boolean(false), _) => {
+						ast.val = RawASTNode::Boolean(false);
 					},
-					(_, ASTNode::Boolean(false)) if Self::have_no_effects(left) => {
-						ast.value = ASTNode::Boolean(false);
+					(_, RawASTNode::Boolean(false)) if Self::have_no_effects(left) => {
+						ast.val = RawASTNode::Boolean(false);
 					},
-					(_, ASTNode::Boolean(true)) => {
+					(_, RawASTNode::Boolean(true)) => {
 						*ast = mem::take(left);
 					},
-					(ASTNode::Boolean(true), _) => {
+					(RawASTNode::Boolean(true), _) => {
 						*ast = mem::take(right);
 					},
 					_ => {},
 				}
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left,
 				op: BinaryOp::LogicalOr,
 				right
 			} => {
-				match (&left.value, &right.value) {
-					(ASTNode::Boolean(true), _) |
-					(_, ASTNode::Boolean(true)) if Self::have_no_effects(left) && Self::have_no_effects(right) => {
-						ast.value = ASTNode::Boolean(true);
+				match (&left.val, &right.val) {
+					(RawASTNode::Boolean(true), _) |
+					(_, RawASTNode::Boolean(true)) if Self::have_no_effects(left) && Self::have_no_effects(right) => {
+						ast.val = RawASTNode::Boolean(true);
 					},
-					(_, ASTNode::Boolean(false)) => {
+					(_, RawASTNode::Boolean(false)) => {
 						*ast = mem::take(left);
 					},
-					(ASTNode::Boolean(false), _) => {
+					(RawASTNode::Boolean(false), _) => {
 						*ast = mem::take(right);
 					},
 					_ => {},
@@ -172,14 +166,14 @@ impl Optimizer {
 	}
 
 	pub fn fold(&mut self, ast: &mut ASTNode) -> Result<(), OptimizerError> {
-		let (row, column) = (ast.row, ast.column);
+		let span = ast.span;
 
 		Self::simplify(ast);
 
-		match &mut ast.value {
-			ASTNode::None | ASTNode::Boolean(..) |
-			ASTNode::Float(..) | ASTNode::String(..) => {},
-			ASTNode::Variable(name) => {
+		match &mut ast.val {
+			RawASTNode::None | RawASTNode::Boolean(..) |
+			RawASTNode::Float(..) | RawASTNode::String(..) => {},
+			RawASTNode::Variable(name) => {
 				if let Some(index) = self.unused_vars.iter().position(|v| v == name) {
 					self.unused_vars.remove(index);
 				}
@@ -187,7 +181,7 @@ impl Optimizer {
 				// let constant_value = self.constants.get(name).ok_or(OptimizerError::NotKnownAtThisScope(name.to_owned()))?;
 				// ast.value = constant_value.clone().try_into()?;
 			},
-			ASTNode::Binary { left, op:BinaryOp::Assignment, right } if let ASTNode::Variable(name) = &left.value => {
+			RawASTNode::Binary { left, op:BinaryOp::Assignment, right } if let RawASTNode::Variable(name) = &left.val => {
 				self.fold(right)?;
 
 				self.unused_vars.push(name.to_owned());
@@ -200,7 +194,7 @@ impl Optimizer {
 
 				// ast.value = ASTNodeEnum::None;
 			},
-			ASTNode::Binary {
+			RawASTNode::Binary {
 				left: _, op:BinaryOp::PlusAssignment |
 							BinaryOp::MinusAssignment |
 							BinaryOp::MultiplyAssignment |
@@ -209,25 +203,25 @@ impl Optimizer {
 				right } => {
 				self.fold(right)?;
 			},
-			ASTNode::Unary { op: UnaryOp::Minus, value } => {
+			RawASTNode::Unary { op: UnaryOp::Minus, value } => {
 				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
 					return Ok(())
 				};
 
-				ast.value = value.neg()?.try_into()?;
+				ast.val = value.neg()?.try_into()?;
 			},
-			ASTNode::Unary { op: UnaryOp::Not, value } => {
+			RawASTNode::Unary { op: UnaryOp::Not, value } => {
 				self.fold(value)?;
 
 				let Ok(value): Result<UniResult, _> = (**value).clone().try_into() else {
 					return Ok(())
 				};
 
-				ast.value = value.not()?.try_into()?;
+				ast.val = value.not()?.try_into()?;
 			},
-			ASTNode::Binary { left, op, right } => {
+			RawASTNode::Binary { left, op, right } => {
 				let left_is_err = self.fold(left).is_err();
 				let right_is_err = self.fold(right).is_err();
 
@@ -251,18 +245,18 @@ impl Optimizer {
 					Err(e) => return Err(e.into()),
 				};
 			},
-			ASTNode::Tuple(values) => {
+			RawASTNode::Tuple(values) => {
 				for value in values {
 					self.fold(value)?;
 				}
 			},
-			ASTNode::Function { name: _, arg } => {
+			RawASTNode::Function { name: _, arg } => {
 				self.fold(arg)?;
 			},
-			ASTNode::FunctionDefinition { name: _, args: _, body } => {
+			RawASTNode::FunctionDefinition { name: _, args: _, body } => {
 				self.fold(body)?;
 			},
-			ASTNode::If { condition, body, else_body: None } => {
+			RawASTNode::If { condition, body, else_body: None } => {
 				self.fold(body)?;
 
 				self.fold(condition)?;
@@ -273,11 +267,11 @@ impl Optimizer {
 					if condition.to_bool()? {
 						*ast = *body.clone();
 					} else {
-						ast.value = ASTNode::None;
+						ast.val = RawASTNode::None;
 					}
 				}
 			},
-			ASTNode::If { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
 				self.fold(condition)?;
 
 				let condition_folded: Result<UniResult, UniResultError> = (**condition).clone().try_into();
@@ -292,7 +286,7 @@ impl Optimizer {
 					}
 				}
 			},
-			ASTNode::While { condition, body, else_body: None } => {
+			RawASTNode::While { condition, body, else_body: None } => {
 				self.fold(body)?;
 
 				self.fold(condition)?;
@@ -302,10 +296,10 @@ impl Optimizer {
 				};
 
 				if !condition.to_bool()? {
-					*ast = ASTNode { value: ASTNode::None, row, column };
+					ast.val = RawASTNode::None;
 				}
 			},
-			ASTNode::While { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
 				self.fold(condition)?;
 				self.fold(body)?;
 				self.fold(else_body)?;
@@ -315,14 +309,14 @@ impl Optimizer {
 				};
 
 				if !condition.to_bool()? {
-					*ast = ASTNode { value: ASTNode::None, row, column };
+					ast.val = RawASTNode::None;
 				}
 			},
-			ASTNode::Break(value) |
-			ASTNode::Return(value) => {
+			RawASTNode::Break(value) |
+			RawASTNode::Return(value) => {
 				self.fold(value)?;
 			},
-			ASTNode::Block(exprs) => {
+			RawASTNode::Block(exprs) => {
 				for expr in exprs {
 					self.fold(expr)?;
 				}

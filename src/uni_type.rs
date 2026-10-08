@@ -1,21 +1,21 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::parser::{ASTNode, ASTNode, BinaryOp, UnaryOp};
+use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
 
-#[derive(Debug, thiserror::Error)]
-pub enum UniResultError {
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum RawUniResultError {
 	#[error("Incompatible operation")]
 	IncompatibleOperationType,
 	#[error("Unsupported operation '{0}'")]
 	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
-	CannotConvertToUniResult(ASTNode),
+	CannotConvertToUniResult(RawASTNode),
 	#[error("Cannot convert to {0:?} from UniResult")]
-	CannotConvertFromUniResult(UniResult),
+	CannotConvertFromUniResult(RawUniResult),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum UniResult {
+pub enum RawUniResult {
 	None,
 	Boolean(bool),
 	NumberU32(u32),
@@ -29,28 +29,32 @@ impl TryFrom<UniResult> for ASTNode {
 	type Error = UniResultError;
 
 	fn try_from(value: UniResult) -> Result<Self, Self::Error> {
-		let result = match value {
-			UniResult::None => ASTNode::None,
-			UniResult::Boolean(val) => ASTNode::Boolean(val),
-			UniResult::Float(val) => ASTNode::Float(val),
-			UniResult::String(val) => ASTNode::String(val),
-			UniResult::Tuple(values) => {
+		let span = value.span;
+
+		let result = match value.val {
+			RawUniResult::None =>
+				RawASTNode::None,
+			RawUniResult::Boolean(val) =>
+				RawASTNode::Boolean(val),
+			RawUniResult::Float(val) =>
+				RawASTNode::Float(val),
+			RawUniResult::String(val) =>
+				RawASTNode::String(val),
+			RawUniResult::Tuple(values) => {
 				let result: Result<Vec<ASTNode>, _> = values.into_iter().map(TryInto::try_into).collect();
 
-				ASTNode::Tuple(result?)
+				RawASTNode::Tuple(result?)
 			},
-			v => return Err(Self::Error::CannotConvertFromUniResult(v)),
+			v => return Err(
+				Self::Error::from(
+					RawUniResultError::CannotConvertFromUniResult(v)
+				).with_pos(span)
+			),
 		};
 
-		Ok(result)
-	}
-}
-
-impl TryFrom<UniResult> for ASTNode {
-	type Error = UniResultError;
-
-	fn try_from(value: UniResult) -> Result<Self, Self::Error> {
-		Ok(Self { value: value.try_into()?, row: 0, column: 0 })
+		Ok(
+			Self::from(result).with_pos(span)
+		)
 	}
 }
 
@@ -58,40 +62,42 @@ impl TryFrom<ASTNode> for UniResult {
 	type Error = UniResultError;
 
 	fn try_from(value: ASTNode) -> Result<Self, Self::Error> {
-		let result = match value {
-			ASTNode::None => Self::None,
-			ASTNode::Boolean(val) => Self::Boolean(val),
-			ASTNode::Float(val) => Self::Float(val),
-			ASTNode::String(val) => Self::String(val),
-			ASTNode::Tuple(values) => {
+		use RawUniResult as RawSelf;
+
+		let span = value.span;
+
+		let result = match value.val {
+			RawASTNode::None => RawSelf::None,
+			RawASTNode::Boolean(val) => RawSelf::Boolean(val),
+			RawASTNode::Float(val) => RawSelf::Float(val),
+			RawASTNode::String(val) => RawSelf::String(val),
+			RawASTNode::Tuple(values) => {
 				let result: Result<Vec<Self>, _> = values.into_iter().map(TryInto::try_into).collect();
 
-				Self::Tuple(result?)
+				RawSelf::Tuple(result?)
 			},
-			v => return Err(Self::Error::CannotConvertToUniResult(v)),
+			v => return Err(
+				Self::Error::from(
+					RawUniResultError::CannotConvertToUniResult(v)
+				).with_pos(span)
+			),
 		};
 
-		Ok(result)
+		Ok(
+			Self::from(result).with_pos(span)
+		)
 	}
 }
 
-impl TryFrom<ASTNode> for UniResult {
-	type Error = UniResultError;
-
-	fn try_from(val: ASTNode) -> Result<Self, Self::Error> {
-		val.value.try_into()
-	}
-}
-
-impl Display for UniResult {
+impl Display for RawUniResult {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			UniResult::None => write!(f, "None"),
-			UniResult::Boolean(x) => write!(f, "{x}"),
-			UniResult::NumberU32(x) => write!(f, "{x}"),
-			UniResult::Float(x) => write!(f, "{x}"),
-			UniResult::String(x) => write!(f, "\"{x}\""),
-			UniResult::Tuple(values) => {
+			Self::None => write!(f, "None"),
+			Self::Boolean(x) => write!(f, "{x}"),
+			Self::NumberU32(x) => write!(f, "{x}"),
+			Self::Float(x) => write!(f, "{x}"),
+			Self::String(x) => write!(f, "\"{x}\""),
+			Self::Tuple(values) => {
 				write!(f, "(")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -104,32 +110,38 @@ impl Display for UniResult {
 
 				write!(f, ")")
 			},
-			UniResult::Range { start, end, step } => {
+			Self::Range { start, end, step } => {
 				write!(f, "{start}..{end}..{step}")
 			},
 		}
 	}
 }
 
-impl UniResult {
-	pub fn calc_binary_by_op(&self, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
-		match op {
-			BinaryOp::Plus 			=> self.add(right),
-			BinaryOp::Minus 		=> self.sub(right),
-			BinaryOp::Multiply 		=> self.mul(right),
-			BinaryOp::Pow 			=> self.pow(right),
-			BinaryOp::Divide 		=> self.div(right),
-			BinaryOp::Equals 		=> self.eq(right),
-			BinaryOp::Neq 	=> self.neq(right),
-			BinaryOp::Great 		=> self.gt(right),
-			BinaryOp::Less 			=> self.lt(right),
-			BinaryOp::LogicalAnd 	=> self.log_and(right),
-			BinaryOp::LogicalOr 	=> self.log_or(right),
-			_ => Err(UniResultError::UnsupportedOperation(op.to_owned())),
-		}
+impl RawUniResult {
+	pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
+		let result = match op {
+			BinaryOp::Plus 			=> left.add(&right.val),
+			BinaryOp::Minus 		=> left.sub(&right.val),
+			BinaryOp::Multiply 		=> left.mul(&right.val),
+			BinaryOp::Pow 			=> left.pow(&right.val),
+			BinaryOp::Divide 		=> left.div(&right.val),
+			BinaryOp::Equals 		=> left.val.eq(&right.val),
+			BinaryOp::Neq 			=> left.neq(&right.val),
+			BinaryOp::Great 		=> left.gt(&right.val),
+			BinaryOp::Less 			=> left.lt(&right.val),
+			BinaryOp::LogicalAnd 	=> left.log_and(&right.val),
+			BinaryOp::LogicalOr 	=> left.log_or(&right.val),
+			_ => Err(
+				UniResultError::from(
+					RawUniResultError::UnsupportedOperation(op.to_owned())
+				).with_pos_from(left)
+			),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn calc_unary_by_op(&self, op: &UnaryOp) -> Result<UniResult, UniResultError> {
+	pub fn calc_unary_by_op(&self, op: &UnaryOp) -> Result<Self, UniResultError> {
 		match op {
 			UnaryOp::Minus => self.neg(),
 			UnaryOp::Not => self.not(),
@@ -295,7 +307,7 @@ impl UniResult {
 	pub fn eq(&self, right: &Self) -> Result<Self, UniResultError> {
 		match (self, right) {
 			(&Self::Boolean(a), &Self::Boolean(b))
-				=> Ok(UniResult::Boolean(a == b)),
+				=> Ok(Self::Boolean(a == b)),
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
 			(Self::String(a), Self::String(b))
@@ -304,7 +316,7 @@ impl UniResult {
 			(Self::Tuple(values), b @ Self::Float(..)) => {
 				let mut result = Vec::new();
 
-				for value in values {
+				for value in values.iter().map(|v| v.val) {
 					result.push(value.eq(b)?);
 				}
 
@@ -533,39 +545,39 @@ impl UniResult {
 	}
 }
 
-impl From<bool> for UniResult {
+impl From<bool> for RawUniResult {
 	fn from(value: bool) -> Self {
-		UniResult::Boolean(value)
+		RawUniResult::Boolean(value)
 	}
 }
 
-impl From<u32> for UniResult {
+impl From<u32> for RawUniResult {
 	fn from(value: u32) -> Self {
-		UniResult::NumberU32(value)
+		RawUniResult::NumberU32(value)
 	}
 }
 
-impl From<f64> for UniResult {
+impl From<f64> for RawUniResult {
 	fn from(value: f64) -> Self {
-		UniResult::Float(value)
+		RawUniResult::Float(value)
 	}
 }
 
-impl From<String> for UniResult {
+impl From<String> for RawUniResult {
 	fn from(value: String) -> Self {
-		UniResult::String(value)
+		RawUniResult::String(value)
 	}
 }
 
-impl From<Vec<UniResult>> for UniResult {
+impl From<Vec<UniResult>> for RawUniResult {
 	fn from(values: Vec<UniResult>) -> Self {
-		UniResult::Tuple(values)
+		RawUniResult::Tuple(values)
 	}
 }
 
-impl From<UniResult> for f64 {
-	fn from(value: UniResult) -> f64 {
-		let UniResult::Float(x) = value else {
+impl From<RawUniResult> for f64 {
+	fn from(value: RawUniResult) -> f64 {
+		let RawUniResult::Float(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
 		};
 
@@ -573,9 +585,9 @@ impl From<UniResult> for f64 {
 	}
 }
 
-impl From<UniResult> for String {
-	fn from(value: UniResult) -> String {
-		let UniResult::String(x) = value else {
+impl From<RawUniResult> for String {
+	fn from(value: RawUniResult) -> String {
+		let RawUniResult::String(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
 		};
 
@@ -583,9 +595,9 @@ impl From<UniResult> for String {
 	}
 }
 
-impl From<UniResult> for Vec<UniResult> {
-	fn from(value: UniResult) -> Vec<UniResult> {
-		let UniResult::Tuple(x) = value else {
+impl From<RawUniResult> for Vec<UniResult> {
+	fn from(value: RawUniResult) -> Vec<UniResult> {
+		let RawUniResult::Tuple(x) = value else {
 			panic!("Using 'into' on incompatible type {value:?}")
 		};
 

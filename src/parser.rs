@@ -169,7 +169,7 @@ impl TryFrom<&Token> for BinaryOp {
 	type Error = ParserError;
 
 	fn try_from(value: &Token) -> Result<Self, Self::Error> {
-		let result = bind_enum!(&**value, RawToken, Self,
+		let result = bind_enum!(value.val, RawToken, Self,
 			Assignment,
 			PlusAssignment,
 			MinusAssignment,
@@ -198,9 +198,9 @@ impl TryFrom<&Token> for BinaryOp {
 			Ok(result)
 		} else {
 			Err(val_with_pos!(
-				RawParserError::CannotConvertToBinaryOp((&**value).clone()),
+				RawParserError::CannotConvertToBinaryOp(value.val.clone()),
 				ParserError,
-				value.row, value.column
+				value.span
 			))
 		}
 	}
@@ -534,7 +534,7 @@ impl Parser {
 				Ok(())
 			},
 			Some(kind) => {
-				Err(RawParserError::ExpectedToken { kind: expected_token_type.clone(), found: (&**kind).clone() })
+				Err(RawParserError::ExpectedToken { kind: expected_token_type.clone(), found: kind.val.clone() })
 			},
 			None => panic!("Outside of array"),
 		}
@@ -548,7 +548,7 @@ impl Parser {
 				Ok(())
 			},
 			Some(kind) => {
-				Err(RawParserError::ExpectedTokens { types: expected, found: (&**kind).clone() })
+				Err(RawParserError::ExpectedTokens { types: expected, found: kind.val.clone() })
 			},
 			None => panic!("Outside of array"),
 		}
@@ -655,7 +655,7 @@ impl Parser {
 			return Ok(RawASTNode::None.into())
 		};
 
-		let (row, column) = (cur.row, cur.column);
+		let span = cur.span;
 
 		let result = match (cur, self.peek(1)) {
 			(wmatch!(RawToken::True), ..) => {
@@ -766,7 +766,7 @@ impl Parser {
 				let mut args = Vec::new();
 
 				while let Some(kind) = self.peek(0) {
-					match &**kind {
+					match &kind.val {
 						RawToken::Word(arg) => {
 							args.push(arg.clone());
 
@@ -925,7 +925,7 @@ impl Parser {
 			},
 		};
 
-		Ok(res_with_pos!(result, ASTNode, ParserError, row, column))
+		res_with_pos!(result, ASTNode, ParserError, span)
 	}
 
 	fn parse(&mut self, precedence: usize) -> Result<ASTNode, ParserError> {
@@ -934,7 +934,7 @@ impl Parser {
 		}
 
 		let mut first = self.parse(precedence - 1)?;
-		let (column, row) = (first.column, first.row);
+		let span = first.span;
 
 		let cur = &mut first;
 
@@ -954,7 +954,7 @@ impl Parser {
 					op,
 					right: Box::new(right)
 				}
-			).with_pos(row, column);
+			).with_pos(span);
 		}
 
 		Ok(first)

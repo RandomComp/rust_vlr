@@ -16,19 +16,19 @@ use rustyline::{DefaultEditor, error::ReadlineError::self};
 mod wrapper;
 mod lexer;
 mod parser;
-// mod optimizer;
-// mod uni_type;
+mod optimizer;
+mod uni_type;
 // mod bytecode;
-// mod compiler;
+mod compiler;
 // mod vm;
 
 use crate::lexer::Lexer;
 use crate::parser::{Parser};
-// use crate::optimizer::{Optimizer, OptimizerError};
+use crate::optimizer::{Optimizer};
 // use crate::compiler::{Compiler, CompilerError};
 // use crate::bytecode::{Bytecode, BytecodeError};
 // use crate::vm::{VM, VMError};
-use crate::wrapper::{LexerError, ParserError};
+use crate::wrapper::{LexerError, ParserError, OptimizerError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -47,8 +47,8 @@ enum AppError {
 	Lexer(#[from] LexerError),
 	#[error("Parser error: {0}")]
 	Parser(#[from] ParserError),
-	// #[error("Optimizer error: {0}")]
-	// Optimizer(#[from] OptimizerError),
+	#[error("Optimizer error: {0}")]
+	Optimizer(#[from] OptimizerError),
 	// #[error("Compiler error: {0}")]
 	// Compiler(#[from] CompilerError),
 	// #[error("Bytecode error: {0}")]
@@ -89,7 +89,9 @@ fn repl() -> Result<(), AppError> {
 			}
 		};
 
-		let mut lexer = Lexer::new(code.chars());
+		let mut spans: Vec<(usize, usize)> = Vec::new();
+
+		let mut lexer = Lexer::new(&mut spans, code.chars());
 
 		let tokens = match lexer.tokenize_loop() {
 			Ok(x) => x,
@@ -165,7 +167,9 @@ fn run_file(file: &str) -> Result<(), AppError> {
 fn format(code: &str) -> Result<(), AppError> {
 	// println!("Tokenizing expr '{}'", code);
 
-	let mut lexer = Lexer::new(code.chars());
+	let mut spans: Vec<(usize, usize)> = Vec::new();
+
+	let mut lexer = Lexer::new(&mut spans, code.chars());
 
 	let tokens = lexer.tokenize_loop().unwrap_or_else(|e| {
 		eprintln!("Lexer error: {e}");
@@ -174,7 +178,7 @@ fn format(code: &str) -> Result<(), AppError> {
 	});
 
 	for token in &tokens {
-		println!("token = {}", token);
+		println!("token = {token}");
 	}
 
 	// let mut parser = Parser::new(tokens);
@@ -207,7 +211,9 @@ fn format(code: &str) -> Result<(), AppError> {
 fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 	// println!("Tokenizing expr '{}'", code);
 
-	let mut lexer = Lexer::new(code.chars());
+	let mut spans: Vec<(usize, usize)> = Vec::new();
+
+	let mut lexer = Lexer::new(&mut spans, code.chars());
 
 	let tokens = lexer.tokenize_loop()?;
 
@@ -215,29 +221,37 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		println!("token = {token}");
 	}
 
+	for token in &tokens {
+		let mut res = String::new();
+		token.format(&spans, &mut res)?;
+
+		println!("token = {res}");
+	}
+
 	let mut parser = Parser::new(tokens);
 
-	let ast = parser.parse_instructions()?;
+	let mut ast = parser.parse_instructions()?;
 
 	let mut ast_str = String::new();
 
 	ast.format_human_readable(&mut ast_str, false, 0)?;
 
+	println!("ast = {ast}");
 	println!("ast = {ast_str}");
 
-	// let mut optimizer = Optimizer::new();
+	let mut optimizer = Optimizer::new();
 
-	// optimizer.fold(&mut ast)?;
+	optimizer.fold(&mut ast)?;
 
-	// ast_str.clear();
+	ast_str.clear();
 
-	// ast.format_human_readable(&mut ast_str, false, 0)?;
+	ast.format_human_readable(&mut ast_str, false, 0)?;
 
-	// println!("ast after optimizer = {ast_str}");
+	println!("ast after optimizer = {ast_str}");
 
-	// for var in optimizer.unused_vars {
-	// 	println!("'{var}' unused");
-	// }
+	for var in optimizer.unused_vars {
+		println!("'{var}' unused");
+	}
 
 	// let mut compiler = Compiler::new();
 

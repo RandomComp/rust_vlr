@@ -167,6 +167,7 @@ pub enum LexerErrorRaw {
 }
 
 pub struct Lexer<'a> {
+	spans: &'a mut Vec<(usize, usize)>,
 	expr: Chars<'a>,
 	index: usize,
 
@@ -174,8 +175,8 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(expr: Chars<'a>) -> Self {
-		Lexer {expr, index: 0, column: 0, row: 0}
+	pub fn new(spans: &'a mut Vec<(usize, usize)>, expr: Chars<'a>) -> Self {
+		Lexer {spans, expr, index: 0, column: 0, row: 0}
 	}
 
 	fn get(&self) -> Skip<Chars<'a>> {
@@ -355,7 +356,8 @@ impl<'a> Lexer<'a> {
 			}
 		}
 
-		let (row, column) = (self.row, self.column);
+		let span = self.spans.len();
+		self.spans.push((self.row, self.column));
 
 		let result = match self.peek(0) {
 			Some(c) if c.is_ascii_alphabetic() || c == '_' =>
@@ -370,7 +372,7 @@ impl<'a> Lexer<'a> {
 			None => Ok(RawToken::Eof)
 		};
 
-		Ok(res_with_pos!(result, Token, LexerError, row, column))
+		res_with_pos!(result, Token, LexerError, span)
 	}
 
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
@@ -380,7 +382,10 @@ impl<'a> Lexer<'a> {
 			result.push(token);
 		}
 
-		result.push(Token::from(RawToken::Eof).with_pos(self.row, self.column));
+		let span = self.spans.len();
+		self.spans.push((self.row, self.column));
+
+		result.push(Token::from(RawToken::Eof).with_pos(span));
 
 		Ok(result)
 	}
