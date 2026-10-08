@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::parser::{ASTNode, ASTNodeEnum, BinaryOp, UnaryOp};
+use crate::parser::{ASTNode, ASTNode, BinaryOp, UnaryOp};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UniResultError {
@@ -9,7 +9,7 @@ pub enum UniResultError {
 	#[error("Unsupported operation '{0}'")]
 	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
-	CannotConvertToUniResult(ASTNodeEnum),
+	CannotConvertToUniResult(ASTNode),
 	#[error("Cannot convert to {0:?} from UniResult")]
 	CannotConvertFromUniResult(UniResult),
 }
@@ -25,19 +25,19 @@ pub enum UniResult {
 	Range { start: f64, end: f64, step: f64 },
 }
 
-impl TryFrom<UniResult> for ASTNodeEnum {
+impl TryFrom<UniResult> for ASTNode {
 	type Error = UniResultError;
 
 	fn try_from(value: UniResult) -> Result<Self, Self::Error> {
 		let result = match value {
-			UniResult::None => ASTNodeEnum::None,
-			UniResult::Boolean(val) => ASTNodeEnum::Boolean(val),
-			UniResult::Float(val) => ASTNodeEnum::Float(val),
-			UniResult::String(val) => ASTNodeEnum::String(val),
+			UniResult::None => ASTNode::None,
+			UniResult::Boolean(val) => ASTNode::Boolean(val),
+			UniResult::Float(val) => ASTNode::Float(val),
+			UniResult::String(val) => ASTNode::String(val),
 			UniResult::Tuple(values) => {
 				let result: Result<Vec<ASTNode>, _> = values.into_iter().map(TryInto::try_into).collect();
 
-				ASTNodeEnum::Tuple(result?)
+				ASTNode::Tuple(result?)
 			},
 			v => return Err(Self::Error::CannotConvertFromUniResult(v)),
 		};
@@ -54,16 +54,16 @@ impl TryFrom<UniResult> for ASTNode {
 	}
 }
 
-impl TryFrom<ASTNodeEnum> for UniResult {
+impl TryFrom<ASTNode> for UniResult {
 	type Error = UniResultError;
 
-	fn try_from(value: ASTNodeEnum) -> Result<Self, Self::Error> {
+	fn try_from(value: ASTNode) -> Result<Self, Self::Error> {
 		let result = match value {
-			ASTNodeEnum::None => Self::None,
-			ASTNodeEnum::Boolean(val) => Self::Boolean(val),
-			ASTNodeEnum::Float(val) => Self::Float(val),
-			ASTNodeEnum::String(val) => Self::String(val),
-			ASTNodeEnum::Tuple(values) => {
+			ASTNode::None => Self::None,
+			ASTNode::Boolean(val) => Self::Boolean(val),
+			ASTNode::Float(val) => Self::Float(val),
+			ASTNode::String(val) => Self::String(val),
+			ASTNode::Tuple(values) => {
 				let result: Result<Vec<Self>, _> = values.into_iter().map(TryInto::try_into).collect();
 
 				Self::Tuple(result?)

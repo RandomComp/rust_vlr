@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, iter};
 
-use crate::{bytecode::Bytecode, parser::{ASTNode, ASTNodeEnum, BinaryOp}};
+use crate::{bytecode::Bytecode, parser::{ASTNode, BinaryOp}};
 
 #[derive(thiserror::Error, Debug)]
 pub enum CompilerError {
@@ -174,7 +174,7 @@ impl Compiler {
 	}
 
 	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
-		let ASTNodeEnum::Variable(name) = &left.value else {
+		let ASTNode::Variable(name) = &left.value else {
 			return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
 		};
 
@@ -198,7 +198,7 @@ impl Compiler {
 		println!("stack_pos = {}; ast = {ast}", self.stack);
 
 		match &ast.value {
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
@@ -220,12 +220,12 @@ impl Compiler {
 
 				*result.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 			},
-			ASTNodeEnum::Return(value) => {
+			ASTNode::Return(value) => {
 				self.compile(value, result, context)?;
 
 				result.push(Bytecode::Ret);
 			},
-			ASTNodeEnum::Break(value) => {
+			ASTNode::Break(value) => {
 				self.compile(value, result, context)?;
 
 				let Some(pos) = self.break_pos.last_mut() else {
@@ -236,30 +236,30 @@ impl Compiler {
 
 				result.push(Bytecode::Jmp(0));
 			},
-			ASTNodeEnum::FunctionDefinition {..} => todo!("{}", ast.value),
-			ASTNodeEnum::None => return Ok(()),
-			&ASTNodeEnum::Boolean(x) => {
+			ASTNode::FunctionDefinition {..} => todo!("{}", ast.value),
+			ASTNode::None => return Ok(()),
+			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushBoolean(x));
 			},
-			&ASTNodeEnum::Float(x) => {
+			&ASTNode::Float(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushFloat(x));
 			},
-			ASTNodeEnum::String(x) => {
+			ASTNode::String(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushString(x.clone()));
 			},
-			ASTNodeEnum::Tuple(values) => if !values.is_empty() {
+			ASTNode::Tuple(values) => if !values.is_empty() {
 				self.call_func("tuple", values.iter(), result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::Range, right } => {
+			ASTNode::Binary { left, op: BinaryOp::Range, right } => {
 				self.call_func("range", [&**left, &**right].into_iter(), result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::Assignment, right } => if let ASTNodeEnum::Variable(name) = &left.value {
+			ASTNode::Binary { left, op: BinaryOp::Assignment, right } => if let ASTNode::Variable(name) = &left.value {
 				if let Some(stack_pos) = context.get_var(name) {
 					self.compile(right, result, context)?;
 
@@ -274,32 +274,32 @@ impl Compiler {
 			} else {
 				return Err(CompilerError::LeftExprShouldBeId(left.value.to_string()));
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::PlusAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::MinusAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::MinusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Sub, result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Mul, result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::PowAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::PowAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Pow, result, context)?;
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::DivideAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::DivideAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
 			},
-			ASTNodeEnum::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
+			ASTNode::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
 				self.look(stack_pos, result);
 			} else {
 				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
 			},
-			ASTNodeEnum::Unary { op, value } => {
+			ASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;
 
 				result.push(Bytecode::from_unary_op(op));
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::LessOrEquals, right } => {
+			ASTNode::Binary { left, op: BinaryOp::LessOrEquals, right } => {
 				self.compile(left, result, context)?;
 				self.compile(right, result, context)?;
 
@@ -308,7 +308,7 @@ impl Compiler {
 				result.push(Bytecode::Gt);
 				result.push(Bytecode::Not);
 			},
-			ASTNodeEnum::Binary { left, op: BinaryOp::GreatOrEquals, right } => {
+			ASTNode::Binary { left, op: BinaryOp::GreatOrEquals, right } => {
 				self.compile(left, result, context)?;
 				self.compile(right, result, context)?;
 
@@ -317,7 +317,7 @@ impl Compiler {
 				result.push(Bytecode::Lt);
 				result.push(Bytecode::Not);
 			},
-			ASTNodeEnum::Binary { left, op, right } => {
+			ASTNode::Binary { left, op, right } => {
 				self.compile(left, result, context)?;
 				self.compile(right, result, context)?;
 
@@ -325,13 +325,13 @@ impl Compiler {
 
 				result.push(Bytecode::from_binary_op(op));
 			},
-			ASTNodeEnum::Function { name, arg } if let ASTNodeEnum::Tuple(values) = &arg.value => {
+			ASTNode::Function { name, arg } if let ASTNode::Tuple(values) = &arg.value => {
 				self.call_func(name, values.iter(), result, context)?;
 			},
-			ASTNodeEnum::Function { name, arg } => {
+			ASTNode::Function { name, arg } => {
 				self.call_func(name, iter::once(&**arg), result, context)?;
 			},
-			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -353,7 +353,7 @@ impl Compiler {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			ASTNodeEnum::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -373,7 +373,7 @@ impl Compiler {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
@@ -390,7 +390,7 @@ impl Compiler {
 
 				*result.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(Self::pc(result));
 			},
-			ASTNodeEnum::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
@@ -402,7 +402,7 @@ impl Compiler {
 
 				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
 			},
-			ASTNodeEnum::Block(statements) => {
+			ASTNode::Block(statements) => {
 				let mut local_context = CompilerContext::new(Some(context));
 
 				for statement in statements {

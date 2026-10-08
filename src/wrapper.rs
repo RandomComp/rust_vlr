@@ -1,4 +1,4 @@
-use crate::lexer::{LexerErrorRaw, RawToken};
+use crate::{lexer::{LexerErrorRaw, RawToken}};
 use std::fmt;
 
 pub trait PosWrapper {
@@ -59,26 +59,26 @@ macro_rules! gen_wrapper_for {
 
 		impl fmt::Display for $wrapper {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				write!(f, "line {} at {}: {}", self.row, self.column, self.val)
+				write!(f, "line {} at {}: {}", self.row + 1, self.column + 1, self.val)
 			}
 		}
 	};
 }
 
-pub fn res_with_pos<T, E, U: PosWrapper, N: PosWrapper>(res: Result<T, E>, row: usize, column: usize) -> Result<U, N> where T: Into<U>, E: Into<N> {
-	match res {
-		Ok(x) => {
-			let x: U = x.into();
+#[macro_export]
+macro_rules! res_with_pos {
+	($val: expr, $wrapper_t: ident, $wrapper_e: ident, $row: expr, $column: expr) => {
+		$wrapper_t::from($val.map_err(|e| $wrapper_e::from(e).with_pos($row, $column))?).with_pos($row, $column)
+	};
+}
 
-			Ok(x.with_pos(row, column))
-		},
-		Err(e) => {
-			let e: N = e.into();
-
-			Err(e.with_pos(row, column))
-		},
-	}
+#[macro_export]
+macro_rules! val_with_pos {
+	($val: expr, $wrapper_t: ident, $row: expr, $column: expr) => {
+		$wrapper_t::from($val).with_pos($row, $column)
+	};
 }
 
 gen_wrapper_for!(LexerErrorRaw, LexerError);
+// gen_wrapper_for!(RawParserError, ParserError);
 gen_wrapper_for!(RawToken, Token);

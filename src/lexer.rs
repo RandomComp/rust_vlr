@@ -1,10 +1,9 @@
 use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
-use crate::wrapper::{LexerError, PosWrapper, Token, res_with_pos};
+use crate::{res_with_pos, wrapper::{LexerError, PosWrapper, Token}};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RawToken {
-	Undefined,
 	Float(f64),
 	Word(String),
 	String(String),
@@ -59,15 +58,6 @@ macro_rules! gen_code_for_ops {
 				($kind, $text),
 			)*
 		];
-
-		fn len(&self) -> Option<usize> {
-			match self {
-				$(
-					$kind => Some($text.len()),
-				)*
-				_ => None
-			}
-		}
 
 		fn display(&self) -> Option<&'static str> {
 			match self {
@@ -141,7 +131,6 @@ impl RawToken {
 impl std::fmt::Display for RawToken {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			Self::Undefined => write!(f, "undefined"),
 			Self::Float(x) => write!(f, "{x}"),
 			Self::Word(word) => write!(f, "{word}"),
 			Self::String(word) => write!(f, "\"{word}\""),
@@ -369,31 +358,29 @@ impl<'a> Lexer<'a> {
 		let (row, column) = (self.row, self.column);
 
 		let result = match self.peek(0) {
-			Some(c) if c.is_ascii_alphabetic() =>
-				self.tokenize_word(),
+			Some(c) if c.is_ascii_alphabetic() || c == '_' =>
+				Ok(self.tokenize_word()),
 			Some('"') =>
-				res_with_pos(self.tokenize_string(), row, column)?,
+				self.tokenize_string(),
 			Some(c) if c.is_ascii_digit() =>
-				self.tokenize_number().map_err(|e| LexerError::from(e).with_pos(row, column))?,
+				self.tokenize_number(),
 			Some(_) =>
-				res_with_pos(self.tokenize_operator(), row, column)?,
+				self.tokenize_operator(),
 
-			None => RawToken::Eof
+			None => Ok(RawToken::Eof)
 		};
 
-		Ok(result.into())
+		Ok(res_with_pos!(result, Token, LexerError, row, column))
 	}
 
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
 		let mut result: Vec<Token> = Vec::new();
 
-		let (row, column) = (self.row, self.column);
-
 		while let token = self.tokenize()? && token != RawToken::Eof.into() {
 			result.push(token);
 		}
 
-		result.push(Token::from(RawToken::Eof).with_pos(row, column));
+		result.push(Token::from(RawToken::Eof).with_pos(self.row, self.column));
 
 		Ok(result)
 	}

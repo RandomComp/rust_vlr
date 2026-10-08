@@ -1,25 +1,25 @@
 use std::{collections::VecDeque, fmt::{self, Write}, mem};
 
-use crate::lexer::RawToken;
+use crate::{lexer::RawToken, wrapper::{ParserError, Token}};
 
 #[derive(Debug, thiserror::Error)]
-pub enum ParserError {
+pub enum RawParserError {
 	// #[error("line {row} at {column}: invalid syntax")]
 	// InvalidSyntax {row: usize, column: usize},
-	#[error("line {row} at {column}: expected {kind} token, found {found}")]
-	ExpectedToken {row: usize, column: usize, kind: TokenType, found: TokenType},
-	#[error("line {row} at {column}: expected {} token, found {found}", Self::get_tokens_fmt(types)?)]
-	ExpectedTokens {row: usize, column: usize, types: &'static [TokenType], found: TokenType},
-	#[error("line {row} at {column}: token {token_type} unexpected")]
-	UnexpectedToken {row: usize, column: usize, token_type: TokenType},
+	#[error("expected {kind} token, found {found}")]
+	ExpectedToken {kind: RawToken, found: RawToken},
+	#[error("expected {} token, found {found}", Self::get_tokens_fmt(types)?)]
+	ExpectedTokens {types: &'static [RawToken], found: RawToken},
+	#[error("token {token_type} unexpected")]
+	UnexpectedToken {token_type: RawToken},
 	#[error("Cannot convert from {0:?} to BinaryOp")]
-	CannotConvertToBinaryOp(TokenType),
+	CannotConvertToBinaryOp(RawToken),
 	#[error("Cannot convert from {0:?} to UnaryOp")]
-	CannotConvertToUnaryOp(TokenType),
+	CannotConvertToUnaryOp(RawToken),
 }
 
-impl ParserError {
-	fn get_tokens_fmt(types: &[TokenType]) -> Result<String, fmt::Error> {
+impl RawParserError {
+	fn get_tokens_fmt(types: &[RawToken]) -> Result<String, fmt::Error> {
 		let mut result = String::new();
 
 		for (i, token) in types.iter().enumerate() {
@@ -163,11 +163,11 @@ macro_rules! bind_enum {
 	};
 }
 
-impl TryFrom<&TokenType> for BinaryOp {
+impl TryFrom<&Token> for BinaryOp {
 	type Error = ParserError;
 
-	fn try_from(value: &TokenType) -> Result<Self, Self::Error> {
-		bind_enum!(value, TokenType, Self,
+	fn try_from(value: &Token) -> Result<Self, Self::Error> {
+		let result = bind_enum!(&**value, RawToken, Self,
 			Assignment,
 			PlusAssignment,
 			MinusAssignment,
@@ -190,7 +190,13 @@ impl TryFrom<&TokenType> for BinaryOp {
 			LogicalAnd,
 			LogicalOr,
 			Range,
-		).ok_or(ParserError::CannotConvertToBinaryOp(value.clone()))
+		);
+
+		if let Some(result) = result {
+
+		} else {
+			Err(RawParserError::CannotConvertToBinaryOp(value.into().clone()).into().with_pos())
+		}
 	}
 }
 
@@ -210,7 +216,7 @@ impl std::fmt::Display for UnaryOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ASTNodeEnum {
+pub enum ASTNode {
 	None,
 	Boolean(bool),
 	Float(f64),
@@ -250,41 +256,35 @@ pub enum ASTNodeEnum {
 	},
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ASTNode {
-	pub value: ASTNodeEnum,
-	pub row: usize, pub column: usize,
-}
-
 impl Default for ASTNode {
 	fn default() -> Self {
     	ASTNode::NONE
 	}
 }
 
-impl From<ASTNodeEnum> for ASTNode {
-	fn from(value: ASTNodeEnum) -> Self {
+impl From<ASTNode> for ASTNode {
+	fn from(value: ASTNode) -> Self {
     	ASTNode { value, row: 0, column: 0 }
 	}
 }
 
 impl ASTNode {
-	pub const NONE: Self = Self {value: ASTNodeEnum::None, row: 0, column: 0};
+	pub const NONE: Self = Self {value: ASTNode::None, row: 0, column: 0};
 
 	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
 		self.value.format_human_readable(f, for_statement, tab_level)
 	}
 }
 
-impl std::fmt::Display for ASTNodeEnum {
+impl std::fmt::Display for ASTNode {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			ASTNodeEnum::None => write!(f, "()"),
-			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
-			ASTNodeEnum::Float(value) => write!(f, "{value}"),
-			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
-			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
-			ASTNodeEnum::Tuple(values) => {
+			ASTNode::None => write!(f, "()"),
+			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Float(value) => write!(f, "{value}"),
+			ASTNode::String(text) => write!(f, "\"{text}\""),
+			ASTNode::Variable(name) => write!(f, "{name}"),
+			ASTNode::Tuple(values) => {
 				write!(f, "(")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -297,7 +297,7 @@ impl std::fmt::Display for ASTNodeEnum {
 
 				write!(f, ")")
 			},
-			ASTNodeEnum::Block(values) => {
+			ASTNode::Block(values) => {
 				write!(f, "{{ ")?;
 
 				for value in values {
@@ -308,34 +308,34 @@ impl std::fmt::Display for ASTNodeEnum {
 
 				Ok(())
 			},
-			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if {condition} {body} else {else_body}")
 			},
-			ASTNodeEnum::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if {condition} {body}")
 			},
-			ASTNodeEnum::Break(value) => {
+			ASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			ASTNodeEnum::Return(value) => {
+			ASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while {condition} {body} else {else_body}")
 			},
-			ASTNodeEnum::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while {condition} {body}")
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
-			ASTNodeEnum::Binary { left, op, right } =>
+			ASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			ASTNodeEnum::Unary {op, value} =>
+			ASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			ASTNodeEnum::Function {name, arg} => {
+			ASTNode::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -350,7 +350,7 @@ impl std::fmt::Display for ASTNodeEnum {
 
 				Ok(())
 			},
-			ASTNodeEnum::FunctionDefinition { name: None, args, .. } => {
+			ASTNode::FunctionDefinition { name: None, args, .. } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -367,7 +367,7 @@ impl std::fmt::Display for ASTNodeEnum {
 	}
 }
 
-impl ASTNodeEnum {
+impl ASTNode {
 	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
 		let tab_level_syms: String = std::iter::repeat_n(' ', 4 * tab_level).collect();
 
@@ -376,12 +376,12 @@ impl ASTNodeEnum {
 		}
 
 		match self {
-			ASTNodeEnum::None => write!(f, "()"),
-			ASTNodeEnum::Boolean(value) => write!(f, "{value}"),
-			ASTNodeEnum::Float(value) => write!(f, "{value}"),
-			ASTNodeEnum::String(text) => write!(f, "\"{text}\""),
-			ASTNodeEnum::Variable(name) => write!(f, "{name}"),
-			ASTNodeEnum::Tuple(values) => {
+			ASTNode::None => write!(f, "()"),
+			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Float(value) => write!(f, "{value}"),
+			ASTNode::String(text) => write!(f, "\"{text}\""),
+			ASTNode::Variable(name) => write!(f, "{name}"),
+			ASTNode::Tuple(values) => {
 				write!(f, "(")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -394,7 +394,7 @@ impl ASTNodeEnum {
 
 				write!(f, ")")
 			},
-			ASTNodeEnum::Block(values) => {
+			ASTNode::Block(values) => {
 				writeln!(f, "{{")?;
 
 				for value in values {
@@ -405,7 +405,7 @@ impl ASTNodeEnum {
 
 				write!(f, "{tab_level_syms}}}")
 			},
-			ASTNodeEnum::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -422,7 +422,7 @@ impl ASTNodeEnum {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNodeEnum::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -431,13 +431,13 @@ impl ASTNodeEnum {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			ASTNodeEnum::Break(value) => {
+			ASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			ASTNodeEnum::Return(value) => {
+			ASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNodeEnum::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -454,7 +454,7 @@ impl ASTNodeEnum {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNodeEnum::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -463,14 +463,14 @@ impl ASTNodeEnum {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			ASTNodeEnum::Binary { left, op, right } =>
+			ASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			ASTNodeEnum::Unary {op, value} =>
+			ASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			ASTNodeEnum::Function {name, arg} => {
+			ASTNode::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNodeEnum::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -487,7 +487,7 @@ impl ASTNodeEnum {
 
 				Ok(())
 			},
-			ASTNodeEnum::FunctionDefinition { name: None, args, body } => {
+			ASTNode::FunctionDefinition { name: None, args, body } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -513,20 +513,20 @@ impl std::fmt::Display for ASTNode {
 }
 
 pub struct Parser {
-	tokens: Vec<RawToken>,
+	tokens: Vec<Token>,
 	index: usize,
 }
 
 impl Parser {
-	pub fn new(tokens: Vec<RawToken>) -> Self {
+	pub fn new(tokens: Vec<Token>) -> Self {
 		Self {tokens, index: 0}
 	}
 
-	fn peek(&self, offset: usize) -> Option<&RawToken> {
+	fn peek(&self, offset: usize) -> Option<&Token> {
 		self.tokens.get(self.index + offset)
 	}
 
-	fn skip(&mut self, expected_token_type: &TokenType) {
+	fn skip(&mut self, expected_token_type: &RawToken) {
 		while let Some(RawToken { kind: token_type, .. }) = self.peek(0) && token_type == expected_token_type {
 			self.index += 1;
 		}
@@ -606,7 +606,7 @@ impl Parser {
 
 		if result.len() > 1 {
 			Ok(Some(
-				ASTNode { value: ASTNodeEnum::Block(result), row, column }
+				ASTNode { value: ASTNode::Block(result), row, column }
 			))
 		} else {
 			Ok(result.pop_front())
@@ -622,7 +622,7 @@ impl Parser {
 			if let Some(&RawToken { kind: TokenType::RPar, column, row }) = self.peek(0) {
 				self.consume(&TokenType::RPar)?;
 
-				return Ok(ASTNode { value: ASTNodeEnum::Tuple(result), row, column });
+				return Ok(ASTNode { value: ASTNode::Tuple(result), row, column });
 			}
 
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
@@ -678,7 +678,7 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Boolean(true), row, column }
+					ASTNode { value: ASTNode::Boolean(true), row, column }
 				))
 			}
 
@@ -686,7 +686,7 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Boolean(false), row, column }
+					ASTNode { value: ASTNode::Boolean(false), row, column }
 				))
 			}
 
@@ -696,7 +696,7 @@ impl Parser {
 				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Return(Box::new(value)), row, column }
+					ASTNode { value: ASTNode::Return(Box::new(value)), row, column }
 				))
 			}
 
@@ -706,7 +706,7 @@ impl Parser {
 				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Break(Box::new(value)), row, column }
+					ASTNode { value: ASTNode::Break(Box::new(value)), row, column }
 				))
 			}
 
@@ -723,12 +723,12 @@ impl Parser {
 						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
+							ASTNode { value: ASTNode::If { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
+						ASTNode { value: ASTNode::If { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
 					))
 				}
 			}
@@ -746,12 +746,12 @@ impl Parser {
 						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 						Ok(Some(
-							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
+							ASTNode { value: ASTNode::While { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
 						))
 					}
 
 					_ => Ok(Some(
-						ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
+						ASTNode { value: ASTNode::While { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
 					))
 				}
 			}
@@ -784,7 +784,7 @@ impl Parser {
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-					ASTNodeEnum::FunctionDefinition { name: Some(name), args, body: Box::new(block) },
+					ASTNode::FunctionDefinition { name: Some(name), args, body: Box::new(block) },
 					row, column }
 				))
 			}
@@ -814,7 +814,7 @@ impl Parser {
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
-						ASTNodeEnum::FunctionDefinition { name: None, args, body: Box::new(block) },
+						ASTNode::FunctionDefinition { name: None, args, body: Box::new(block) },
 					row, column }
 				))
 			}
@@ -831,7 +831,7 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Float(value), row, column }
+					ASTNode { value: ASTNode::Float(value), row, column }
 				))
 			}
 
@@ -842,7 +842,7 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::String(value), row, column }
+					ASTNode { value: ASTNode::String(value), row, column }
 				))
 			}
 
@@ -860,7 +860,7 @@ impl Parser {
 				let Some(value) = self.parse_unary()? else { return Ok(None) };
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: UnaryOp::Minus, value: Box::new(value) }, row, column  }
+					ASTNode { value: ASTNode::Unary { op: UnaryOp::Minus, value: Box::new(value) }, row, column  }
 				))
 			}
 
@@ -870,7 +870,7 @@ impl Parser {
 				let Some(value) = self.parse_unary()? else { return Ok(None) };
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Unary { op: UnaryOp::Not, value: Box::new(value) }, row, column  }
+					ASTNode { value: ASTNode::Unary { op: UnaryOp::Not, value: Box::new(value) }, row, column  }
 				))
 			}
 
@@ -892,7 +892,7 @@ impl Parser {
 				let value = self.parse_tuple()?;
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Function { name: word, arg: Box::new(value) }, row, column }
+					ASTNode { value: ASTNode::Function { name: word, arg: Box::new(value) }, row, column }
 				))
 			}
 
@@ -903,7 +903,7 @@ impl Parser {
 				self.consume_next();
 
 				Ok(Some(
-					ASTNode { value: ASTNodeEnum::Variable(word), row, column }
+					ASTNode { value: ASTNode::Variable(word), row, column }
 				))
 			}
 
@@ -937,7 +937,7 @@ impl Parser {
 			let right = self.parse(right_precedence)?;
 
 			*cur = ASTNode {
-				value: ASTNodeEnum::Binary {
+				value: ASTNode::Binary {
 					left: Box::new(left),
 					op,
 					right: Box::new(right)
