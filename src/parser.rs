@@ -1,8 +1,10 @@
+ use crate::{res_with_pos, wmatch, wrapper::ASTNode};
+
 use std::{collections::VecDeque, fmt::{self, Write}, mem};
 
-use crate::{lexer::RawToken, wrapper::{ParserError, Token}};
+use crate::{lexer::RawToken, val_with_pos, wrapper::{ParserError, Token}};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum RawParserError {
 	// #[error("line {row} at {column}: invalid syntax")]
 	// InvalidSyntax {row: usize, column: usize},
@@ -193,9 +195,13 @@ impl TryFrom<&Token> for BinaryOp {
 		);
 
 		if let Some(result) = result {
-
+			Ok(result)
 		} else {
-			Err(RawParserError::CannotConvertToBinaryOp(value.into().clone()).into().with_pos())
+			Err(val_with_pos!(
+				RawParserError::CannotConvertToBinaryOp((&**value).clone()),
+				ParserError,
+				value.row, value.column
+			))
 		}
 	}
 }
@@ -216,7 +222,7 @@ impl std::fmt::Display for UnaryOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ASTNode {
+pub enum RawASTNode {
 	None,
 	Boolean(bool),
 	Float(f64),
@@ -256,35 +262,21 @@ pub enum ASTNode {
 	},
 }
 
-impl Default for ASTNode {
+impl Default for RawASTNode {
 	fn default() -> Self {
-    	ASTNode::NONE
+		RawASTNode::None
 	}
 }
 
-impl From<ASTNode> for ASTNode {
-	fn from(value: ASTNode) -> Self {
-    	ASTNode { value, row: 0, column: 0 }
-	}
-}
-
-impl ASTNode {
-	pub const NONE: Self = Self {value: ASTNode::None, row: 0, column: 0};
-
-	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
-		self.value.format_human_readable(f, for_statement, tab_level)
-	}
-}
-
-impl std::fmt::Display for ASTNode {
+impl std::fmt::Display for RawASTNode {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			ASTNode::None => write!(f, "()"),
-			ASTNode::Boolean(value) => write!(f, "{value}"),
-			ASTNode::Float(value) => write!(f, "{value}"),
-			ASTNode::String(text) => write!(f, "\"{text}\""),
-			ASTNode::Variable(name) => write!(f, "{name}"),
-			ASTNode::Tuple(values) => {
+			RawASTNode::None => write!(f, "()"),
+			RawASTNode::Boolean(value) => write!(f, "{value}"),
+			RawASTNode::Float(value) => write!(f, "{value}"),
+			RawASTNode::String(text) => write!(f, "\"{text}\""),
+			RawASTNode::Variable(name) => write!(f, "{name}"),
+			RawASTNode::Tuple(values) => {
 				write!(f, "(")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -297,7 +289,7 @@ impl std::fmt::Display for ASTNode {
 
 				write!(f, ")")
 			},
-			ASTNode::Block(values) => {
+			RawASTNode::Block(values) => {
 				write!(f, "{{ ")?;
 
 				for value in values {
@@ -308,34 +300,34 @@ impl std::fmt::Display for ASTNode {
 
 				Ok(())
 			},
-			ASTNode::If { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if {condition} {body} else {else_body}")
 			},
-			ASTNode::If { condition, body, else_body: None } => {
+			RawASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if {condition} {body}")
 			},
-			ASTNode::Break(value) => {
+			RawASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			ASTNode::Return(value) => {
+			RawASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNode::While { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while {condition} {body} else {else_body}")
 			},
-			ASTNode::While { condition, body, else_body: None } => {
+			RawASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while {condition} {body}")
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
-			ASTNode::Binary { left, op, right } =>
+			RawASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			ASTNode::Unary {op, value} =>
+			RawASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			ASTNode::Function {name, arg} => {
+			RawASTNode::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -350,7 +342,7 @@ impl std::fmt::Display for ASTNode {
 
 				Ok(())
 			},
-			ASTNode::FunctionDefinition { name: None, args, .. } => {
+			RawASTNode::FunctionDefinition { name: None, args, .. } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -367,7 +359,7 @@ impl std::fmt::Display for ASTNode {
 	}
 }
 
-impl ASTNode {
+impl RawASTNode {
 	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
 		let tab_level_syms: String = std::iter::repeat_n(' ', 4 * tab_level).collect();
 
@@ -376,12 +368,12 @@ impl ASTNode {
 		}
 
 		match self {
-			ASTNode::None => write!(f, "()"),
-			ASTNode::Boolean(value) => write!(f, "{value}"),
-			ASTNode::Float(value) => write!(f, "{value}"),
-			ASTNode::String(text) => write!(f, "\"{text}\""),
-			ASTNode::Variable(name) => write!(f, "{name}"),
-			ASTNode::Tuple(values) => {
+			RawASTNode::None => write!(f, "()"),
+			RawASTNode::Boolean(value) => write!(f, "{value}"),
+			RawASTNode::Float(value) => write!(f, "{value}"),
+			RawASTNode::String(text) => write!(f, "\"{text}\""),
+			RawASTNode::Variable(name) => write!(f, "{name}"),
+			RawASTNode::Tuple(values) => {
 				write!(f, "(")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -394,7 +386,7 @@ impl ASTNode {
 
 				write!(f, ")")
 			},
-			ASTNode::Block(values) => {
+			RawASTNode::Block(values) => {
 				writeln!(f, "{{")?;
 
 				for value in values {
@@ -405,7 +397,7 @@ impl ASTNode {
 
 				write!(f, "{tab_level_syms}}}")
 			},
-			ASTNode::If { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -422,7 +414,7 @@ impl ASTNode {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNode::If { condition, body, else_body: None } => {
+			RawASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -431,13 +423,13 @@ impl ASTNode {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			ASTNode::Break(value) => {
+			RawASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			ASTNode::Return(value) => {
+			RawASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			ASTNode::While { condition, body, else_body: Some(else_body) } => {
+			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -454,7 +446,7 @@ impl ASTNode {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			ASTNode::While { condition, body, else_body: None } => {
+			RawASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -463,14 +455,14 @@ impl ASTNode {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			ASTNode::Binary { left, op, right } =>
+			RawASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			ASTNode::Unary {op, value} =>
+			RawASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			ASTNode::Function {name, arg} => {
+			RawASTNode::Function {name, arg} => {
 				write!(f, "{name}({arg})")
 			},
-			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -487,7 +479,7 @@ impl ASTNode {
 
 				Ok(())
 			},
-			ASTNode::FunctionDefinition { name: None, args, body } => {
+			RawASTNode::FunctionDefinition { name: None, args, body } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -503,12 +495,6 @@ impl ASTNode {
 				body.format_human_readable(f, true, tab_level)
 			},
 		}
-	}
-}
-
-impl std::fmt::Display for ASTNode {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}", self.value)
 	}
 }
 
@@ -527,12 +513,12 @@ impl Parser {
 	}
 
 	fn skip(&mut self, expected_token_type: &RawToken) {
-		while let Some(RawToken { kind: token_type, .. }) = self.peek(0) && token_type == expected_token_type {
+		while let Some(kind) = self.peek(0) && kind == expected_token_type {
 			self.index += 1;
 		}
 	}
 
-	fn consume_next(&mut self) -> Option<&RawToken> {
+	fn consume_next(&mut self) -> Option<&Token> {
 		let result = self.tokens.get(self.index);
 
 		self.index += 1;
@@ -540,39 +526,39 @@ impl Parser {
 		result
 	}
 
-	fn consume(&mut self, expected_token_type: &TokenType) -> Result<(), ParserError> {
+	fn consume(&mut self, expected_token_type: &RawToken) -> Result<(), RawParserError> {
 		match self.peek(0) {
-			Some(RawToken { kind: token_type, .. }) if token_type == expected_token_type => {
+			Some(kind) if kind == expected_token_type => {
 				self.consume_next();
 
 				Ok(())
 			},
-			Some(RawToken { kind, row, column }) => {
-				Err(ParserError::ExpectedToken { row: *row, column: *column, kind: expected_token_type.clone(), found: kind.clone() })
+			Some(kind) => {
+				Err(RawParserError::ExpectedToken { kind: expected_token_type.clone(), found: (&**kind).clone() })
 			},
 			None => panic!("Outside of array"),
 		}
 	}
 
-	fn consumes(&mut self, expected: &'static [TokenType]) -> Result<(), ParserError> {
+	fn consumes(&mut self, expected: &'static [RawToken]) -> Result<(), RawParserError> {
 		match self.peek(0) {
-			Some(RawToken { kind, .. }) if expected.contains(kind) => {
+			Some(kind) if expected.contains(kind) => {
 				self.consume_next();
 
 				Ok(())
 			},
-			Some(RawToken { kind, row, column }) => {
-				Err(ParserError::ExpectedTokens { row: *row, column: *column, types: expected, found: kind.clone() })
+			Some(kind) => {
+				Err(RawParserError::ExpectedTokens { types: expected, found: (&**kind).clone() })
 			},
 			None => panic!("Outside of array"),
 		}
 	}
 
-	fn _token_exists_until_token(&self, expected_token_type: &TokenType, until_token_type: &TokenType) -> bool {
+	fn _token_exists_until_token(&self, expected_token_type: &RawToken, until_token_type: &RawToken) -> bool {
 		let mut index = 0;
 
 		loop {
-			match self.peek(index).map(|v| &v.kind) {
+			match self.peek(index) {
 				Some(token_type) if token_type == until_token_type => break false,
 				Some(token_type) if token_type == expected_token_type => break true,
 				Some(_) => index += 1,
@@ -581,60 +567,56 @@ impl Parser {
 		}
 	}
 
-	fn parse_block(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		self.consume(&TokenType::LBrace)?;
+	fn parse_block(&mut self) -> Result<ASTNode, ParserError> {
+		self.consume(&RawToken::LBrace)?;
 
 		self.parse_instructions()
 	}
 
-	pub fn parse_instructions(&mut self) -> Result<Option<ASTNode>, ParserError> {
-		let Some((row, column)) = self.peek(0).map(|v| (v.row, v.column)) else {
-			return Ok(None)
-		};
-
+	pub fn parse_instructions(&mut self) -> Result<ASTNode, ParserError> {
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
-		while let Some(cur) = self.peek(0) && !matches!(cur.kind, TokenType::RBrace | TokenType::Eof) {
-			self.skip(&TokenType::Semicolon);
+		while let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
+			self.skip(&RawToken::Semicolon);
 
 			result.push_back(
 				self.parse(BinaryOp::MAX_PRECEDENCE)?
 			);
 
-			self.consumes(&[TokenType::Semicolon, TokenType::RBrace])?;
+			self.consumes(&[RawToken::Semicolon, RawToken::RBrace])?;
 		}
 
 		if result.len() > 1 {
-			Ok(Some(
-				ASTNode { value: ASTNode::Block(result), row, column }
-			))
+			Ok(
+				RawASTNode::Block(result).into()
+			)
 		} else {
-			Ok(result.pop_front())
+			Ok(result.pop_front().unwrap_or(RawASTNode::None.into()))
 		}
 	}
 
 	fn parse_tuple(&mut self) -> Result<ASTNode, ParserError> {
-		self.consume(&TokenType::LPar)?;
+		self.consume(&RawToken::LPar)?;
 
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		loop {
-			if let Some(&RawToken { kind: TokenType::RPar, column, row }) = self.peek(0) {
-				self.consume(&TokenType::RPar)?;
+			if let Some(kind) = self.peek(0) && kind == &RawToken::RPar {
+				self.consume(&RawToken::RPar)?;
 
-				return Ok(ASTNode { value: ASTNode::Tuple(result), row, column });
+				return Ok(RawASTNode::Tuple(result).into());
 			}
 
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 			match self.peek(0) {
-				Some(RawToken { kind: TokenType::Comma, .. }) => {
+				Some(wmatch!(RawToken::Comma)) => {
 					result.push(value);
 
 					self.consume_next();
 				},
-				Some(RawToken { kind: TokenType::RPar, column, row }) if result.is_empty() => {
-					self.consume(&TokenType::RPar)?;
+				Some(wmatch!(RawToken::RPar)) if result.is_empty() => {
+					self.consume(&RawToken::RPar)?;
 
 					return Ok(value)
 				},
@@ -668,155 +650,179 @@ impl Parser {
 	// 	}
 	// }
 
-	fn parse_unary(&mut self) -> Result<Option<ASTNode>, ParserError> {
+	fn parse_unary(&mut self) -> Result<ASTNode, ParserError> {
 		let Some(cur) = self.peek(0) else {
-			return Ok(None)
+			return Ok(RawASTNode::None.into())
 		};
 
-		match (cur, self.peek(1)) {
-			(&RawToken {kind: TokenType::True, column, row}, ..) => {
+		let (row, column) = (cur.row, cur.column);
+
+		let result = match (cur, self.peek(1)) {
+			(wmatch!(RawToken::True), ..) => {
 				self.consume_next();
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Boolean(true), row, column }
-				))
+				Ok(
+					RawASTNode::Boolean(true)
+				)
 			}
 
-			(&RawToken {kind: TokenType::False, column, row}, ..) => {
+			(wmatch!(RawToken::False), ..) => {
 				self.consume_next();
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Boolean(false), row, column }
-				))
+				Ok(
+					RawASTNode::Boolean(false)
+				)
 			}
 
-			(&RawToken {kind: TokenType::Return, column, row}, ..) => {
-				self.consume_next();
-
-				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
-
-				Ok(Some(
-					ASTNode { value: ASTNode::Return(Box::new(value)), row, column }
-				))
-			}
-
-			(&RawToken {kind: TokenType::Break, column, row}, ..) => {
+			(wmatch!(RawToken::Return), ..) => {
 				self.consume_next();
 
 				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Break(Box::new(value)), row, column }
-				))
+				Ok(
+					RawASTNode::Return(Box::new(value))
+				)
 			}
 
-			(&RawToken {kind: TokenType::If, column, row}, ..) => {
+			(wmatch!(RawToken::Break), ..) => {
+				self.consume_next();
+
+				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+
+				Ok(
+					RawASTNode::Break(Box::new(value))
+				)
+			}
+
+			(wmatch!(RawToken::If), ..) => {
 				self.consume_next();
 
 				let condition = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&RawToken { kind: RawToken::Else, row, column }) => {
+					Some(wmatch!(RawToken::Else)) => {
 						self.consume_next();
 
 						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-						Ok(Some(
-							ASTNode { value: ASTNode::If { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
-						))
+						Ok(
+							RawASTNode::If {
+								condition: Box::new(condition),
+								body: Box::new(block),
+								else_body: Some(Box::new(block_else))
+							}
+						)
 					}
 
-					_ => Ok(Some(
-						ASTNode { value: ASTNode::If { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
-					))
+					_ => Ok(
+						RawASTNode::If {
+							condition: Box::new(condition),
+							body: Box::new(block),
+							else_body: None
+						}
+					)
 				}
 			}
 
-			(&RawToken {kind: RawToken::While, column, row}, ..) => {
+			(wmatch!(RawToken::While), ..) => {
 				self.consume_next();
 
 				let condition = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&RawToken { kind: TokenType::Else, row, column }) => {
+					Some(wmatch!(RawToken::Else)) => {
 						self.consume_next();
 
 						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-						Ok(Some(
-							ASTNode { value: ASTNode::While { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
-						))
+						Ok(
+							RawASTNode::While {
+								condition: Box::new(condition),
+								body: Box::new(block),
+								else_body: Some(Box::new(block_else))
+							}
+						)
 					}
 
-					_ => Ok(Some(
-						ASTNode { value: ASTNode::While { condition: Box::new(condition), body: Box::new(block), else_body: None }, row, column }
-					))
+					_ => Ok(
+						RawASTNode::While {
+							condition: Box::new(condition),
+							body: Box::new(block),
+							else_body: None
+						},
+					)
 				}
 			}
 
-			(&RawToken {kind: TokenType::Def, column, row}, Some(RawToken { kind: TokenType::Word(name), .. })) => {
+			(wmatch!(RawToken::Def), Some(wmatch!(RawToken::Word(name)))) => {
 				let name = name.clone();
 
 				self.consume_next();
 				self.consume_next();
-				self.consume(&TokenType::LPar)?;
+				self.consume(&RawToken::LPar)?;
 
 				let mut args = Vec::new();
 
-				while let Some(RawToken { kind: token_type, .. }) = self.peek(0) {
-					match token_type {
-						TokenType::Word(arg) => {
+				while let Some(kind) = self.peek(0) {
+					match &**kind {
+						RawToken::Word(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
 						}
-						TokenType::Comma => {
+						RawToken::Comma => {
 							self.consume_next();
 						},
 						_ => break,
 					}
 				}
 
-				self.consume(&TokenType::RPar)?;
+				self.consume(&RawToken::RPar)?;
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(Some(ASTNode { value:
-					ASTNode::FunctionDefinition { name: Some(name), args, body: Box::new(block) },
-					row, column }
-				))
+				Ok(
+					RawASTNode::FunctionDefinition {
+						name: Some(name),
+						args,
+						body: Box::new(block)
+					}
+				)
 			}
 
-			(&RawToken {kind: TokenType::Def, column, row}, Some(RawToken { kind: TokenType::LPar, row: _, column: _ })) => {
+			(wmatch!(RawToken::Def), Some(wmatch!(RawToken::LPar))) => {
 				self.consume_next();
-				self.consume(&TokenType::LPar)?;
+				self.consume(&RawToken::LPar)?;
 
 				let mut args = Vec::new();
 
-				while let Some(RawToken { kind: token_type, column: _, row: _ }) = self.peek(0) {
-					match token_type {
-						TokenType::Word(arg) => {
+				while let Some(kind) = self.peek(0) {
+					match &**kind {
+						RawToken::Word(arg) => {
 							args.push(arg.clone());
 
 							self.consume_next();
 						}
-						TokenType::Comma => {
+						RawToken::Comma => {
 							self.consume_next();
 						},
 						_ => break,
 					}
 				}
 
-				self.consume(&TokenType::RPar)?;
+				self.consume(&RawToken::RPar)?;
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(Some(ASTNode { value:
-						ASTNode::FunctionDefinition { name: None, args, body: Box::new(block) },
-					row, column }
-				))
+				Ok(
+					RawASTNode::FunctionDefinition {
+						name: None,
+						args,
+						body: Box::new(block)
+					},
+				)
 			}
 
 			// (&Token {token_type: TokenType::Everything, column, row}, ..) => {
@@ -827,98 +833,104 @@ impl Parser {
 			// 	))
 			// }
 
-			(&RawToken {kind: TokenType::Float(value), column, row}, _) => {
+			(&wmatch!(RawToken::Float(value)), _) => {
 				self.consume_next();
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Float(value), row, column }
-				))
+				Ok(
+					RawASTNode::Float(value),
+				)
 			}
 
-			(RawToken {kind: TokenType::String(value), column, row}, ..) => {
-				let (column, row) = (*column, *row);
+			(wmatch!(RawToken::String(value)), ..) => {
 				let value = value.clone();
 
 				self.consume_next();
 
-				Ok(Some(
-					ASTNode { value: ASTNode::String(value), row, column }
-				))
+				Ok(
+					RawASTNode::String(value)
+				)
 			}
 
 			// TODO: сделать генерацию парсинга унарных операторов
 
-			(&RawToken {kind: TokenType::Plus, ..}, ..) => {
+			(wmatch!(RawToken::Plus), ..) => {
 				self.consume_next();
 
-				self.parse_unary()
+				return self.parse_unary()
 			}
 
-			(&RawToken {kind: TokenType::Minus, column, row}, ..) => {
+			(wmatch!(RawToken::Minus), ..) => {
 				self.consume_next();
 
-				let Some(value) = self.parse_unary()? else { return Ok(None) };
+				let value = self.parse_unary()?;
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Unary { op: UnaryOp::Minus, value: Box::new(value) }, row, column  }
-				))
+				Ok(
+					RawASTNode::Unary {
+						op: UnaryOp::Minus,
+						value: Box::new(value)
+					}
+				)
 			}
 
-			(&RawToken {kind: TokenType::Exclamation, column, row}, ..) => {
+			(wmatch!(RawToken::Exclamation), ..) => {
 				self.consume_next();
 
-				let Some(value) = self.parse_unary()? else { return Ok(None) };
+				let value = self.parse_unary()?;
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Unary { op: UnaryOp::Not, value: Box::new(value) }, row, column  }
-				))
+				Ok(
+					RawASTNode::Unary {
+						op: UnaryOp::Not,
+						value: Box::new(value)
+					},
+				)
 			}
 
-			(&RawToken {kind: TokenType::LPar, ..}, ..) => {
-				self.parse_tuple().map(Some)
+			(wmatch!(RawToken::LPar), ..) => {
+				self.parse_tuple().map(|v| v.val)
 			}
 
-			(&RawToken {kind: TokenType::LBrace, ..}, ..) => {
-				self.parse_block()
+			(wmatch!(RawToken::LBrace), ..) => {
+				self.parse_block().map(|v| v.val)
 			}
 
-			(RawToken {kind: TokenType::Word(word), column, row}, Some(RawToken { kind: TokenType::LPar, column: _, row: _ })) => {
-				let (row, column) = (*row, *column);
-
+			(wmatch!(RawToken::Word(word)), Some(wmatch!(RawToken::LPar))) => {
 				let word = word.to_owned();
 
 				self.consume_next();
 
 				let value = self.parse_tuple()?;
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Function { name: word, arg: Box::new(value) }, row, column }
-				))
+				Ok(
+					RawASTNode::Function {
+						name: word,
+						arg: Box::new(value)
+					}
+				)
 			}
 
-			(RawToken {kind: TokenType::Word(word), column, row}, ..) => {
-				let (column, row) = (*column, *row);
+			(wmatch!(RawToken::Word(word)), ..) => {
 				let word = word.to_owned();
 
 				self.consume_next();
 
-				Ok(Some(
-					ASTNode { value: ASTNode::Variable(word), row, column }
-				))
+				Ok(
+					RawASTNode::Variable(word),
+				)
 			}
 
-			(RawToken {kind: token_type, column, row}, ..) =>
-				Err(ParserError::UnexpectedToken { row: *row, column: *column, token_type: token_type.clone() }),
-		}
+			(kind, ..) => {
+				let value: Result<RawASTNode, ParserError> = Err(RawParserError::UnexpectedToken { token_type: kind.val.clone() }.into());
+
+				value
+			},
+		};
+
+		Ok(res_with_pos!(result, ASTNode, ParserError, row, column))
 	}
 
 	fn parse(&mut self, precedence: usize) -> Result<ASTNode, ParserError> {
 		if precedence == 0 {
-			if let Some(result) = self.parse_unary()? {
-				return Ok(result)
-			}
-
-			return Ok(ASTNode::NONE)
+			return self.parse_unary()
 		}
 
 		let mut first = self.parse(precedence - 1)?;
@@ -927,7 +939,7 @@ impl Parser {
 		let cur = &mut first;
 
 		while let Some(x) = self.peek(0) &&
-			let Ok(op) = BinaryOp::try_from(&x.kind) &&
+			let Ok(op) = BinaryOp::try_from(x) &&
 			op.precedence() == precedence {
 			let right_precedence = if op.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
 
@@ -936,14 +948,13 @@ impl Parser {
 			let left = mem::take(cur);
 			let right = self.parse(right_precedence)?;
 
-			*cur = ASTNode {
-				value: ASTNode::Binary {
+			*cur = ASTNode::from(
+				RawASTNode::Binary {
 					left: Box::new(left),
 					op,
 					right: Box::new(right)
-				},
-				row, column
-			};
+				}
+			).with_pos(row, column);
 		}
 
 		Ok(first)

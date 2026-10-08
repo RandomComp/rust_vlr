@@ -1,6 +1,6 @@
 use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
-use crate::{res_with_pos, wrapper::{LexerError, PosWrapper, Token}};
+use crate::{res_with_pos, wrapper::{LexerError, Token}};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RawToken {
@@ -156,7 +156,7 @@ impl std::fmt::Display for RawToken {
 	}
 }
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum LexerErrorRaw {
 	#[error("unknown operation")]
 	UnknownOperation,
@@ -376,7 +376,7 @@ impl<'a> Lexer<'a> {
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
 		let mut result: Vec<Token> = Vec::new();
 
-		while let token = self.tokenize()? && token != RawToken::Eof.into() {
+		while let token = self.tokenize()? && token != RawToken::Eof {
 			result.push(token);
 		}
 

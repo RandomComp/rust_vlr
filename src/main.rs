@@ -23,12 +23,12 @@ mod parser;
 // mod vm;
 
 use crate::lexer::Lexer;
-use crate::parser::{Parser, ParserError};
+use crate::parser::{Parser};
 // use crate::optimizer::{Optimizer, OptimizerError};
 // use crate::compiler::{Compiler, CompilerError};
 // use crate::bytecode::{Bytecode, BytecodeError};
 // use crate::vm::{VM, VMError};
-use crate::wrapper::LexerError;
+use crate::wrapper::{LexerError, ParserError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -45,8 +45,8 @@ struct Args {
 enum AppError {
 	#[error("Lexer error: {0}")]
 	Lexer(#[from] LexerError),
-	// #[error("Parser error: {0}")]
-	// Parser(#[from] ParserError),
+	#[error("Parser error: {0}")]
+	Parser(#[from] ParserError),
 	// #[error("Optimizer error: {0}")]
 	// Optimizer(#[from] OptimizerError),
 	// #[error("Compiler error: {0}")]
@@ -217,9 +217,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	let mut parser = Parser::new(tokens);
 
-	let Some(mut ast) = parser.parse_instructions()? else {
-		return Err(AppError::EmptyCode)
-	};
+	let ast = parser.parse_instructions()?;
 
 	let mut ast_str = String::new();
 

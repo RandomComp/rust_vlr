@@ -1,16 +1,12 @@
-use crate::{lexer::{LexerErrorRaw, RawToken}};
+use crate::{lexer::{LexerErrorRaw, RawToken}, parser::{RawASTNode, RawParserError}};
 use std::fmt;
-
-pub trait PosWrapper {
-	fn with_pos(self, row: usize, column: usize) -> Self;
-	fn get_pos(&self) -> (usize, usize);
-}
 
 macro_rules! gen_wrapper_for {
 	($type:ident, $wrapper:ident) => {
+		#[derive(Clone, Debug)]
 		pub struct $wrapper {
-			row: usize, column: usize,
-			val: $type,
+			pub row: usize, pub column: usize,
+			pub val: $type,
 		}
 
 		impl std::ops::Deref for $wrapper {
@@ -33,15 +29,17 @@ macro_rules! gen_wrapper_for {
 			}
 		}
 
-		impl PosWrapper for $wrapper {
-			fn with_pos(mut self, row: usize, column: usize) -> Self {
+		impl std::cmp::PartialEq<$type> for $wrapper {
+			fn eq(&self, rhs: &$type) -> bool {
+				self.val == *rhs
+			}
+		}
+
+		impl $wrapper {
+			pub fn with_pos(mut self, row: usize, column: usize) -> Self {
 				self.row = row; self.column = column;
 
 				self
-			}
-
-			fn get_pos(&self) -> (usize, usize) {
-				(self.row, self.column)
 			}
 		}
 
@@ -59,9 +57,17 @@ macro_rules! gen_wrapper_for {
 
 		impl fmt::Display for $wrapper {
 			fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-				write!(f, "line {} at {}: {}", self.row + 1, self.column + 1, self.val)
+				write!(f, "{}", self.val)
+				// write!(f, "line {} at {}: {}", self.row + 1, self.column + 1, self.val)
 			}
 		}
+	};
+}
+
+#[macro_export]
+macro_rules! val_with_pos {
+	($val: expr, $wrapper: ident, $row: expr, $column: expr) => {
+		$wrapper::from($val).with_pos($row, $column)
 	};
 }
 
@@ -73,12 +79,20 @@ macro_rules! res_with_pos {
 }
 
 #[macro_export]
-macro_rules! val_with_pos {
-	($val: expr, $wrapper_t: ident, $row: expr, $column: expr) => {
-		$wrapper_t::from($val).with_pos($row, $column)
-	};
+macro_rules! wmatch {
+    ($val:pat) => {
+    	Token { row: _, column: _, val: $val }
+    };
 }
 
 gen_wrapper_for!(LexerErrorRaw, LexerError);
-// gen_wrapper_for!(RawParserError, ParserError);
+gen_wrapper_for!(RawParserError, ParserError);
+
 gen_wrapper_for!(RawToken, Token);
+gen_wrapper_for!(RawASTNode, ASTNode);
+
+impl Default for ASTNode {
+	fn default() -> Self {
+		Self { row: 0, column: 0, val: RawASTNode::default() }
+	}
+}
