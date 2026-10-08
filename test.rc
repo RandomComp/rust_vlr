@@ -1,3 +1,5 @@
-abc = 1*10;
+abc = 2 + 10;
+
+abc *= 13;
 
 print("abc=", abc);

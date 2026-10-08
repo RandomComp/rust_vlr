@@ -178,7 +178,7 @@ impl Bytecode {
 	pub fn to_binary_op(&self) -> Option<BinaryOp> {
 		let result = match self {
 			Bytecode::Eq 					=> BinaryOp::Equals, // Equals
-			Bytecode::Neq 					=> BinaryOp::NotEquals, // Not equals
+			Bytecode::Neq 					=> BinaryOp::Neq, // Not equals
 			Bytecode::Lt 					=> BinaryOp::Less, // Less than
 			Bytecode::Gt 					=> BinaryOp::Great, // Great than
 			Bytecode::Add 					=> BinaryOp::Plus, // Additive
@@ -388,7 +388,7 @@ impl Bytecode {
 			BinaryOp::Divide => Self::Div,
 			BinaryOp::Pow => Self::Pow,
 			BinaryOp::Equals => Self::Eq,
-			BinaryOp::NotEquals => Self::Neq,
+			BinaryOp::Neq => Self::Neq,
 			BinaryOp::Less => Self::Lt,
 			BinaryOp::Great => Self::Gt,
 			BinaryOp::LogicalAnd => Self::LogicalAnd,

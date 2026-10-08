@@ -1,19 +1,13 @@
-use std::{collections::VecDeque, fmt::{self, Write}, mem, num::ParseFloatError};
+use std::{collections::VecDeque, fmt::{self, Write}, mem};
 
-use crate::lexer::{LexerError, Token, TokenType};
-
-impl From<ParseFloatError> for LexerError {
-	fn from(err: ParseFloatError) -> LexerError {
-		LexerError::InvalidNumber {column: 0, row: 0, e: err}
-	}
-}
+use crate::lexer::RawToken;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParserError {
 	// #[error("line {row} at {column}: invalid syntax")]
 	// InvalidSyntax {row: usize, column: usize},
-	#[error("line {row} at {column}: expected {token_type} token, found {found}")]
-	ExpectedToken {row: usize, column: usize, token_type: TokenType, found: TokenType},
+	#[error("line {row} at {column}: expected {kind} token, found {found}")]
+	ExpectedToken {row: usize, column: usize, kind: TokenType, found: TokenType},
 	#[error("line {row} at {column}: expected {} token, found {found}", Self::get_tokens_fmt(types)?)]
 	ExpectedTokens {row: usize, column: usize, types: &'static [TokenType], found: TokenType},
 	#[error("line {row} at {column}: token {token_type} unexpected")]
@@ -73,7 +67,7 @@ pub enum BinaryOp {
 	RemainderAssignment,
 
 	Equals,
-	NotEquals,
+	Neq,
 	Great,
 	Less,
 	GreatOrEquals,
@@ -85,6 +79,8 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
+	pub const MAX_PRECEDENCE: usize = 7;
+
 	pub fn precedence(&self) -> usize {
 		match self {
 			Self::Range => 1,
@@ -96,7 +92,7 @@ impl BinaryOp {
 			Self::Minus => 4,
 
 			Self::Equals |
-			Self::NotEquals |
+			Self::Neq |
 			Self::GreatOrEquals |
 			Self::LessOrEquals |
 			Self::Great |
@@ -142,7 +138,7 @@ impl std::fmt::Display for BinaryOp {
 			Self::Remainder => write!(f, "%"),
 
 			Self::Equals => write!(f, "=="),
-			Self::NotEquals => write!(f, "!="),
+			Self::Neq => write!(f, "!="),
 			Self::GreatOrEquals => write!(f, ">="),
 			Self::LessOrEquals => write!(f, "<="),
 			Self::Great => write!(f, ">"),
@@ -186,7 +182,7 @@ impl TryFrom<&TokenType> for BinaryOp {
 			Divide,
 			Remainder,
 			Equals,
-			NotEquals,
+			Neq,
 			GreatOrEquals,
 			LessOrEquals,
 			Great,
@@ -517,26 +513,26 @@ impl std::fmt::Display for ASTNode {
 }
 
 pub struct Parser {
-	tokens: Vec<Token>,
+	tokens: Vec<RawToken>,
 	index: usize,
 }
 
 impl Parser {
-	pub fn new(tokens: Vec<Token>) -> Self {
+	pub fn new(tokens: Vec<RawToken>) -> Self {
 		Self {tokens, index: 0}
 	}
 
-	fn peek(&self, offset: usize) -> Option<&Token> {
+	fn peek(&self, offset: usize) -> Option<&RawToken> {
 		self.tokens.get(self.index + offset)
 	}
 
 	fn skip(&mut self, expected_token_type: &TokenType) {
-		while let Some(Token { token_type, .. }) = self.peek(0) && token_type == expected_token_type {
+		while let Some(RawToken { kind: token_type, .. }) = self.peek(0) && token_type == expected_token_type {
 			self.index += 1;
 		}
 	}
 
-	fn consume_next(&mut self) -> Option<&Token> {
+	fn consume_next(&mut self) -> Option<&RawToken> {
 		let result = self.tokens.get(self.index);
 
 		self.index += 1;
@@ -546,13 +542,13 @@ impl Parser {
 
 	fn consume(&mut self, expected_token_type: &TokenType) -> Result<(), ParserError> {
 		match self.peek(0) {
-			Some(Token { token_type, .. }) if token_type == expected_token_type => {
+			Some(RawToken { kind: token_type, .. }) if token_type == expected_token_type => {
 				self.consume_next();
 
 				Ok(())
 			},
-			Some(Token { token_type, row, column }) => {
-				Err(ParserError::ExpectedToken { row: *row, column: *column, token_type: expected_token_type.clone(), found: token_type.clone() })
+			Some(RawToken { kind, row, column }) => {
+				Err(ParserError::ExpectedToken { row: *row, column: *column, kind: expected_token_type.clone(), found: kind.clone() })
 			},
 			None => panic!("Outside of array"),
 		}
@@ -560,13 +556,13 @@ impl Parser {
 
 	fn consumes(&mut self, expected: &'static [TokenType]) -> Result<(), ParserError> {
 		match self.peek(0) {
-			Some(Token { token_type, .. }) if expected.contains(token_type) => {
+			Some(RawToken { kind, .. }) if expected.contains(kind) => {
 				self.consume_next();
 
 				Ok(())
 			},
-			Some(Token { token_type, row, column }) => {
-				Err(ParserError::ExpectedTokens { row: *row, column: *column, types: expected, found: token_type.clone() })
+			Some(RawToken { kind, row, column }) => {
+				Err(ParserError::ExpectedTokens { row: *row, column: *column, types: expected, found: kind.clone() })
 			},
 			None => panic!("Outside of array"),
 		}
@@ -576,7 +572,7 @@ impl Parser {
 		let mut index = 0;
 
 		loop {
-			match self.peek(index).map(|v| &v.token_type) {
+			match self.peek(index).map(|v| &v.kind) {
 				Some(token_type) if token_type == until_token_type => break false,
 				Some(token_type) if token_type == expected_token_type => break true,
 				Some(_) => index += 1,
@@ -598,11 +594,11 @@ impl Parser {
 
 		let mut result: VecDeque<ASTNode> = VecDeque::new();
 
-		while let Some(cur) = self.peek(0) && !matches!(cur.token_type, TokenType::RBrace | TokenType::Eof) {
+		while let Some(cur) = self.peek(0) && !matches!(cur.kind, TokenType::RBrace | TokenType::Eof) {
 			self.skip(&TokenType::Semicolon);
 
 			result.push_back(
-				self.parse(TokenType::MAX_PRECEDENCE)?
+				self.parse(BinaryOp::MAX_PRECEDENCE)?
 			);
 
 			self.consumes(&[TokenType::Semicolon, TokenType::RBrace])?;
@@ -623,21 +619,21 @@ impl Parser {
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		loop {
-			if let Some(&Token { token_type: TokenType::RPar, column, row }) = self.peek(0) {
+			if let Some(&RawToken { kind: TokenType::RPar, column, row }) = self.peek(0) {
 				self.consume(&TokenType::RPar)?;
 
 				return Ok(ASTNode { value: ASTNodeEnum::Tuple(result), row, column });
 			}
 
-			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 			match self.peek(0) {
-				Some(Token { token_type: TokenType::Comma, .. }) => {
+				Some(RawToken { kind: TokenType::Comma, .. }) => {
 					result.push(value);
 
 					self.consume_next();
 				},
-				Some(Token { token_type: TokenType::RPar, column, row }) if result.is_empty() => {
+				Some(RawToken { kind: TokenType::RPar, column, row }) if result.is_empty() => {
 					self.consume(&TokenType::RPar)?;
 
 					return Ok(value)
@@ -678,7 +674,7 @@ impl Parser {
 		};
 
 		match (cur, self.peek(1)) {
-			(&Token {token_type: TokenType::True, column, row}, ..) => {
+			(&RawToken {kind: TokenType::True, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -686,7 +682,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::False, column, row}, ..) => {
+			(&RawToken {kind: TokenType::False, column, row}, ..) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -694,37 +690,37 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::Return, column, row}, ..) => {
+			(&RawToken {kind: TokenType::Return, column, row}, ..) => {
 				self.consume_next();
 
-				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Return(Box::new(value)), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::Break, column, row}, ..) => {
+			(&RawToken {kind: TokenType::Break, column, row}, ..) => {
 				self.consume_next();
 
-				let value = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(
 					ASTNode { value: ASTNodeEnum::Break(Box::new(value)), row, column }
 				))
 			}
 
-			(&Token {token_type: TokenType::If, column, row}, ..) => {
+			(&RawToken {kind: TokenType::If, column, row}, ..) => {
 				self.consume_next();
 
-				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
-				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let condition = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&Token { token_type: TokenType::Else, row, column }) => {
+					Some(&RawToken { kind: RawToken::Else, row, column }) => {
 						self.consume_next();
 
-						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
+						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 						Ok(Some(
 							ASTNode { value: ASTNodeEnum::If { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
@@ -737,17 +733,17 @@ impl Parser {
 				}
 			}
 
-			(&Token {token_type: TokenType::While, column, row}, ..) => {
+			(&RawToken {kind: RawToken::While, column, row}, ..) => {
 				self.consume_next();
 
-				let condition = self.parse(TokenType::MAX_PRECEDENCE)?;
-				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let condition = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				match self.peek(0) {
-					Some(&Token { token_type: TokenType::Else, row, column }) => {
+					Some(&RawToken { kind: TokenType::Else, row, column }) => {
 						self.consume_next();
 
-						let block_else = self.parse(TokenType::MAX_PRECEDENCE)?;
+						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 						Ok(Some(
 							ASTNode { value: ASTNodeEnum::While { condition: Box::new(condition), body: Box::new(block), else_body: Some(Box::new(block_else)) }, row, column }
@@ -760,7 +756,7 @@ impl Parser {
 				}
 			}
 
-			(&Token {token_type: TokenType::Def, column, row}, Some(Token { token_type: TokenType::Word(name), .. })) => {
+			(&RawToken {kind: TokenType::Def, column, row}, Some(RawToken { kind: TokenType::Word(name), .. })) => {
 				let name = name.clone();
 
 				self.consume_next();
@@ -769,7 +765,7 @@ impl Parser {
 
 				let mut args = Vec::new();
 
-				while let Some(Token { token_type, .. }) = self.peek(0) {
+				while let Some(RawToken { kind: token_type, .. }) = self.peek(0) {
 					match token_type {
 						TokenType::Word(arg) => {
 							args.push(arg.clone());
@@ -785,7 +781,7 @@ impl Parser {
 
 				self.consume(&TokenType::RPar)?;
 
-				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
 					ASTNodeEnum::FunctionDefinition { name: Some(name), args, body: Box::new(block) },
@@ -793,13 +789,13 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::Def, column, row}, Some(Token { token_type: TokenType::LPar, row: _, column: _ })) => {
+			(&RawToken {kind: TokenType::Def, column, row}, Some(RawToken { kind: TokenType::LPar, row: _, column: _ })) => {
 				self.consume_next();
 				self.consume(&TokenType::LPar)?;
 
 				let mut args = Vec::new();
 
-				while let Some(Token { token_type, column: _, row: _ }) = self.peek(0) {
+				while let Some(RawToken { kind: token_type, column: _, row: _ }) = self.peek(0) {
 					match token_type {
 						TokenType::Word(arg) => {
 							args.push(arg.clone());
@@ -815,7 +811,7 @@ impl Parser {
 
 				self.consume(&TokenType::RPar)?;
 
-				let block = self.parse(TokenType::MAX_PRECEDENCE)?;
+				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 				Ok(Some(ASTNode { value:
 						ASTNodeEnum::FunctionDefinition { name: None, args, body: Box::new(block) },
@@ -831,7 +827,7 @@ impl Parser {
 			// 	))
 			// }
 
-			(&Token {token_type: TokenType::Float(value), column, row}, _) => {
+			(&RawToken {kind: TokenType::Float(value), column, row}, _) => {
 				self.consume_next();
 
 				Ok(Some(
@@ -839,7 +835,7 @@ impl Parser {
 				))
 			}
 
-			(Token {token_type: TokenType::String(value), column, row}, ..) => {
+			(RawToken {kind: TokenType::String(value), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let value = value.clone();
 
@@ -852,13 +848,13 @@ impl Parser {
 
 			// TODO: сделать генерацию парсинга унарных операторов
 
-			(&Token {token_type: TokenType::Plus, ..}, ..) => {
+			(&RawToken {kind: TokenType::Plus, ..}, ..) => {
 				self.consume_next();
 
 				self.parse_unary()
 			}
 
-			(&Token {token_type: TokenType::Minus, column, row}, ..) => {
+			(&RawToken {kind: TokenType::Minus, column, row}, ..) => {
 				self.consume_next();
 
 				let Some(value) = self.parse_unary()? else { return Ok(None) };
@@ -868,7 +864,7 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::Exclamation, column, row}, ..) => {
+			(&RawToken {kind: TokenType::Exclamation, column, row}, ..) => {
 				self.consume_next();
 
 				let Some(value) = self.parse_unary()? else { return Ok(None) };
@@ -878,15 +874,15 @@ impl Parser {
 				))
 			}
 
-			(&Token {token_type: TokenType::LPar, ..}, ..) => {
+			(&RawToken {kind: TokenType::LPar, ..}, ..) => {
 				self.parse_tuple().map(Some)
 			}
 
-			(&Token {token_type: TokenType::LBrace, ..}, ..) => {
+			(&RawToken {kind: TokenType::LBrace, ..}, ..) => {
 				self.parse_block()
 			}
 
-			(Token {token_type: TokenType::Word(word), column, row}, Some(Token { token_type: TokenType::LPar, column: _, row: _ })) => {
+			(RawToken {kind: TokenType::Word(word), column, row}, Some(RawToken { kind: TokenType::LPar, column: _, row: _ })) => {
 				let (row, column) = (*row, *column);
 
 				let word = word.to_owned();
@@ -900,7 +896,7 @@ impl Parser {
 				))
 			}
 
-			(Token {token_type: TokenType::Word(word), column, row}, ..) => {
+			(RawToken {kind: TokenType::Word(word), column, row}, ..) => {
 				let (column, row) = (*column, *row);
 				let word = word.to_owned();
 
@@ -911,7 +907,7 @@ impl Parser {
 				))
 			}
 
-			(Token {token_type, column, row}, ..) =>
+			(RawToken {kind: token_type, column, row}, ..) =>
 				Err(ParserError::UnexpectedToken { row: *row, column: *column, token_type: token_type.clone() }),
 		}
 	}
@@ -931,7 +927,7 @@ impl Parser {
 		let cur = &mut first;
 
 		while let Some(x) = self.peek(0) &&
-			let Ok(op) = BinaryOp::try_from(&x.token_type) &&
+			let Ok(op) = BinaryOp::try_from(&x.kind) &&
 			op.precedence() == precedence {
 			let right_precedence = if op.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
 

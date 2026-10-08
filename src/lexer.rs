@@ -1,7 +1,9 @@
 use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
+use crate::wrapper::{LexerError, PosWrapper, Token, res_with_pos};
+
 #[derive(Clone, Debug, PartialEq)]
-pub enum TokenType {
+pub enum RawToken {
 	Undefined,
 	Float(f64),
 	Word(String),
@@ -31,7 +33,7 @@ pub enum TokenType {
 	Everything,
 
 	Equals,
-	NotEquals,
+	Neq,
 	Great,
 	Less,
 	GreatOrEquals,
@@ -50,45 +52,71 @@ pub enum TokenType {
 	Eof,
 }
 
-impl TokenType {
-	pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
-		(Self::Equals, "=="),
-		(Self::NotEquals, "!="),
-		(Self::GreatOrEquals, ">="),
-		(Self::LessOrEquals, "<="),
-		(Self::Great, ">"),
-		(Self::Less, "<"),
-		(Self::LogicalAnd, "&&"),
-		(Self::LogicalOr, "||"),
+macro_rules! gen_code_for_ops {
+	($($kind:path => $text:expr);* ) => {
+		pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
+			$(
+				($kind, $text),
+			)*
+		];
 
-		(Self::Assignment, "="),
-		(Self::PlusAssignment, "+="),
-		(Self::MinusAssignment, "-="),
-		(Self::PowAssignment, "**="),
-		(Self::MultiplyAssignment, "*="),
-		(Self::DivideAssignment, "/="),
-		(Self::RemainderAssignment, "%="),
+		fn len(&self) -> Option<usize> {
+			match self {
+				$(
+					$kind => Some($text.len()),
+				)*
+				_ => None
+			}
+		}
 
-		(Self::Plus, "+"),
-		(Self::Minus, "-"),
-		(Self::Exclamation, "!"),
-		(Self::Pow, "**"),
-		(Self::Multiply, "*"),
-		(Self::Divide, "/"),
-		(Self::Remainder, "%"),
+		fn display(&self) -> Option<&'static str> {
+			match self {
+				$(
+					$kind => Some($text),
+				)*
+				_ => None
+			}
+		}
+	};
+}
 
-		(Self::Comma, ","),
-		(Self::Semicolon, ";"),
-		(Self::LPar, "("),
-		(Self::RPar, ")"),
-		(Self::LBrace, "{"),
-		(Self::RBrace, "}"),
+impl RawToken {
+	gen_code_for_ops!(
+		Self::Equals => "==";
+		Self::Neq => "!=";
+		Self::GreatOrEquals => ">=";
+		Self::LessOrEquals => "<=";
+		Self::Great => ">";
+		Self::Less => "<";
+		Self::LogicalAnd => "&&";
+		Self::LogicalOr => "||";
 
-		(Self::Everything, "..."),
-		(Self::Range, ".."),
-	];
+		Self::Assignment => "=";
+		Self::PlusAssignment => "+=";
+		Self::MinusAssignment => "-=";
+		Self::PowAssignment => "**=";
+		Self::MultiplyAssignment => "*=";
+		Self::DivideAssignment => "/=";
+		Self::RemainderAssignment => "%=";
 
-	pub const MAX_PRECEDENCE: usize = 7;
+		Self::Plus => "+";
+		Self::Minus => "-";
+		Self::Exclamation => "!";
+		Self::Pow => "**";
+		Self::Multiply => "*";
+		Self::Divide => "/";
+		Self::Remainder => "%";
+
+		Self::Comma => ",";
+		Self::Semicolon => ";";
+		Self::LPar => "(";
+		Self::RPar => ")";
+		Self::LBrace => "{";
+		Self::RBrace => "}";
+
+		Self::Everything => "...";
+		Self::Range => ".."
+	);
 
 	fn get_keyword(word: &str) -> Option<Self> {
 		match word {
@@ -104,31 +132,19 @@ impl TokenType {
 			_ => None,
 		}
 	}
+
+	fn from_op(expected_op: &str) -> Option<&(Self, &str)> {
+		Self::TOKEN_OPERATORS.iter().find(|(_, text)| expected_op.starts_with(text))
+	}
 }
 
-impl std::fmt::Display for TokenType {
+impl std::fmt::Display for RawToken {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			Self::Undefined => write!(f, "undefined"),
 			Self::Float(x) => write!(f, "{x}"),
 			Self::Word(word) => write!(f, "{word}"),
 			Self::String(word) => write!(f, "\"{word}\""),
-
-			Self::Assignment => write!(f, "="),
-			Self::PlusAssignment => write!(f, "+="),
-			Self::MinusAssignment => write!(f, "-="),
-			Self::PowAssignment => write!(f, "**="),
-			Self::MultiplyAssignment => write!(f, "*="),
-			Self::DivideAssignment => write!(f, "/="),
-			Self::RemainderAssignment => write!(f, "%="),
-
-			Self::Plus => write!(f, "+"),
-			Self::Minus => write!(f, "-"),
-			Self::Exclamation => write!(f, "!"),
-			Self::Multiply => write!(f, "*"),
-			Self::Pow => write!(f, "**"),
-			Self::Divide => write!(f, "/"),
-			Self::Remainder => write!(f, "%"),
 
 			Self::True => write!(f, "true"),
 			Self::False => write!(f, "false"),
@@ -143,59 +159,22 @@ impl std::fmt::Display for TokenType {
 			Self::Return => write!(f, "return"),
 
 			Self::Def => write!(f, "def"),
-			Self::Everything => write!(f, "..."),
 
-			Self::Equals => write!(f, "=="),
-			Self::NotEquals => write!(f, "!="),
-			Self::GreatOrEquals => write!(f, ">="),
-			Self::LessOrEquals => write!(f, "<="),
-			Self::Great => write!(f, ">"),
-			Self::Less => write!(f, "<"),
-
-			Self::LogicalAnd => write!(f, "&&"),
-			Self::LogicalOr => write!(f, "||"),
-
-			Self::Range => write!(f, ".."),
-
-			Self::Comma => write!(f, ","),
-			Self::Semicolon => write!(f, ";"),
-			Self::LPar => write!(f, "("),
-			Self::RPar => write!(f, ")"),
-			Self::LBrace => write!(f, "{{"),
-			Self::RBrace => write!(f, "}}"),
 			Self::Eof => write!(f, "EOF"),
+
+			_ => f.write_str(self.display().unwrap()),
 		}
 	}
 }
 
-#[derive(Clone)]
-pub struct Token {
-	pub token_type: TokenType,
-	pub row: usize, pub column: usize,
-}
-
-impl std::fmt::Display for Token {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}", self.token_type)
-	}
-}
-
-impl Token {
-	fn new(token_type: TokenType, row: usize, column: usize) -> Self {
-		Self {token_type, row, column}
-	}
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum LexerError {
-	#[error("line {row} at {column}: unknown operation")]
-	UnknownOperation {row: usize, column: usize},
-	#[error("line {row} at {column}: invalid number")]
-	InvalidNumber {row: usize, column: usize, e: ParseFloatError},
-	// #[error("line {row} at {column}: multiple decimal points")]
-	// MultipleDecimalPoints {row: usize, column: usize},
-	#[error("line {row} at {column}: expected {c}")]
-	ExpectedSymbol {row: usize, column: usize, c: char},
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum LexerErrorRaw {
+	#[error("unknown operation")]
+	UnknownOperation,
+	#[error("invalid number")]
+	InvalidNumber(#[from] ParseFloatError),
+	#[error("expected {c}")]
+	ExpectedSymbol {c: char},
 }
 
 pub struct Lexer<'a> {
@@ -223,46 +202,30 @@ impl<'a> Lexer<'a> {
 		self.column += len;
 	}
 
-	fn consume(&mut self, expected_c: char) -> Result<(), LexerError> {
+	fn consume(&mut self, expected_c: char) -> Result<(), LexerErrorRaw> {
 		match self.peek(0) {
 			Some(c) if c == expected_c => {
 				self.consume_next(1);
 
 				Ok(())
 			},
-			_ => Err(LexerError::ExpectedSymbol { row: self.row, column: self.column, c: expected_c })
+			_ => Err(LexerErrorRaw::ExpectedSymbol { c: expected_c })
 		}
 	}
 
-	fn tokenize_operator(&mut self) -> Result<Token, LexerError> {
-		let (row, column) = (self.row, self.column);
+	fn tokenize_operator(&mut self) -> Result<RawToken, LexerErrorRaw> {
+		let expected_op = self.get().take(3).collect::<String>();
 
-		let mut result = &TokenType::Undefined;
+		let Some((result, text)) = RawToken::from_op(&expected_op) else {
+		 	return Err(LexerErrorRaw::UnknownOperation)
+		};
 
-		for (token_type, op) in TokenType::TOKEN_OPERATORS {
-			let op_len = op.len();
+		self.consume_next(text.len());
 
-			let expected_op = self.get().take(op_len).collect::<String>();
-
-			if expected_op.eq(op) {
-				result = token_type;
-
-				self.consume_next(op_len);
-
-				break;
-			}
-		}
-
-		if *result == TokenType::Undefined {
-			 return Err(LexerError::UnknownOperation {row, column})
-		}
-
-		Ok(Token::new(result.clone(), row, column))
+		Ok(result.clone())
 	}
 
-	fn tokenize_number(&mut self) -> Result<Token, LexerError> {
-		let (row, column) = (self.row, self.column);
-
+	fn tokenize_number(&mut self) -> Result<RawToken, LexerErrorRaw> {
 		let mut word_chr_cnt = 0;
 
 		let mut dots = 0;
@@ -287,17 +250,14 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt -= 1;
 		}
 
-		let result = match number_str.parse::<f64>() {
-			Ok(x) => x,
-			Err(e) => Err(LexerError::InvalidNumber {row: self.row, column: self.column, e})?
-		};
+		let result = number_str.parse::<f64>()?;
 
 		self.consume_next(word_chr_cnt);
 
-		Ok(Token::new(TokenType::Float(result), row, column))
+		Ok(RawToken::Float(result))
 	}
 
-	fn tokenize_word(&mut self) -> Token {
+	fn tokenize_word(&mut self) -> RawToken {
 		let mut word_chr_cnt = 0;
 
 		let mut word_str = String::new();
@@ -311,20 +271,18 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		if let Some(token_type) = TokenType::get_keyword(word_str.as_str()) {
+		if let Some(token_type) = RawToken::get_keyword(word_str.as_str()) {
 			self.consume_next(word_chr_cnt);
 
-			Token::new(token_type, self.row, self.column)
+			token_type
 		} else {
 			self.consume_next(word_chr_cnt);
 
-			Token::new(TokenType::Word(word_str), self.row, self.column)
+			RawToken::Word(word_str)
 		}
 	}
 
-	fn tokenize_string(&mut self) -> Result<Token, LexerError> {
-		let (row, column) = (self.row, self.column);
-
+	fn tokenize_string(&mut self) -> Result<RawToken, LexerErrorRaw> {
 		self.consume('"')?;
 
 		let mut word_chr_cnt: usize = 0;
@@ -340,13 +298,11 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		let result = Token::new(TokenType::String(word_str), row, column);
-
 		self.consume_next(word_chr_cnt);
 
 		self.consume('"')?;
 
-		Ok(result)
+		Ok(RawToken::String(word_str))
 	}
 
 	fn skip_comments(&mut self) {
@@ -406,32 +362,38 @@ impl<'a> Lexer<'a> {
 				Some('#') =>
 					self.skip_comments(),
 				Some(_) => break,
-				None => return Ok(Token::new(TokenType::Eof, self.row, self.column))
+				None => return Ok(RawToken::Eof.into())
 			}
 		}
 
-		match self.peek(0) {
-			Some(c) if c.is_ascii_alphabetic() =>
-				Ok(self.tokenize_word()),
-			Some('"') =>
-				self.tokenize_string(),
-			Some(c) if c.is_ascii_digit() =>
-				self.tokenize_number(),
-			Some(_) =>
-				self.tokenize_operator(),
+		let (row, column) = (self.row, self.column);
 
-			None => Ok(Token::new(TokenType::Eof, self.row, self.column))
-		}
+		let result = match self.peek(0) {
+			Some(c) if c.is_ascii_alphabetic() =>
+				self.tokenize_word(),
+			Some('"') =>
+				res_with_pos(self.tokenize_string(), row, column)?,
+			Some(c) if c.is_ascii_digit() =>
+				self.tokenize_number().map_err(|e| LexerError::from(e).with_pos(row, column))?,
+			Some(_) =>
+				res_with_pos(self.tokenize_operator(), row, column)?,
+
+			None => RawToken::Eof
+		};
+
+		Ok(result.into())
 	}
 
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
 		let mut result: Vec<Token> = Vec::new();
 
-		while let token = self.tokenize()? && token.token_type != TokenType::Eof {
+		let (row, column) = (self.row, self.column);
+
+		while let token = self.tokenize()? && token != RawToken::Eof.into() {
 			result.push(token);
 		}
 
-		result.push(Token::new(TokenType::Eof, self.row, self.column));
+		result.push(Token::from(RawToken::Eof).with_pos(row, column));
 
 		Ok(result)
 	}

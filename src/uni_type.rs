@@ -120,7 +120,7 @@ impl UniResult {
 			BinaryOp::Pow 			=> self.pow(right),
 			BinaryOp::Divide 		=> self.div(right),
 			BinaryOp::Equals 		=> self.eq(right),
-			BinaryOp::NotEquals 	=> self.neq(right),
+			BinaryOp::Neq 	=> self.neq(right),
 			BinaryOp::Great 		=> self.gt(right),
 			BinaryOp::Less 			=> self.lt(right),
 			BinaryOp::LogicalAnd 	=> self.log_and(right),

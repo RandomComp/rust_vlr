@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+// #![warn(clippy::restriction)]
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
@@ -12,6 +13,7 @@ use std::{fmt, io::self, process};
 
 use rustyline::{DefaultEditor, error::ReadlineError::self};
 
+mod wrapper;
 mod lexer;
 mod parser;
 mod optimizer;
@@ -20,12 +22,13 @@ mod bytecode;
 mod compiler;
 mod vm;
 
+use crate::lexer::Lexer;
+use crate::parser::{Parser, ParserError};
 use crate::optimizer::{Optimizer, OptimizerError};
-use crate::vm::{VM, VMError};
-use crate::bytecode::{Bytecode, BytecodeError};
 use crate::compiler::{Compiler, CompilerError};
-use crate::lexer::{Lexer, LexerError, TokenType};
-use crate::parser::{BinaryOp, Parser, ParserError};
+use crate::bytecode::{Bytecode, BytecodeError};
+use crate::vm::{VM, VMError};
+use crate::wrapper::LexerError;
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -64,7 +67,7 @@ enum AppError {
 
 impl Debug for AppError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    	write!(f, "{self}")
+		write!(f, "{self}")
 	}
 }
 
@@ -208,9 +211,9 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	let tokens = lexer.tokenize_loop()?;
 
-	// for token in &tokens {
-	// 	println!("token = {}", token);
-	// }
+	for token in &tokens {
+		println!("token = {token}");
+	}
 
 	let mut parser = Parser::new(tokens);
 

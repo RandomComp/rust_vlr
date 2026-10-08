@@ -122,7 +122,7 @@ impl Optimizer {
 			},
 			ASTNodeEnum::Binary {
 				left,
-				op: BinaryOp::NotEquals | BinaryOp::Less | BinaryOp::Great,
+				op: BinaryOp::Neq | BinaryOp::Less | BinaryOp::Great,
 				right
 			} if left.value == right.value => {
 				ast.value = ASTNodeEnum::Boolean(false);
