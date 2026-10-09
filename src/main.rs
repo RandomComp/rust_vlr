@@ -9,6 +9,7 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::{fmt, io::self, process};
 
 use rustyline::{DefaultEditor, error::ReadlineError::self};
@@ -18,16 +19,16 @@ mod lexer;
 mod parser;
 mod optimizer;
 mod uni_type;
-// mod bytecode;
+mod bytecode;
 mod compiler;
-// mod vm;
+mod vm;
 
 use crate::lexer::Lexer;
 use crate::parser::{Parser};
 use crate::optimizer::{Optimizer};
-// use crate::compiler::{Compiler, CompilerError};
-// use crate::bytecode::{Bytecode, BytecodeError};
-// use crate::vm::{VM, VMError};
+use crate::compiler::{Compiler, CompilerError};
+use crate::bytecode::{Bytecode, BytecodeError};
+use crate::vm::{VM, VMError};
 use crate::wrapper::{LexerError, ParserError, OptimizerError};
 
 #[derive(argh::FromArgs, Debug)]
@@ -49,12 +50,12 @@ enum AppError {
 	Parser(#[from] ParserError),
 	#[error("Optimizer error: {0}")]
 	Optimizer(#[from] OptimizerError),
-	// #[error("Compiler error: {0}")]
-	// Compiler(#[from] CompilerError),
-	// #[error("Bytecode error: {0}")]
-	// Bytecode(#[from] BytecodeError),
-	// #[error("VM error: {0}")]
-	// VM(#[from] VMError),
+	#[error("Compiler error: {0}")]
+	Compiler(#[from] CompilerError),
+	#[error("Bytecode error: {0}")]
+	Bytecode(#[from] BytecodeError),
+	#[error("VM error: {0}")]
+	VM(#[from] VMError),
 	#[error("IO error: {0}")]
 	IO(#[from] io::Error),
 	#[error("Fmt error: {0}")]
@@ -74,7 +75,7 @@ impl Debug for AppError {
 fn repl() -> Result<(), AppError> {
 	let mut rl = DefaultEditor::new()?;
 
-	// let mut vm = VM::new(None);
+	let mut vm = VM::new(None);
 
 	loop {
 		// println!("Tokenizing expr '{}'", code);
@@ -106,60 +107,59 @@ fn repl() -> Result<(), AppError> {
 			println!("token = {token}");
 		}
 
-		// let mut parser = Parser::new(tokens);
+		let mut parser = Parser::new(tokens);
 
-		// let ast = match parser.parse_instructions() {
-		// 	Ok(Some(x)) => x,
-		// 	Ok(None) => continue,
-		// 	Err(e) => {
-		// 		eprintln!("Parser error: {e}");
+		let ast = match parser.parse_instructions() {
+			Ok(x) => x,
+			Err(e) => {
+				eprintln!("Parser error: {e}");
 
-		// 		continue;
-		// 	}
-		// };
+				continue;
+			}
+		};
 
-		// println!("ast = {ast}");
+		println!("ast = {ast}");
 
-		// let mut compiler = Compiler::new();
+		let mut compiler = Compiler::new();
 
-		// let mut result = Vec::new();
+		let mut result = Vec::new();
 
-		// if let Err(e) = compiler.compile_loop(&ast, &mut result) {
-		// 	eprintln!("Compiler error: {e}");
+		if let Err(e) = compiler.compile_loop(&ast, &mut result) {
+			eprintln!("Compiler error: {e}");
 
-		// 	continue;
-		// }
+			continue;
+		}
 
-		// vm.bytecode = Some(result);
+		vm.bytecode = Some(result);
 
-		// let result = vm.exec();
+		let result = vm.exec();
 
-		// if let Ok(Some(result)) = result {
-		// 	println!("{result}");
-		// } else if let Err(e) = result {
-		// 	eprintln!("VM error: {e}");
-		// }
+		if let Ok(Some(result)) = result {
+			println!("{result}");
+		} else if let Err(e) = result {
+			eprintln!("VM error: {e}");
+		}
 
 		rl.add_history_entry(code)?;
 	}
 }
 
 fn run_file(file: &str) -> Result<(), AppError> {
-	// let bytes = std::fs::read(file)?;
+	let bytes = std::fs::read(file)?;
 
-	// let mut start_index = 0;
+	let mut start_index = 0;
 
-	// if bytes.starts_with(b"#!") && let Some(shabang_pos) = bytes.iter().position(|&c| c == b'\n') {
-	// 	start_index = shabang_pos + 1;
-	// }
+	if bytes.starts_with(b"#!") && let Some(shabang_pos) = bytes.iter().position(|&c| c == b'\n') {
+		start_index = shabang_pos + 1;
+	}
 
-	// let instructions = Bytecode::disasm(bytes.iter().skip(start_index).copied())?;
+	let instructions = Bytecode::disasm(bytes.iter().skip(start_index).copied())?;
 
-	// let mut interpreter = VM::new(Some(instructions));
+	let mut interpreter = VM::new(Some(instructions));
 
-	// if let Some(result) = interpreter.exec()? {
-	// 	println!("result = {result}");
-	// }
+	if let Some(result) = interpreter.exec()? {
+		println!("result = {result}");
+	}
 
 	Ok(())
 }
@@ -181,29 +181,27 @@ fn format(code: &str) -> Result<(), AppError> {
 		println!("token = {token}");
 	}
 
-	// let mut parser = Parser::new(tokens);
+	let mut parser = Parser::new(tokens);
 
-	// let Some(mut ast) = parser.parse_instructions()? else {
-	// 	return Ok(())
-	// };
+	let mut ast = parser.parse_instructions()?;
 
-	// let mut ast_str = String::new();
+	let mut ast_str = String::new();
 
-	// ast.format_human_readable(&mut ast_str, false, 0)?;
+	ast.format_human_readable(&mut ast_str, false, 0)?;
 
-	// println!("ast (with formatting) = {ast_str}");
-	// println!("ast (without formatting) = {ast}");
+	println!("ast (with formatting) = {ast_str}");
+	println!("ast (without formatting) = {ast}");
 
-	// let mut optimizer = Optimizer::new();
+	let mut optimizer = Optimizer::new();
 
-	// optimizer.fold(&mut ast)?;
+	optimizer.fold(&mut ast)?;
 
-	// ast_str.clear();
+	ast_str.clear();
 
-	// ast.format_human_readable(&mut ast_str, false, 0)?;
+	ast.format_human_readable(&mut ast_str, false, 0)?;
 
-	// println!("ast after optimizer (with formatting) = {ast_str}");
-	// println!("ast after optimizer (without formatting) = {ast}");
+	println!("ast after optimizer (with formatting) = {ast_str}");
+	println!("ast after optimizer (without formatting) = {ast}");
 
 	Ok(())
 }
@@ -253,19 +251,19 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 		println!("'{var}' unused");
 	}
 
-	// let mut compiler = Compiler::new();
+	let mut compiler = Compiler::new();
 
-	// let mut bytes = Vec::new();
+	let mut bytes = Vec::new();
 
-	// compiler.compile_loop(&ast, &mut bytes)?;
+	compiler.compile_loop(&ast, &mut bytes)?;
 
-	// for (i, byte) in bytes.iter().enumerate() {
-	// 	println!("{i:02}: {byte}");
-	// }
+	for (i, byte) in bytes.iter().enumerate() {
+		println!("{i:02}: {byte}");
+	}
 
-	// let bytes = Bytecode::asm(bytes)?;
+	let bytes = Bytecode::asm(bytes)?;
 
-	Ok(vec![])
+	Ok(bytes)
 }
 
 fn format_file(file: &str) -> Result<(), AppError> {
@@ -295,9 +293,7 @@ fn compile_file(file: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-fn main() -> Result<(), AppError> {
-	let args: Args = argh::from_env();
-
+fn app(args: Args) -> Result<(), AppError> {
 	match args {
 		Args { format: Some(format), .. } =>
 			format_file(&format),
@@ -312,4 +308,18 @@ fn main() -> Result<(), AppError> {
 		Args { run: None, compile: None, .. } =>
 			repl(),
 	}
+}
+
+fn main() -> ExitCode {
+	let args: Args = argh::from_env();
+
+	let res = app(args);
+
+	if let Err(e) = res {
+		eprintln!("{e}");
+
+		return ExitCode::FAILURE
+	}
+
+	ExitCode::SUCCESS
 }

@@ -1,11 +1,13 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
+use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RawUniResultError {
 	#[error("Incompatible operation")]
 	IncompatibleOperationType,
+	#[error("Use '{0}' on tuple is ambigous, use all() or any() instead")]
+	LogicalOperationOnTupleAmbigous(BinaryOp),
 	#[error("Unsupported operation '{0}'")]
 	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
@@ -120,17 +122,16 @@ impl Display for RawUniResult {
 impl RawUniResult {
 	pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
 		let result = match op {
-			BinaryOp::Plus 			=> left.add(&right.val),
-			BinaryOp::Minus 		=> left.sub(&right.val),
-			BinaryOp::Multiply 		=> left.mul(&right.val),
-			BinaryOp::Pow 			=> left.pow(&right.val),
-			BinaryOp::Divide 		=> left.div(&right.val),
-			BinaryOp::Equals 		=> left.val.eq(&right.val),
-			BinaryOp::Neq 			=> left.neq(&right.val),
-			BinaryOp::Great 		=> left.gt(&right.val),
-			BinaryOp::Less 			=> left.lt(&right.val),
-			BinaryOp::LogicalAnd 	=> left.log_and(&right.val),
-			BinaryOp::LogicalOr 	=> left.log_or(&right.val),
+			BinaryOp::Plus 			=> Self::add(left, right),
+			BinaryOp::Minus 		=> Self::sub(left, right),
+			BinaryOp::Multiply 		=> Self::mul(left, right),
+			BinaryOp::Pow 			=> Self::pow(left, right),
+			BinaryOp::Divide 		=> Self::div(left, right),
+			BinaryOp::Equals 		=> Self::eq(left, right),
+			BinaryOp::Great 		=> Self::gt(left, right),
+			BinaryOp::Less 			=> Self::lt(left, right),
+			BinaryOp::LogicalAnd 	=> Self::log_and(left, right),
+			BinaryOp::LogicalOr 	=> Self::log_or(left, right),
 			_ => Err(
 				UniResultError::from(
 					RawUniResultError::UnsupportedOperation(op.to_owned())
@@ -141,23 +142,31 @@ impl RawUniResult {
 		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn calc_unary_by_op(&self, op: &UnaryOp) -> Result<Self, UniResultError> {
+	pub fn calc_unary_by_op(left: &UniResult, op: &UnaryOp) -> Result<UniResult, UniResultError> {
 		match op {
-			UnaryOp::Minus => self.neg(),
-			UnaryOp::Not => self.not(),
+			UnaryOp::Minus => Self::neg(left),
+			UnaryOp::Not => Self::not(left),
 		}
 	}
 
-	pub fn add(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
+	pub fn add(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a + b)),
-			(Self::Tuple(values), b @ Self::Float(..)) |
-			(b @ Self::Float(..), Self::Tuple(values)) => {
+			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.add(b)?);
+					result.push(Self::add(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::add(value, left)?);
 				}
 
 				Ok(result.into())
@@ -166,32 +175,34 @@ impl RawUniResult {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
-					result.push(a.add(b)?);
+					result.push(Self::add(a, b)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
-	pub fn sub(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
+	pub fn sub(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a - b)),
-			(Self::Tuple(values), b @ Self::Float(..)) => {
+			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.sub(b)?);
+					result.push(Self::sub(value, right)?);
 				}
 
 				Ok(result.into())
 			},
-			(b @ Self::Float(..), Self::Tuple(values)) => {
+			(Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(b.clone().sub(value)?);
+					result.push(Self::sub(left, value)?);
 				}
 
 				Ok(result.into())
@@ -200,93 +211,34 @@ impl RawUniResult {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
-					result.push(a.sub(b)?);
+					result.push(Self::add(a, b)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
-	pub fn mul(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(Self::Float(a), Self::Float(b))
-				=> Ok(Self::Float(a * b)),
-			(Self::Tuple(values), &Self::Float(b)) |
-			(&Self::Float(b), Self::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.mul(&b.into())?);
-				}
-
-				Ok(result.into())
-			},
-
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.mul(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
-	pub fn div(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Float(a / b)),
-			(Self::Tuple(values), b @ Self::Float(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.div(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(b @ Self::Float(..), Self::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(b.clone().div(value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.div(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
-	pub fn pow(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
+	pub fn pow(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a.powf(b))),
-			(Self::Tuple(values), b @ Self::Float(..)) => {
+			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.pow(b)?);
+					result.push(Self::pow(value, right)?);
 				}
 
 				Ok(result.into())
 			},
-			(b @ Self::Float(..), Self::Tuple(values)) => {
+			(Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(b.clone().pow(value)?);
+					result.push(Self::pow(left, value)?);
 				}
 
 				Ok(result.into())
@@ -295,29 +247,143 @@ impl RawUniResult {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
-					result.push(a.pow(b)?);
+					result.push(Self::pow(a, b)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
+	}
+	pub fn mul(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a * b)),
+			(Self::Tuple(values), Self::Float(..)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::mul(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::mul(left, value)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::mul(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
+	}
+	pub fn div(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a / b)),
+			(Self::Tuple(values), Self::Float(..)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::div(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::div(left, value)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::div(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
+	}
+	pub fn rem(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Float(a % b)),
+			(Self::Tuple(values), Self::Float(..)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::rem(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::rem(left, value)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::rem(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn eq(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(&Self::Boolean(a), &Self::Boolean(b))
-				=> Ok(Self::Boolean(a == b)),
-			(&Self::Float(a), &Self::Float(b))
+	pub fn eq(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
-			(Self::String(a), Self::String(b))
-				=> Ok(Self::Boolean(a == b)),
-			(b @ Self::Float(..), Self::Tuple(values)) |
-			(Self::Tuple(values), b @ Self::Float(..)) => {
+			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
-				for value in values.iter().map(|v| v.val) {
-					result.push(value.eq(b)?);
+				for value in values {
+					result.push(Self::eq(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::eq(left, value)?);
 				}
 
 				Ok(result.into())
@@ -326,103 +392,121 @@ impl RawUniResult {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
-					result.push(a.eq(b)?);
+					result.push(Self::eq(a, b)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
+	}
+	pub fn lt(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(&Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Boolean(a < b)),
+			(Self::Tuple(values), Self::Float(..)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::lt(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::lt(left, value)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::lt(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn neq(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
+	pub fn gt(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
+			(&Self::Float(a), &Self::Float(b))
+				=> Ok(Self::Boolean(a > b)),
+			(Self::Tuple(values), Self::Float(..)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::gt(value, right)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Float(..), Self::Tuple(values)) => {
+				let mut result = Vec::new();
+
+				for value in values {
+					result.push(Self::gt(left, value)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::gt(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
+	}
+
+	pub fn log_and(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
 			(&Self::Boolean(a), &Self::Boolean(b))
-				=> Ok(Self::Boolean(a != b)),
-			(&Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean((a - b).abs() > f64::EPSILON)),
-			(Self::String(a), Self::String(b))
-				=> Ok(Self::Boolean(a != b)),
-			(b @ Self::Float(..), Self::Tuple(values)) |
-			(Self::Tuple(values), b @ Self::Float(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.eq(b)?);
-				}
-
-				Ok(result.into())
+				=> Ok(Self::Boolean(a && b)),
+			(Self::Tuple(..) | Self::Float(..), Self::Tuple(..) | Self::Float(..)) => {
+				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalAnd))
 			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
 
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.eq(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn lt(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(&Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean(a < b)),
-			(Self::String(a), Self::String(b))
-				=> Ok(Self::Boolean(a < b)),
-			(b @ Self::Float(..), Self::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(b.lt(value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values), b @ Self::Float(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.lt(b)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.lt(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
-
-	pub fn gt(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
+	pub fn log_or(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match (&left.val, &right.val) {
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a > b)),
-			(Self::String(a), Self::String(b))
-				=> Ok(Self::Boolean(a > b)),
-			(b @ Self::Float(..), Self::Tuple(values)) => {
+			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(b.gt(value)?);
+					result.push(Self::gt(value, right)?);
 				}
 
 				Ok(result.into())
 			},
-			(Self::Tuple(values), b @ Self::Float(..)) => {
+			(Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.gt(b)?);
+					result.push(Self::gt(left, value)?);
 				}
 
 				Ok(result.into())
@@ -431,117 +515,52 @@ impl RawUniResult {
 				let mut result = Vec::new();
 
 				for (a, b) in zip(values_a, values_b) {
-					result.push(a.gt(b)?);
+					result.push(Self::gt(a, b)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
+
+		res_with_pos!(result, UniResult, UniResultError, left.span)
 	}
 
-	pub fn log_and(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(&Self::Boolean(a), &Self::Boolean(b)) =>
-				Ok(Self::Boolean(a && b)),
-			(x @ Self::Boolean(_), Self::Tuple(values)) |
-			(Self::Tuple(values), x @ Self::Boolean(_)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.log_and(x)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.log_and(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
-
-	pub fn log_or(&self, right: &Self) -> Result<Self, UniResultError> {
-		match (self, right) {
-			(&Self::Boolean(a), &Self::Boolean(b)) =>
-				Ok(Self::Boolean(a || b)),
-			(x @ Self::Boolean(_), Self::Tuple(values)) |
-			(Self::Tuple(values), x @ Self::Boolean(_)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(value.log_or(x)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(a.log_or(b)?);
-				}
-
-				Ok(result.into())
-			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
-
-	pub fn neg(&self) -> Result<Self, UniResultError> {
-		match self {
-			&Self::Float(x)
-				=> Ok(Self::Float(-x)),
+	pub fn neg(value: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match &value.val {
+			&Self::Float(b)
+				=> Ok(Self::Float(-b)),
 			Self::Tuple(values) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.neg()?);
+					result.push(Self::neg(value)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
 
-	pub fn not(&self) -> Result<Self, UniResultError> {
-		match self {
-			&Self::Boolean(x)
-				=> Ok(Self::Boolean(!x)),
+		res_with_pos!(result, UniResult, UniResultError, value.span)
+	}
+	pub fn not(value: &UniResult) -> Result<UniResult, UniResultError> {
+		let result = match &value.val {
+			&Self::Boolean(b)
+				=> Ok(Self::Boolean(!b)),
 			Self::Tuple(values) => {
 				let mut result = Vec::new();
 
 				for value in values {
-					result.push(value.not()?);
+					result.push(Self::not(value)?);
 				}
 
 				Ok(result.into())
 			},
-			_ => Err(UniResultError::IncompatibleOperationType),
-		}
-	}
+			_ => Err(RawUniResultError::IncompatibleOperationType),
+		};
 
-	pub fn to_u32(&self) -> Result<u32, UniResultError> {
-		if let &Self::NumberU32(x) = self {
-			Ok(x)
-		} else {
-			Err(UniResultError::IncompatibleOperationType)
-		}
-	}
-
-	pub fn to_bool(&self) -> Result<bool, UniResultError> {
-		if let &Self::Boolean(x) = self {
-			Ok(x)
-		} else {
-			Err(UniResultError::IncompatibleOperationType)
-		}
+		res_with_pos!(result, UniResult, UniResultError, value.span)
 	}
 }
 
@@ -572,6 +591,26 @@ impl From<String> for RawUniResult {
 impl From<Vec<UniResult>> for RawUniResult {
 	fn from(values: Vec<UniResult>) -> Self {
 		RawUniResult::Tuple(values)
+	}
+}
+
+impl From<RawUniResult> for bool {
+	fn from(value: RawUniResult) -> bool {
+		let RawUniResult::Boolean(x) = value else {
+			panic!("Using 'into' on incompatible type {value:?}")
+		};
+
+		x
+	}
+}
+
+impl From<RawUniResult> for u32 {
+	fn from(value: RawUniResult) -> u32 {
+		let RawUniResult::NumberU32(x) = value else {
+			panic!("Using 'into' on incompatible type {value:?}")
+		};
+
+		x
 	}
 }
 

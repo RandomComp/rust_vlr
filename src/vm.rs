@@ -4,7 +4,8 @@ use std::string::FromUtf8Error;
 
 use crate::bytecode::Bytecode;
 use crate::compiler::{NativeFunctionId};
-use crate::uni_type::{UniResult, UniResultError};
+use crate::uni_type::{RawUniResult, RawUniResultError};
+use crate::wrapper::{UniResult, UniResultError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VMError {
@@ -25,7 +26,7 @@ pub enum VMError {
 pub struct VM {
 	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
-	stack: Vec<UniResult>,
+	stack: Vec<RawUniResult>,
 	ret_stack: Vec<u32>,
 }
 
@@ -34,19 +35,19 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn print(args: Vec<UniResult>) -> UniResult {
+	fn print(args: Vec<RawUniResult>) -> RawUniResult {
 		for arg in args {
 			print!("{arg} ");
 		}
 
 		println!();
 
-		UniResult::None
+		RawUniResult::None
 	}
-	fn tuple(args: Vec<UniResult>) -> UniResult {
-		UniResult::Tuple(args)
+	fn tuple(args: Vec<RawUniResult>) -> RawUniResult {
+		RawUniResult::Tuple(args.into_iter().map(|v| v.into()).collect())
 	}
-	fn range(args: &[UniResult]) -> Result<UniResult, VMError> {
+	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
 		if args.len() == 1 {
 			Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionId::Range, found: 1, expected: 2 })
 		} else {
@@ -54,13 +55,13 @@ impl VM {
 			let end = &args[1];
 
 			match (start, end) {
-				(UniResult::Float(start), UniResult::Float(end)) => Ok(UniResult::Range { start: *start, end: *end, step: 1.0 }),
-				_ => Err(VMError::UniResultError(UniResultError::IncompatibleOperationType))
+				(RawUniResult::Float(start), RawUniResult::Float(end)) => Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
+				_ => Err(VMError::UniResultError(RawUniResultError::IncompatibleOperationType.into()))
 			}
 		}
 	}
 
-	fn call_native(&mut self, id: NativeFunctionId) -> Result<UniResult, VMError> {
+	fn call_native(&mut self, id: NativeFunctionId) -> Result<RawUniResult, VMError> {
 		let mut args = Vec::new();
 
 		let mut i = 0;
@@ -136,14 +137,14 @@ impl VM {
 				self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 			},
 			&Bytecode::Jif(dest_pc) => {
-				if !self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+				if !bool::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?) {
 					self.pc = dest_pc;
 
 					pc_changed = true;
 				}
 			},
 			&Bytecode::Jit(dest_pc) => {
-				if self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_bool()? {
+				if bool::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?) {
 					self.pc = dest_pc;
 
 					pc_changed = true;
@@ -162,7 +163,7 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::Subprogram => {
-				let pc = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?.to_u32()?;
+				let pc = u32::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?);
 
 				self.ret_stack.push(pc);
 			},
@@ -190,24 +191,24 @@ impl VM {
 				let right = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 				let left = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
-				let result = left.calc_binary_by_op(&right, &inst.to_binary_op().unwrap())?;
+				let result = RawUniResult::calc_binary_by_op(&left.into(), &right.into(), &inst.to_binary_op().unwrap())?;
 
-				self.stack.push(result);
+				self.stack.push(result.val);
 			},
 			Bytecode::Neg |
 			Bytecode::Not => {
 				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 
-				let result = value.calc_unary_by_op(&inst.to_unary_op().unwrap())?;
+				let result = RawUniResult::calc_unary_by_op(&value.into(), &inst.to_unary_op().unwrap())?;
 
-				self.stack.push(result);
+				self.stack.push(result.val);
 			},
 		}
 
 		Ok((true, pc_changed))
 	}
 
-	pub fn exec(&mut self) -> Result<Option<UniResult>, VMError> {
+	pub fn exec(&mut self) -> Result<Option<RawUniResult>, VMError> {
 		self.pc = 0;
 
 		while let (is_not_hlt, pc_changed) = self.exec_inst()? && is_not_hlt {

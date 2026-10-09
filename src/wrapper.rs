@@ -2,7 +2,7 @@ use std::fmt::Write;
 use crate::{lexer::{LexerErrorRaw, RawToken}, optimizer::RawOptimizerError, parser::{RawASTNode, RawParserError}, uni_type::{RawUniResult, RawUniResultError}};
 use std::fmt;
 
-trait PosWrapper {
+pub trait PosWrapper {
 	fn get_pos(&self) -> usize;
 }
 

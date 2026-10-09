@@ -1,8 +1,10 @@
 use std::{collections::HashMap, mem};
 
-use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, uni_type::UniResultError, wrapper::{ASTNode, OptimizerError, UniResult}};
+use crate::parser::{BinaryOp, RawASTNode, UnaryOp};
+use crate::uni_type::{RawUniResult, RawUniResultError};
+use crate::wrapper::{ASTNode, OptimizerError, UniResult, UniResultError};
 
-#[derive(thiserror::Error, PartialEq, Debug)]
+#[derive(thiserror::Error, Clone, PartialEq, Debug)]
 pub enum RawOptimizerError {
 	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
@@ -97,7 +99,7 @@ impl Optimizer {
 				ast.val = RawASTNode::Binary {
 					left: mem::take(left),
 					op: BinaryOp::Multiply,
-					right: Box::new(ASTNode::from(RawASTNode::Float(2.0)).with_pos_from(right)),
+					right: Box::new(ASTNode::from(RawASTNode::Float(2.0)).with_pos(right.span)),
 				}
 			},
 			RawASTNode::Binary {
@@ -210,7 +212,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				ast.val = value.neg()?.try_into()?;
+				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Minus).unwrap().try_into().unwrap();
 			},
 			RawASTNode::Unary { op: UnaryOp::Not, value } => {
 				self.fold(value)?;
@@ -219,7 +221,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				ast.val = value.not()?.try_into()?;
+				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Not).unwrap().try_into().unwrap();
 			},
 			RawASTNode::Binary { left, op, right } => {
 				let left_is_err = self.fold(left).is_err();
@@ -237,12 +239,16 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = match left.calc_binary_by_op(&right, op).map(UniResult::try_into) {
+				*ast = match RawUniResult::calc_binary_by_op(&left, &right, op).map(ASTNode::try_from) {
 					Ok(Ok(x)) => x,
-					Ok(Err(UniResultError::UnsupportedOperation(..))) |
-					Err(UniResultError::UnsupportedOperation(..)) => return Ok(()),
+					Ok(Err(
+						UniResultError { val: RawUniResultError::UnsupportedOperation(..), .. }
+					)) |
+					Err(
+						UniResultError { val: RawUniResultError::UnsupportedOperation(..), .. }
+					) => return Ok(()),
 					Ok(Err(e)) |
-					Err(e) => return Err(e.into()),
+					Err(e) => return Err(RawOptimizerError::from(e).into()),
 				};
 			},
 			RawASTNode::Tuple(values) => {
@@ -264,7 +270,7 @@ impl Optimizer {
 				let condition_folded: Result<UniResult, _> = (**condition).clone().try_into();
 
 				if let Ok(condition) = condition_folded {
-					if condition.to_bool()? {
+					if bool::from(condition.val) {
 						*ast = *body.clone();
 					} else {
 						ast.val = RawASTNode::None;
@@ -279,7 +285,7 @@ impl Optimizer {
 				self.fold(else_body)?;
 
 				if let Ok(condition) = condition_folded {
-					if condition.to_bool()? {
+					if bool::from(condition.val) {
 						*ast = *body.clone();
 					} else {
 						*ast = *else_body.clone();
@@ -295,7 +301,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				if !condition.to_bool()? {
+				if !bool::from(condition.val) {
 					ast.val = RawASTNode::None;
 				}
 			},
@@ -308,7 +314,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				if !condition.to_bool()? {
+				if !bool::from(condition.val) {
 					ast.val = RawASTNode::None;
 				}
 			},

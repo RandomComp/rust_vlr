@@ -185,6 +185,8 @@ impl Compiler {
 		self.look(stack_pos, result);
 		self.compile(right, result, context)?;
 
+		self.stack -= 1;
+
 		result.push(op);
 
 		self.load(stack_pos, result);
