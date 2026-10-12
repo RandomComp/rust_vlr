@@ -48,7 +48,7 @@ impl VM {
 		RawUniResult::Tuple(args.into_iter().map(Into::into).collect())
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
-		if args.len() == 1 {
+		if args.len() <= 2 {
 			return Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionID::Range, found: 1, expected: 2 })
 		}
 
@@ -56,7 +56,10 @@ impl VM {
 		let end = &args[1];
 
 		match (start, end) {
-			(RawUniResult::Float(start), RawUniResult::Float(end)) => Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
+			(RawUniResult::Float(start), RawUniResult::Float(end)) =>
+				Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
+			(&RawUniResult::Range { start, end, step: _ }, &RawUniResult::Float(step)) =>
+				Ok(RawUniResult::Range { start, end, step }),
 			_ => Err(VMError::UniResultError(RawUniResultError::IncompatibleOperationType.into()))
 		}
 	}
