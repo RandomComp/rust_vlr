@@ -306,7 +306,7 @@ impl Parser {
 			Some(kind) => {
 				Err(RawParserError::ExpectedToken { kind: expected_token_type.clone(), found: kind.val.clone() })
 			},
-			None => panic!("Outside of array"),
+			None => unreachable!("EOF missing or logical error"),
 		}
 	}
 
@@ -320,7 +320,7 @@ impl Parser {
 			Some(kind) => {
 				Err(RawParserError::ExpectedTokens { types: expected, found: kind.val.clone() })
 			},
-			None => panic!("Outside of array"),
+			None => unreachable!("EOF missing or logical error"),
 		}
 	}
 

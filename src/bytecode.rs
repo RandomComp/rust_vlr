@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{compiler::NativeFunctionId, parser::{BinaryOp, UnaryOp}};
+use crate::{compiler::{NativeFunctionID, NativeFunctionIDError}, parser::{BinaryOp, UnaryOp}};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Bytecode {
@@ -32,14 +32,10 @@ pub enum Bytecode {
 	Ret,
 	/// Equals
 	Eq,
-	/// Not equals
-	Neq,
 	/// Less than
 	Lt,
-	/// Great than
-	Gt,
 	/// Call vm builtin-in function (like print)
-	NativeCall(NativeFunctionId),
+	NativeCall(NativeFunctionID),
 	/// Additive
 	Add,
 	/// Subtraction
@@ -60,14 +56,14 @@ pub enum Bytecode {
 	LogicalOr,
 }
 
-fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Option<[u8; LEN]> where T: Iterator<Item=u8> {
+fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
 
 	for val in &mut result {
-		*val = arr.next()?;
+		*val = arr.next().ok_or(BytecodeError::UnexpectedEof { pos: 0 })?;
 	}
 
-	Some(result)
+	Ok(result)
 }
 
 impl Display for Bytecode {
@@ -99,12 +95,8 @@ impl Display for Bytecode {
 				write!(f, "pow"),
 			Bytecode::Eq =>
 				write!(f, "eq"),
-			Bytecode::Neq =>
-				write!(f, "neq"),
 			Bytecode::Lt =>
 				write!(f, "lt"),
-			Bytecode::Gt =>
-				write!(f, "gt"),
 			Bytecode::LogicalAnd =>
 				write!(f, "log_and"),
 			Bytecode::LogicalOr =>
@@ -143,6 +135,8 @@ pub enum BytecodeError {
 	},
 	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
 	StringTooLong,
+	#[error("{0}")]
+	NativeFunctionID(#[from] NativeFunctionIDError),
 }
 
 impl Bytecode {
@@ -161,9 +155,7 @@ impl Bytecode {
 	pub const SUBPROGRAM: u8 = 0x2B;
 	pub const RET: u8 = 0x2C; // Jump to pc from stack
 	pub const EQ: u8 = 0x50; // Equals
-	pub const NEQ: u8 = 0x51; // Not equals
 	pub const LT: u8 =  0x52; // Less than
-	pub const GT: u8 =  0x53; // Great than
 	pub const NATIVE_CALL: u8 =  0x80;
 	pub const ADD: u8 =  0xA0; // Additive
 	pub const SUB: u8 =  0xA3; // Subtraction
@@ -178,9 +170,7 @@ impl Bytecode {
 	pub fn to_binary_op(&self) -> Option<BinaryOp> {
 		let result = match self {
 			Bytecode::Eq 					=> BinaryOp::Equals, // Equals
-			Bytecode::Neq 					=> BinaryOp::Neq, // Not equals
 			Bytecode::Lt 					=> BinaryOp::Less, // Less than
-			Bytecode::Gt 					=> BinaryOp::Great, // Great than
 			Bytecode::Add 					=> BinaryOp::Plus, // Additive
 			Bytecode::Sub 					=> BinaryOp::Minus, // Subtraction
 			Bytecode::Mul 					=> BinaryOp::Multiply, // Multiplication
@@ -221,9 +211,7 @@ impl Bytecode {
 			Self::Subprogram 			=> Self::SUBPROGRAM, // Jump to pc from stack
 			Self::Ret 					=> Self::RET, // Jump to pc from stack
 			Self::Eq 					=> Self::EQ, // Equals
-			Self::Neq 					=> Self::NEQ, // Not equals
 			Self::Lt 					=> Self::LT, // Less than
-			Self::Gt 					=> Self::GT, // Great than
 			Self::NativeCall(..) 		=> Self::NATIVE_CALL,
 			Self::Add 					=> Self::ADD, // Additive
 			Self::Sub 					=> Self::SUB, // Subtraction
@@ -291,12 +279,12 @@ impl Bytecode {
 		let result = match opcode {
 			Self::HLT | Self::HLT_FF => Self::Halt, // Do nothing
 			Self::PUSH_FLOAT => { // Pushes number
-				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes).unwrap());
+				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes)?);
 
 				Self::PushFloat(value)
 			},
 			Self::PUSH_STRING => { // Pushes string to stack (needing len)
-				let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				let utf8 = bytes.take(u32_len as usize).collect();
 
@@ -307,44 +295,44 @@ impl Bytecode {
 			Self::PUSH_FALSE => Self::PushBoolean(false), // Pushes false to stack
 			Self::PUSH_TRUE => Self::PushBoolean(true), // Pushes true to stack
 			Self::LOOK => { // Copy value from N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Look(stack_pos)
 			},
 			Self::LOAD => { // Copy value to N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Load(stack_pos)
 			},
 			Self::REMOVE => Self::Remove, // Remove value
 			Self::JIT => { // Jump if condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Jit(pos)
 			},
 			Self::JIF => { // Jump if not condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Jif(pos)
 			},
 			Self::JMP => { // Jump without condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Jmp(pos)
 			},
 			Self::CALL => { // Call subprogram (like jmp, but before pushes pc)
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes).unwrap());
+				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::Call(pos)
 			},
 			Self::SUBPROGRAM => Self::Subprogram,
 			Self::RET => Self::Ret, // Jump to pc from stack
 			Self::EQ => Self::Eq, // Equals
-			Self::NEQ => Self::Neq, // Not equals
 			Self::LT => Self::Lt, // Less than
-			Self::GT => Self::Gt, // Great than
 			Self::NATIVE_CALL => {
-				let id = NativeFunctionId::try_from(bytes.nth(0).unwrap()).unwrap();
+				let id = NativeFunctionID::try_from(
+					bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+				)?;
 
 				Self::NativeCall(id)
 			},
@@ -386,14 +374,35 @@ impl Bytecode {
 			BinaryOp::Minus => Self::Sub,
 			BinaryOp::Multiply => Self::Mul,
 			BinaryOp::Divide => Self::Div,
+			// BinaryOp::Remainder => Self::Remainder,
 			BinaryOp::Pow => Self::Pow,
 			BinaryOp::Equals => Self::Eq,
-			BinaryOp::Neq => Self::Neq,
 			BinaryOp::Less => Self::Lt,
-			BinaryOp::Great => Self::Gt,
 			BinaryOp::LogicalAnd => Self::LogicalAnd,
 			BinaryOp::LogicalOr => Self::LogicalOr,
-			x => todo!("{}", x),
+			_ => unreachable!("'{op}' not handled in from_binary_op"),
 		}
+	}
+
+	pub fn bytecodes_from_binary_op(op: &BinaryOp) -> Vec<Bytecode> {
+		let mut result = Vec::new();
+
+		match op {
+			BinaryOp::Neq => {
+				result.push(Self::Eq);
+				result.push(Self::Not);
+			}
+			BinaryOp::GreatOrEquals => {
+				result.push(Self::Lt);
+				result.push(Self::Not);
+			}
+			_ => {
+				let val = Self::from_binary_op(op);
+
+				result.push(val);
+			},
+		}
+
+		result
 	}
 }

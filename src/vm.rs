@@ -3,9 +3,9 @@ use std::string::FromUtf8Error;
 // use std::time::Duration;
 
 use crate::bytecode::Bytecode;
-use crate::compiler::{NativeFunctionId};
+use crate::compiler::{NativeFunctionID};
 use crate::uni_type::{RawUniResult, RawUniResultError};
-use crate::wrapper::{UniResult, UniResultError};
+use crate::wrapper::UniResultError;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum VMError {
@@ -16,7 +16,7 @@ pub enum VMError {
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
 	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
-	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionId, found: u8, expected: u8 },
+	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: u8, expected: u8 },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
@@ -49,7 +49,7 @@ impl VM {
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
 		if args.len() == 1 {
-			return Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionId::Range, found: 1, expected: 2 })
+			return Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionID::Range, found: 1, expected: 2 })
 		}
 
 		let start = &args[0];
@@ -61,7 +61,7 @@ impl VM {
 		}
 	}
 
-	fn call_native(&mut self, id: NativeFunctionId) -> Result<RawUniResult, VMError> {
+	fn call_native(&mut self, id: NativeFunctionID) -> Result<RawUniResult, VMError> {
 		let mut args = Vec::new();
 
 		let mut i = 0;
@@ -73,9 +73,9 @@ impl VM {
 		}
 
 		match id {
-			NativeFunctionId::Print => Ok(Self::print(args)),
-			NativeFunctionId::Tuple => Ok(Self::tuple(args)),
-			NativeFunctionId::Range => Self::range(&args),
+			NativeFunctionID::Print => Ok(Self::print(args)),
+			NativeFunctionID::Tuple => Ok(Self::tuple(args)),
+			NativeFunctionID::Range => Self::range(&args),
 		}
 	}
 
@@ -180,9 +180,7 @@ impl VM {
 				self.stack.push(result);
 			},
 			Bytecode::Eq |
-			Bytecode::Neq |
 			Bytecode::Lt |
-			Bytecode::Gt |
 			Bytecode::Add |
 			Bytecode::Sub |
 			Bytecode::Mul |

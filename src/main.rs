@@ -368,49 +368,68 @@ fn format_file(file: &str) -> Result<(), AppError> {
 	format_code(&code)
 }
 
-fn compile_file(file: &str) -> Result<(), AppError> {
-	let code = std::fs::read_to_string(file)?;
+fn compile_file(file: &str) -> Result<(), (AppError, Option<Span>)> {
+	let code = std::fs::read_to_string(file).map_err(|e| (e.into(), None))?;
 
 	let mut out_file = PathBuf::from(file);
 
 	out_file.set_extension("out");
 
-	let bytes = match compile(&code) {
-		Ok(res) => res,
-		Err((e, spans)) => {
-			println!("{}", format(&e, &spans));
+	let bytes = compile(&code).map_err(|(e, spans)| (e, Some(spans)))?;
 
-			return Err(e)
-		}
-	};
+	let mut file = std::fs::File::create(out_file).map_err(|e| (e.into(), None))?;
 
-	let mut file = std::fs::File::create(out_file)?;
+	writeln!(file, "#!{} -r", std::env::current_exe().map_err(|e| (e.into(), None))?.display()).map_err(|e| (e.into(), None))?;
+	file.write_all(&bytes).map_err(|e| (e.into(), None))?;
 
-	writeln!(file, "#!{} -r", std::env::current_exe()?.display())?;
-	file.write_all(&bytes)?;
-
-	let mut perms = file.metadata()?.permissions();
+	let mut perms = file.metadata().map_err(|e| (e.into(), None))?.permissions();
 	perms.set_mode(0o744);
-	file.set_permissions(perms)?;
+	file.set_permissions(perms).map_err(|e| (e.into(), None))?;
 
 	Ok(())
 }
 
 fn app(args: Args) -> Result<(), AppError> {
-	match args {
+	let err = match args {
 		Args { format: Some(format), .. } =>
 			format_file(&format),
+		Args { run: None, compile: Some(file), .. } => {
+			if let Err((e, spans)) = compile_file(&file) {
+				if let Some(spans) = spans {
+					eprintln!("{}", format(&e, &spans));
+				} else {
+					eprintln!("{e}");
+				}
+
+				return Err(e)
+			}
+
+			return Ok(())
+		},
 		Args { run: Some(file_to_run), compile: Some(file_to_compile), .. } => {
-			compile_file(&file_to_compile)?;
+			if let Err((e, spans)) = compile_file(&file_to_compile) {
+				if let Some(spans) = spans {
+					eprintln!("{}", format(&e, &spans));
+				} else {
+					eprintln!("{e}");
+				}
+
+				return Err(e)
+			}
+
 			run_file(&file_to_run)
 		},
 		Args { run: Some(file), compile: None, .. } =>
 			run_file(&file),
-		Args { run: None, compile: Some(file), .. } =>
-			compile_file(&file),
 		Args { run: None, compile: None, .. } =>
 			repl(),
+	};
+
+	if let Err(e) = &err {
+		eprintln!("{e}");
 	}
+
+	err
 }
 
 fn main() -> ExitCode {

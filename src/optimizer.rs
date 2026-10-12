@@ -242,10 +242,10 @@ impl Optimizer {
 				*ast = match RawUniResult::calc_binary_by_op(&left, &right, op).map(ASTNode::try_from) {
 					Ok(Ok(x)) => x,
 					Ok(Err(
-						UniResultError { val: RawUniResultError::UnsupportedOperation(..), .. }
+						UniResultError { val: RawUniResultError::IncompatibleOperationType, .. }
 					)) |
 					Err(
-						UniResultError { val: RawUniResultError::UnsupportedOperation(..), .. }
+						UniResultError { val: RawUniResultError::IncompatibleOperationType, .. }
 					) => return Ok(()),
 					Ok(Err(e)) |
 					Err(e) => return Err(RawOptimizerError::from(e.val).into()),

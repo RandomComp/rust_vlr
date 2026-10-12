@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, iter};
 
-use crate::{bytecode::Bytecode, parser::{BinaryOp, RawASTNode}, wrapper::{ASTNode, CompilerError}};
+use crate::{bytecode::Bytecode, parser::{BinaryOp::self, RawASTNode, UnaryOp}, wrapper::{ASTNode, CompilerError}};
 
 #[derive(thiserror::Error, PartialEq, Clone, Debug)]
 pub enum RawCompilerError {
@@ -18,66 +18,78 @@ pub enum RawCompilerError {
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 #[repr(u8)]
-pub enum NativeFunctionId {
+pub enum NativeFunctionID {
 	Print,
 	Tuple,
 	Range
 }
 
-impl Display for NativeFunctionId {
+#[derive(thiserror::Error, Clone, Debug)]
+pub enum NativeFunctionIDError {
+	#[error("Unknown native function with id {0}")]
+	UnknownNativeFunctionWithID(u8),
+	#[error("Unknown native function {0}")]
+	UnknownNativeFunctionWithName(String),
+}
+
+impl Display for NativeFunctionID {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			NativeFunctionId::Print => write!(f, "print"),
-			NativeFunctionId::Tuple => write!(f, "tuple"),
-			NativeFunctionId::Range => write!(f, "range"),
+			NativeFunctionID::Print => write!(f, "print"),
+			NativeFunctionID::Tuple => write!(f, "tuple"),
+			NativeFunctionID::Range => write!(f, "range"),
 		}
 	}
 }
 
-impl NativeFunctionId {
+impl NativeFunctionID {
 	pub fn to_le_bytes(self) -> [u8; 1] {
 		(self as u8).to_le_bytes()
 	}
 
 	pub fn get_name(self) -> &'static str {
 		match self {
-			NativeFunctionId::Print => "print",
-			NativeFunctionId::Tuple => "tuple",
-			NativeFunctionId::Range => "range",
+			NativeFunctionID::Print => "print",
+			NativeFunctionID::Tuple => "tuple",
+			NativeFunctionID::Range => "range",
 		}
 	}
 
 	pub fn args(self) -> usize {
 		match self {
-			NativeFunctionId::Print => 1,
-			NativeFunctionId::Tuple => 2,
-			NativeFunctionId::Range => 3,
+			NativeFunctionID::Print => 1,
+			NativeFunctionID::Tuple => 2,
+			NativeFunctionID::Range => 3,
 		}
 	}
 }
 
-impl TryFrom<u8> for NativeFunctionId {
-	type Error = ();
+impl TryFrom<u8> for NativeFunctionID {
+	type Error = NativeFunctionIDError;
 
 	fn try_from(value: u8) -> Result<Self, Self::Error> {
 		match value {
-			0 => Ok(NativeFunctionId::Print),
-			1 => Ok(NativeFunctionId::Tuple),
-			2 => Ok(NativeFunctionId::Range),
-			_ => Err(()),
+			0 => Ok(NativeFunctionID::Print),
+			1 => Ok(NativeFunctionID::Tuple),
+			2 => Ok(NativeFunctionID::Range),
+			_ => Err(NativeFunctionIDError::UnknownNativeFunctionWithID(value)),
 		}
 	}
 }
 
-impl TryFrom<&str> for NativeFunctionId {
-	type Error = ();
+impl TryFrom<&str> for NativeFunctionID {
+	type Error = NativeFunctionIDError;
 
 	fn try_from(name: &str) -> Result<Self, Self::Error> {
 		match name {
-			"print" => Ok(NativeFunctionId::Print),
-			"tuple" => Ok(NativeFunctionId::Tuple),
-			"range" => Ok(NativeFunctionId::Range),
-			_ => Err(()),
+			"print" => Ok(NativeFunctionID::Print),
+			"tuple" => Ok(NativeFunctionID::Tuple),
+			"range" => Ok(NativeFunctionID::Range),
+			_ => Err(
+				NativeFunctionIDError::UnknownNativeFunctionWithName(
+					name.to_owned()
+				)
+			),
 		}
 	}
 }
@@ -149,7 +161,7 @@ impl Compiler {
 
 	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError>
 	where T: DoubleEndedIterator<Item=&'a ASTNode> {
-		if let Ok(id) = NativeFunctionId::try_from(name) {
+		if let Ok(id) = NativeFunctionID::try_from(name) {
 			let mut len = 0;
 
 			for arg in args {
@@ -316,22 +328,21 @@ impl Compiler {
 				result.push(Bytecode::from_unary_op(op));
 			},
 			RawASTNode::Binary { left, op: BinaryOp::LessOrEquals, right } => {
-				self.compile(left, result, context)?;
 				self.compile(right, result, context)?;
+				self.compile(left, result, context)?;
 
 				self.stack -= 1;
 
-				result.push(Bytecode::Gt);
-				result.push(Bytecode::Not);
+				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
+				result.push(Bytecode::from_unary_op(&UnaryOp::Not));
 			},
-			RawASTNode::Binary { left, op: BinaryOp::GreatOrEquals, right } => {
-				self.compile(left, result, context)?;
+			RawASTNode::Binary { left, op: BinaryOp::Great, right } => {
 				self.compile(right, result, context)?;
+				self.compile(left, result, context)?;
 
 				self.stack -= 1;
 
-				result.push(Bytecode::Lt);
-				result.push(Bytecode::Not);
+				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 			},
 			RawASTNode::Binary { left, op, right } => {
 				self.compile(left, result, context)?;
@@ -339,7 +350,7 @@ impl Compiler {
 
 				self.stack -= 1;
 
-				result.push(Bytecode::from_binary_op(op));
+				result.extend(Bytecode::bytecodes_from_binary_op(op));
 			},
 			RawASTNode::Function { name, arg } if let RawASTNode::Tuple(values) = &arg.val => {
 				self.call_func(name, values.iter(), result, context)?;
