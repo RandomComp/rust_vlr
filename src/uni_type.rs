@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
+use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RawUniResultError {
@@ -368,8 +368,16 @@ impl RawUniResult {
 
 	pub fn eq(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
 		let result = match (&left.val, &right.val) {
+			(Self::None, Self::None)
+				=> Self::Boolean(true),
 			(Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
+				=> Self::Boolean((a - b).abs() < f64::EPSILON),
+			(Self::String(a), Self::String(b))
+				=> Self::Boolean(a == b),
+			(Self::Boolean(a), Self::Boolean(b))
+				=> Self::Boolean(a == b),
+			(Self::NumberU32(a), Self::NumberU32(b))
+				=> Self::Boolean(a == b),
 			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
@@ -377,7 +385,7 @@ impl RawUniResult {
 					result.push(Self::eq(value, right)?);
 				}
 
-				Ok(result.into())
+				result.into()
 			},
 			(Self::Float(..), Self::Tuple(values)) => {
 				let mut result = Vec::new();
@@ -386,7 +394,7 @@ impl RawUniResult {
 					result.push(Self::eq(left, value)?);
 				}
 
-				Ok(result.into())
+				result.into()
 			},
 			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
 				let mut result = Vec::new();
@@ -395,12 +403,12 @@ impl RawUniResult {
 					result.push(Self::eq(a, b)?);
 				}
 
-				Ok(result.into())
+				result.into()
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			_ => return Err(UniResultError::from(RawUniResultError::IncompatibleOperationType).with_pos(left.span)),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		Ok(val_with_pos!(result, UniResult, left.span))
 	}
 	pub fn lt(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
 		let result = match (&left.val, &right.val) {
@@ -480,7 +488,7 @@ impl RawUniResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(Self::Boolean(a && b)),
-			(Self::Tuple(..) | Self::Float(..), Self::Tuple(..) | Self::Float(..)) => {
+			(Self::Tuple(..) | Self::Boolean(..), Self::Tuple(..) | Self::Boolean(..)) => {
 				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalAnd))
 			},
 			_ => Err(RawUniResultError::IncompatibleOperationType),
@@ -491,34 +499,10 @@ impl RawUniResult {
 
 	pub fn log_or(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
 		let result = match (&left.val, &right.val) {
-			(&Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean(a > b)),
-			(Self::Tuple(values), Self::Float(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(Self::gt(value, right)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Float(..), Self::Tuple(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(Self::gt(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Tuple(values_a), Self::Tuple(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::gt(a, b)?);
-				}
-
-				Ok(result.into())
+			(&Self::Boolean(a), &Self::Boolean(b))
+				=> Ok(Self::Boolean(a || b)),
+			(Self::Tuple(..) | Self::Boolean(..), Self::Tuple(..) | Self::Boolean(..)) => {
+				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalOr))
 			},
 			_ => Err(RawUniResultError::IncompatibleOperationType),
 		};

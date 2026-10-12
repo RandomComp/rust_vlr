@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fmt::Display, iter};
 
-use crate::{bytecode::Bytecode, parser::{BinaryOp, RawASTNode}, wrapper::ASTNode};
+use crate::{bytecode::Bytecode, parser::{BinaryOp, RawASTNode}, wrapper::{ASTNode, CompilerError}};
 
-#[derive(thiserror::Error, Debug)]
-pub enum CompilerError {
+#[derive(thiserror::Error, PartialEq, Clone, Debug)]
+pub enum RawCompilerError {
 	#[error("Unknown function '{0}' call")]
 	UnknownFunctionCall(String),
 	#[error("'{0}' variable is not known in current scope")]
@@ -147,7 +147,7 @@ impl Compiler {
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError>
+	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError>
 	where T: DoubleEndedIterator<Item=&'a ASTNode> {
 		if let Ok(id) = NativeFunctionId::try_from(name) {
 			let mut len = 0;
@@ -167,19 +167,19 @@ impl Compiler {
 
 			result.push(Bytecode::Call(pos));
 		} else {
-			return Err(CompilerError::UnknownFunctionCall(name.to_owned()))
+			return Err(RawCompilerError::UnknownFunctionCall(name.to_owned()))
 		}
 
 		Ok(())
 	}
 
-	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
+	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError> {
 		let RawASTNode::Variable(name) = &left.val else {
-			return Err(CompilerError::LeftExprShouldBeId(left.val.to_string()));
+			return Err(RawCompilerError::LeftExprShouldBeId(left.val.to_string()));
 		};
 
 		let Some(stack_pos) = context.get_var(name) else {
-			return Err(CompilerError::NotKnownAtThisScope(name.to_owned()));
+			return Err(RawCompilerError::NotKnownAtThisScope(name.to_owned()));
 		};
 
 		self.look(stack_pos, result);
@@ -198,6 +198,8 @@ impl Compiler {
 		println!("context = {context:?}");
 
 		println!("stack_pos = {}; ast = {ast}", self.stack);
+
+		let span = ast.span;
 
 		match &ast.val {
 			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
@@ -231,7 +233,7 @@ impl Compiler {
 				self.compile(value, result, context)?;
 
 				let Some(pos) = self.break_pos.last_mut() else {
-					return Err(CompilerError::BreakOutsideOfLoop)
+					return Err(CompilerError::from(RawCompilerError::BreakOutsideOfLoop).with_pos(span))
 				};
 
 				*pos = Some(Self::pc(result));
@@ -256,10 +258,14 @@ impl Compiler {
 				result.push(Bytecode::PushString(x.clone()));
 			},
 			RawASTNode::Tuple(values) => if !values.is_empty() {
-				self.call_func("tuple", values.iter(), result, context)?;
+				self.call_func("tuple", values.iter(), result, context).map_err(|e|
+					CompilerError::from(e).with_pos(span)
+				)?;
 			},
 			RawASTNode::Binary { left, op: BinaryOp::Range, right } => {
-				self.call_func("range", [&**left, &**right].into_iter(), result, context)?;
+				self.call_func("range", [&**left, &**right].into_iter(), result, context).map_err(|e|
+					CompilerError::from(e).with_pos(span)
+				)?;
 			},
 			RawASTNode::Binary { left, op: BinaryOp::Assignment, right } => if let RawASTNode::Variable(name) = &left.val {
 				if let Some(stack_pos) = context.get_var(name) {
@@ -274,7 +280,11 @@ impl Compiler {
 					context.insert_var(name.to_owned(), stack_pos);
 				}
 			} else {
-				return Err(CompilerError::LeftExprShouldBeId(left.val.to_string()));
+				return Err(
+					CompilerError::from(
+						RawCompilerError::LeftExprShouldBeId(left.val.to_string())
+					).with_pos(span)
+				);
 			},
 			RawASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
@@ -294,7 +304,11 @@ impl Compiler {
 			RawASTNode::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
 				self.look(stack_pos, result);
 			} else {
-				return Err(CompilerError::NotKnownAtThisScope(name.clone()));
+				return Err(
+					CompilerError::from(
+						RawCompilerError::NotKnownAtThisScope(name.clone())
+					).with_pos(span)
+				);
 			},
 			RawASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;

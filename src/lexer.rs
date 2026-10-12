@@ -52,19 +52,22 @@ pub enum RawToken {
 }
 
 macro_rules! gen_code_for_ops {
-	($($kind:path => $text:expr);* ) => {
-		pub const TOKEN_OPERATORS: &[(Self, &str)] = &[
+	([ $($kind:path => $text:expr),* ] [ $($kind_word:pat_param => $text_word:expr),* ] ) => {
+		const TOKEN_OPERATORS: &[(Self, &str)] = &[
 			$(
 				($kind, $text),
 			)*
 		];
 
-		fn display(&self) -> Option<&'static str> {
+		fn to_const_str(&self) -> &'static str {
 			match self {
 				$(
-					$kind => Some($text),
+					$kind => $text,
 				)*
-				_ => None
+
+				$(
+					$kind_word => $text_word,
+				)*
 			}
 		}
 	};
@@ -72,40 +75,57 @@ macro_rules! gen_code_for_ops {
 
 impl RawToken {
 	gen_code_for_ops!(
-		Self::Equals => "==";
-		Self::Neq => "!=";
-		Self::GreatOrEquals => ">=";
-		Self::LessOrEquals => "<=";
-		Self::Great => ">";
-		Self::Less => "<";
-		Self::LogicalAnd => "&&";
-		Self::LogicalOr => "||";
+		[
+			Self::Equals => "==",
+			Self::Neq => "!=",
+			Self::GreatOrEquals => ">=",
+			Self::LessOrEquals => "<=",
+			Self::Great => ">",
+			Self::Less => "<",
+			Self::LogicalAnd => "&&",
+			Self::LogicalOr => "||",
 
-		Self::Assignment => "=";
-		Self::PlusAssignment => "+=";
-		Self::MinusAssignment => "-=";
-		Self::PowAssignment => "**=";
-		Self::MultiplyAssignment => "*=";
-		Self::DivideAssignment => "/=";
-		Self::RemainderAssignment => "%=";
+			Self::Assignment => "=",
+			Self::PlusAssignment => "+=",
+			Self::MinusAssignment => "-=",
+			Self::PowAssignment => "**=",
+			Self::MultiplyAssignment => "*=",
+			Self::DivideAssignment => "/=",
+			Self::RemainderAssignment => "%=",
 
-		Self::Plus => "+";
-		Self::Minus => "-";
-		Self::Exclamation => "!";
-		Self::Pow => "**";
-		Self::Multiply => "*";
-		Self::Divide => "/";
-		Self::Remainder => "%";
+			Self::Plus => "+",
+			Self::Minus => "-",
+			Self::Exclamation => "!",
+			Self::Pow => "**",
+			Self::Multiply => "*",
+			Self::Divide => "/",
+			Self::Remainder => "%",
 
-		Self::Comma => ",";
-		Self::Semicolon => ";";
-		Self::LPar => "(";
-		Self::RPar => ")";
-		Self::LBrace => "{";
-		Self::RBrace => "}";
+			Self::Comma => ",",
+			Self::Semicolon => ";",
+			Self::LPar => "(",
+			Self::RPar => ")",
+			Self::LBrace => "{",
+			Self::RBrace => "}",
 
-		Self::Everything => "...";
-		Self::Range => ".."
+			Self::Everything => "...",
+			Self::Range => ".."
+		]
+		[
+			Self::True => "true",
+			Self::False => "false",
+			Self::Float(..) => "float",
+			Self::String(..) => "string",
+			Self::Word(..) => "word",
+			Self::If => "if",
+			Self::Else => "else",
+			Self::While => "while",
+			Self::For => "for",
+			Self::Break => "break",
+			Self::Return => "return",
+			Self::Def => "def",
+			Self::Eof => "eof"
+		]
 	);
 
 	fn get_keyword(word: &str) -> Option<Self> {
@@ -151,13 +171,13 @@ impl std::fmt::Display for RawToken {
 
 			Self::Eof => write!(f, "EOF"),
 
-			_ => f.write_str(self.display().unwrap()),
+			_ => f.write_str(self.to_const_str()),
 		}
 	}
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
-pub enum LexerErrorRaw {
+pub enum RawLexerError {
 	#[error("unknown operation")]
 	UnknownOperation,
 	#[error("invalid number")]
@@ -192,22 +212,22 @@ impl<'a> Lexer<'a> {
 		self.column += len;
 	}
 
-	fn consume(&mut self, expected_c: char) -> Result<(), LexerErrorRaw> {
+	fn consume(&mut self, expected_c: char) -> Result<(), RawLexerError> {
 		match self.peek(0) {
 			Some(c) if c == expected_c => {
 				self.consume_next(1);
 
 				Ok(())
 			},
-			_ => Err(LexerErrorRaw::ExpectedSymbol { c: expected_c })
+			_ => Err(RawLexerError::ExpectedSymbol { c: expected_c })
 		}
 	}
 
-	fn tokenize_operator(&mut self) -> Result<RawToken, LexerErrorRaw> {
+	fn tokenize_operator(&mut self) -> Result<RawToken, RawLexerError> {
 		let expected_op = self.get().take(3).collect::<String>();
 
 		let Some((result, text)) = RawToken::from_op(&expected_op) else {
-		 	return Err(LexerErrorRaw::UnknownOperation)
+		 	return Err(RawLexerError::UnknownOperation)
 		};
 
 		self.consume_next(text.len());
@@ -215,7 +235,7 @@ impl<'a> Lexer<'a> {
 		Ok(result.clone())
 	}
 
-	fn tokenize_number(&mut self) -> Result<RawToken, LexerErrorRaw> {
+	fn tokenize_number(&mut self) -> Result<RawToken, RawLexerError> {
 		let mut word_chr_cnt = 0;
 
 		let mut dots = 0;
@@ -272,7 +292,7 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn tokenize_string(&mut self) -> Result<RawToken, LexerErrorRaw> {
+	fn tokenize_string(&mut self) -> Result<RawToken, RawLexerError> {
 		self.consume('"')?;
 
 		let mut word_chr_cnt: usize = 0;

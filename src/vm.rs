@@ -7,7 +7,7 @@ use crate::compiler::{NativeFunctionId};
 use crate::uni_type::{RawUniResult, RawUniResultError};
 use crate::wrapper::{UniResult, UniResultError};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum VMError {
 	#[error("{0}")]
 	UniResultError(#[from] UniResultError),
@@ -45,19 +45,19 @@ impl VM {
 		RawUniResult::None
 	}
 	fn tuple(args: Vec<RawUniResult>) -> RawUniResult {
-		RawUniResult::Tuple(args.into_iter().map(|v| v.into()).collect())
+		RawUniResult::Tuple(args.into_iter().map(Into::into).collect())
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
 		if args.len() == 1 {
-			Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionId::Range, found: 1, expected: 2 })
-		} else {
-			let start = &args[0];
-			let end = &args[1];
+			return Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionId::Range, found: 1, expected: 2 })
+		}
 
-			match (start, end) {
-				(RawUniResult::Float(start), RawUniResult::Float(end)) => Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
-				_ => Err(VMError::UniResultError(RawUniResultError::IncompatibleOperationType.into()))
-			}
+		let start = &args[0];
+		let end = &args[1];
+
+		match (start, end) {
+			(RawUniResult::Float(start), RawUniResult::Float(end)) => Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
+			_ => Err(VMError::UniResultError(RawUniResultError::IncompatibleOperationType.into()))
 		}
 	}
 
@@ -103,6 +103,8 @@ impl VM {
 		};
 
 		let mut pc_changed = false;
+
+		println!("{inst}");
 
 		match inst {
 			Bytecode::Halt => return Ok((false, false)),

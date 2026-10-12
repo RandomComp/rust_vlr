@@ -131,7 +131,7 @@ impl Display for Bytecode {
 	}
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Clone, Debug)]
 pub enum BytecodeError {
 	#[error("Byte {byte:02X} at {pos:02} unexpected")]
 	UnexpectedByte {

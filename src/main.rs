@@ -5,7 +5,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -17,6 +17,7 @@ use rustyline::{DefaultEditor, error::ReadlineError::self};
 mod wrapper;
 mod lexer;
 mod parser;
+mod formatter;
 mod optimizer;
 mod uni_type;
 mod bytecode;
@@ -24,12 +25,12 @@ mod compiler;
 mod vm;
 
 use crate::lexer::Lexer;
-use crate::parser::{Parser};
-use crate::optimizer::{Optimizer};
-use crate::compiler::{Compiler, CompilerError};
+use crate::parser::Parser;
+use crate::optimizer::Optimizer;
+use crate::compiler::Compiler;
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
-use crate::wrapper::{LexerError, ParserError, OptimizerError};
+use crate::wrapper::{CompilerError, LexerError, OptimizerError, ParserError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -42,33 +43,110 @@ struct Args {
 	format: Option<String>,
 }
 
-#[derive(thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 enum AppError {
-	#[error("Lexer error: {0}")]
 	Lexer(#[from] LexerError),
-	#[error("Parser error: {0}")]
 	Parser(#[from] ParserError),
-	#[error("Optimizer error: {0}")]
 	Optimizer(#[from] OptimizerError),
-	#[error("Compiler error: {0}")]
 	Compiler(#[from] CompilerError),
-	#[error("Bytecode error: {0}")]
 	Bytecode(#[from] BytecodeError),
-	#[error("VM error: {0}")]
 	VM(#[from] VMError),
-	#[error("IO error: {0}")]
 	IO(#[from] io::Error),
-	#[error("Fmt error: {0}")]
 	Fmt(#[from] fmt::Error),
-	#[error("Readline error: {0}")]
 	Readline(#[from] ReadlineError),
-	#[error("Empty code")]
-	EmptyCode,
 }
 
-impl Debug for AppError {
+impl Display for AppError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{self}")
+		match self {
+			Self::Lexer(e) => {
+				write!(f, "Tokenizing error: {e}")
+			}
+			Self::Parser(e) => {
+				write!(f, "Parsing error: {e}")
+			}
+			Self::Optimizer(e) => {
+				write!(f, "Optimizing error: {e}")
+			}
+			Self::Compiler(e) => {
+				write!(f, "Compiler error: {e}")
+			}
+			Self::Bytecode(e) => {
+				write!(f, "Assembling error: {e}")
+			}
+			Self::VM(e) => {
+				write!(f, "VM error: {e}")
+			}
+			Self::IO(e) => {
+				write!(f, "IO error: {e}")
+			}
+			Self::Fmt(e) => {
+				write!(f, "Fmt error: {e}")
+			}
+			Self::Readline(e) => {
+				write!(f, "Readline error: {e}")
+			}
+		}
+	}
+}
+
+fn format(e: &AppError, spans: &[(usize, usize)]) -> String {
+	match e {
+		AppError::Lexer(e) => {
+			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
+
+			format!("line {} at {}: Tokenizing error: {e}", row + 1, column + 1)
+		}
+		AppError::Parser(e) => {
+			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
+
+			format!("line {} at {}: Parsing error: {e}", row + 1, column + 1)
+		}
+		AppError::Optimizer(e) => {
+			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
+
+			format!("line {} at {}: Optimizing error: {e}", row + 1, column + 1)
+		}
+		AppError::Compiler(e) => {
+			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
+
+			format!("line {} at {}: Compiler error: {e}", row + 1, column + 1)
+		}
+		AppError::Bytecode(e) => {
+			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
+
+			// format!("line {} at {}: Assembling error: {e}", row + 1, column + 1)
+
+			format!("Assembling error: {e}")
+		}
+		AppError::VM(e) => {
+			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
+
+			// format!("line {} at {}: VM error: {e}", row + 1, column + 1)
+
+			format!("VM error: {e}")
+		}
+		AppError::IO(e) => {
+			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
+
+			// format!("line {} at {}: IO error: {e}", row + 1, column + 1)
+
+			format!("IO error: {e}")
+		}
+		AppError::Fmt(e) => {
+			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
+
+			// format!("line {} at {}: Fmt error: {e}", row + 1, column + 1)
+
+			format!("Fmt error: {e}")
+		}
+		AppError::Readline(e) => {
+			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
+
+			// format!("line {} at {}: Readline error: {e}", row + 1, column + 1)
+
+			format!("Readline error: {e}")
+		}
 	}
 }
 
@@ -164,10 +242,10 @@ fn run_file(file: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-fn format(code: &str) -> Result<(), AppError> {
+fn format_code(code: &str) -> Result<(), AppError> {
 	// println!("Tokenizing expr '{}'", code);
 
-	let mut spans: Vec<(usize, usize)> = Vec::new();
+	let mut spans = Vec::new();
 
 	let mut lexer = Lexer::new(&mut spans, code.chars());
 
@@ -206,44 +284,55 @@ fn format(code: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-fn compile(code: &str) -> Result<Vec<u8>, AppError> {
+type Span = Vec<(usize, usize)>;
+
+fn compile(code: &str) -> Result<Vec<u8>, (AppError, Span)> {
 	// println!("Tokenizing expr '{}'", code);
 
-	let mut spans: Vec<(usize, usize)> = Vec::new();
+	let mut spans = Vec::new();
 
 	let mut lexer = Lexer::new(&mut spans, code.chars());
 
-	let tokens = lexer.tokenize_loop()?;
+	let tokens = match lexer.tokenize_loop() {
+		Ok(res) => res,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
 
 	for token in &tokens {
 		println!("token = {token}");
 	}
 
-	for token in &tokens {
-		let mut res = String::new();
-		token.format(&spans, &mut res)?;
-
-		println!("token = {res}");
-	}
-
 	let mut parser = Parser::new(tokens);
 
-	let mut ast = parser.parse_instructions()?;
+	let mut ast = match parser.parse_instructions() {
+		Ok(res) => res,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
 
 	let mut ast_str = String::new();
 
-	ast.format_human_readable(&mut ast_str, false, 0)?;
+	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
+		return Err((e.into(), spans))
+	}
 
 	println!("ast = {ast}");
 	println!("ast = {ast_str}");
 
 	let mut optimizer = Optimizer::new();
 
-	optimizer.fold(&mut ast)?;
+	if let Err(e) = optimizer.fold(&mut ast) {
+		return Err((e.into(), spans))
+	}
 
 	ast_str.clear();
 
-	ast.format_human_readable(&mut ast_str, false, 0)?;
+	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
+		return Err((e.into(), spans))
+	}
 
 	println!("ast after optimizer = {ast_str}");
 
@@ -255,13 +344,20 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 
 	let mut bytes = Vec::new();
 
-	compiler.compile_loop(&ast, &mut bytes)?;
+	if let Err(e) = compiler.compile_loop(&ast, &mut bytes) {
+		return Err((e.into(), spans))
+	}
 
 	for (i, byte) in bytes.iter().enumerate() {
 		println!("{i:02}: {byte}");
 	}
 
-	let bytes = Bytecode::asm(bytes)?;
+	let bytes = match Bytecode::asm(bytes) {
+		Ok(res) => res,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
 
 	Ok(bytes)
 }
@@ -269,7 +365,7 @@ fn compile(code: &str) -> Result<Vec<u8>, AppError> {
 fn format_file(file: &str) -> Result<(), AppError> {
 	let code = std::fs::read_to_string(file)?;
 
-	format(&code)
+	format_code(&code)
 }
 
 fn compile_file(file: &str) -> Result<(), AppError> {
@@ -279,7 +375,14 @@ fn compile_file(file: &str) -> Result<(), AppError> {
 
 	out_file.set_extension("out");
 
-	let bytes = compile(&code)?;
+	let bytes = match compile(&code) {
+		Ok(res) => res,
+		Err((e, spans)) => {
+			println!("{}", format(&e, &spans));
+
+			return Err(e)
+		}
+	};
 
 	let mut file = std::fs::File::create(out_file)?;
 
@@ -315,9 +418,7 @@ fn main() -> ExitCode {
 
 	let res = app(args);
 
-	if let Err(e) = res {
-		eprintln!("{e}");
-
+	if res.is_err() {
 		return ExitCode::FAILURE
 	}
 

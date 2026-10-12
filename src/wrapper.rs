@@ -1,5 +1,5 @@
 use std::fmt::Write;
-use crate::{lexer::{LexerErrorRaw, RawToken}, optimizer::RawOptimizerError, parser::{RawASTNode, RawParserError}, uni_type::{RawUniResult, RawUniResultError}};
+use crate::{compiler::RawCompilerError, lexer::{RawLexerError, RawToken}, optimizer::RawOptimizerError, parser::{RawASTNode, RawParserError}, uni_type::{RawUniResult, RawUniResultError}};
 use std::fmt;
 
 pub trait PosWrapper {
@@ -7,7 +7,7 @@ pub trait PosWrapper {
 }
 
 macro_rules! gen_wrapper_for {
-	($type:ident, $wrapper:ident) => {
+	($type:ty, $wrapper:ident) => {
 		#[derive(Debug, Clone)]
 		pub struct $wrapper {
 			pub span: usize,
@@ -52,6 +52,7 @@ macro_rules! gen_wrapper_for {
 
 				self
 			}
+
 			pub fn with_pos_from<W>(mut self, from: &W) -> Self where W: PosWrapper {
 				self.span = from.get_pos();
 
@@ -59,7 +60,7 @@ macro_rules! gen_wrapper_for {
 			}
 
 			pub fn format(&self, spans: &[(usize, usize)], f: &mut String) -> fmt::Result {
-				let (row, column) = spans.get(self.span).unwrap();
+				let (row, column) = spans.get(self.span).expect(&format!("invalid span present {}", self.span));
 
 				write!(f, "line {} at {}: {}", row + 1, column + 1, self.val)
 			}
@@ -109,14 +110,47 @@ macro_rules! wmatch {
 	};
 }
 
-gen_wrapper_for!(LexerErrorRaw, LexerError);
-gen_wrapper_for!(RawParserError, ParserError);
-gen_wrapper_for!(RawOptimizerError, OptimizerError);
-gen_wrapper_for!(RawUniResultError, UniResultError);
+macro_rules! gen_wrappers_for {
+	( $($raw:ty => $wrapped:ident),* $(,)*) => {
+		$(
+			gen_wrapper_for!($raw, $wrapped);
+		)*
+	};
+}
 
-gen_wrapper_for!(RawToken, Token);
-gen_wrapper_for!(RawASTNode, ASTNode);
-gen_wrapper_for!(RawUniResult, UniResult);
+// map_err(|e| OptimizerError::from(RawOptimizerError::from(e.val))
+
+macro_rules! wrapper_connect {
+	( $( $from_wrapped:ident ($from_raw:ty) => $to_wrapped:ident ($to_raw:ty) ),* $(,)* ) => {
+  		$(
+	  		impl From<$from_wrapped> for $to_wrapped {
+				fn from(from: $from_wrapped) -> $to_wrapped {
+					let span = from.span;
+
+					<$to_wrapped>::from(
+						<$to_raw>::from(from.val)
+					).with_pos(span)
+				}
+			}
+    	)*
+    };
+}
+
+gen_wrappers_for!(
+	RawLexerError 		=> LexerError,
+	RawParserError 		=> ParserError,
+	RawOptimizerError 	=> OptimizerError,
+	RawCompilerError 	=> CompilerError,
+	RawUniResultError 	=> UniResultError,
+
+	RawToken 			=> Token,
+	RawASTNode 			=> ASTNode,
+	RawUniResult 		=> UniResult,
+);
+
+wrapper_connect!(
+	UniResultError(RawUniResultError) => OptimizerError(RawOptimizerError),
+);
 
 impl Default for ASTNode {
 	fn default() -> Self {

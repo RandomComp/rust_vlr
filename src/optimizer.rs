@@ -7,7 +7,7 @@ use crate::wrapper::{ASTNode, OptimizerError, UniResult, UniResultError};
 #[derive(thiserror::Error, Clone, PartialEq, Debug)]
 pub enum RawOptimizerError {
 	#[error("{0}")]
-	UniResultError(#[from] UniResultError),
+	UniResultError(#[from] RawUniResultError),
 	// #[error("'{0}' variable is not known in current scope")]
 	// NotKnownAtThisScope(String),
 }
@@ -212,7 +212,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Minus).unwrap().try_into().unwrap();
+				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Minus)?.try_into()?;
 			},
 			RawASTNode::Unary { op: UnaryOp::Not, value } => {
 				self.fold(value)?;
@@ -221,7 +221,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Not).unwrap().try_into().unwrap();
+				*ast = RawUniResult::calc_unary_by_op(&value, &UnaryOp::Not)?.try_into()?;
 			},
 			RawASTNode::Binary { left, op, right } => {
 				let left_is_err = self.fold(left).is_err();
@@ -248,7 +248,7 @@ impl Optimizer {
 						UniResultError { val: RawUniResultError::UnsupportedOperation(..), .. }
 					) => return Ok(()),
 					Ok(Err(e)) |
-					Err(e) => return Err(RawOptimizerError::from(e).into()),
+					Err(e) => return Err(RawOptimizerError::from(e.val).into()),
 				};
 			},
 			RawASTNode::Tuple(values) => {
