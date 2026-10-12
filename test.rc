@@ -1,7 +1,1 @@
-def func() {
-	x = "123" < "456";
-
-	print(x);
-}
-
-func();
+"hello!";

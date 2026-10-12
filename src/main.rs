@@ -352,6 +352,12 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Span)> {
 		}
 	};
 
+	for byte in &bytes {
+		print!("{byte:02X} ");
+	}
+
+	println!();
+
 	Ok(bytes)
 }
 
