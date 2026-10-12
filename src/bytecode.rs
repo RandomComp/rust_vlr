@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{compiler::{NativeFunctionID, NativeFunctionIDError}, parser::{BinaryOp, UnaryOp}};
+use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Bytecode {

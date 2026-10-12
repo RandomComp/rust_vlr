@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::parser::RawASTNode;
+use crate::compiler::parser::RawASTNode;
 
 impl std::fmt::Display for RawASTNode {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

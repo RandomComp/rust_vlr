@@ -14,20 +14,16 @@ use std::{fmt, io::self, process};
 
 use rustyline::{DefaultEditor, error::ReadlineError::self};
 
+mod native_func;
 mod wrapper;
-mod lexer;
-mod parser;
-mod formatter;
-mod optimizer;
 mod uni_type;
 mod bytecode;
 mod compiler;
 mod vm;
 
-use crate::lexer::Lexer;
-use crate::parser::Parser;
-use crate::optimizer::Optimizer;
-use crate::compiler::Compiler;
+use crate::compiler::lexer::Lexer;
+use crate::compiler::parser::Parser;
+use crate::compiler::{Compiler, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
 use crate::wrapper::{CompilerError, LexerError, OptimizerError, ParserError};

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem};
 
-use crate::parser::{BinaryOp, RawASTNode, UnaryOp};
+use crate::compiler::parser::{BinaryOp, RawASTNode, UnaryOp};
 use crate::uni_type::{RawUniResult, RawUniResultError};
 use crate::wrapper::{ASTNode, OptimizerError, UniResult, UniResultError};
 

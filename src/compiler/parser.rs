@@ -1,8 +1,10 @@
- use crate::{res_with_pos, wmatch, wrapper::ASTNode};
+mod formatter;
+
+use crate::{res_with_pos, wmatch, wrapper::ASTNode};
 
 use std::{collections::VecDeque, fmt::{self, Write}, mem};
 
-use crate::{lexer::RawToken, val_with_pos, wrapper::{ParserError, Token}};
+use crate::{compiler::lexer::RawToken, val_with_pos, wrapper::{ParserError, Token}};
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum RawParserError {

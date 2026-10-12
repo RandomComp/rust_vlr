@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::zip};
 
-use crate::{parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
+use crate::{compiler::parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RawUniResultError {
@@ -414,6 +414,8 @@ impl RawUniResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a < b)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a < b)),
 			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
@@ -451,6 +453,8 @@ impl RawUniResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a > b)),
+			(Self::String(a), Self::String(b))
+				=> Ok(Self::Boolean(a < b)),
 			(Self::Tuple(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 

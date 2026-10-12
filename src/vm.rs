@@ -3,7 +3,7 @@ use std::string::FromUtf8Error;
 // use std::time::Duration;
 
 use crate::bytecode::Bytecode;
-use crate::compiler::{NativeFunctionID};
+use crate::native_func::NativeFunctionID;
 use crate::uni_type::{RawUniResult, RawUniResultError};
 use crate::wrapper::UniResultError;
 

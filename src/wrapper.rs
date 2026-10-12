@@ -1,5 +1,5 @@
 use std::fmt::Write;
-use crate::{compiler::RawCompilerError, lexer::{RawLexerError, RawToken}, optimizer::RawOptimizerError, parser::{RawASTNode, RawParserError}, uni_type::{RawUniResult, RawUniResultError}};
+use crate::{compiler::RawCompilerError, compiler::lexer::{RawLexerError, RawToken}, compiler::optimizer::RawOptimizerError, compiler::parser::{RawASTNode, RawParserError}, uni_type::{RawUniResult, RawUniResultError}};
 use std::fmt;
 
 pub trait PosWrapper {
