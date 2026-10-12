@@ -4,7 +4,7 @@ pub mod optimizer;
 
 use crate::native_func::NativeFunctionID;
 
-use std::{collections::HashMap, fmt::Display, iter};
+use std::{collections::HashMap, iter};
 
 use crate::{bytecode::Bytecode, compiler::parser::{BinaryOp::self, RawASTNode, UnaryOp}, wrapper::{ASTNode, CompilerError}};
 

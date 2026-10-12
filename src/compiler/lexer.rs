@@ -395,6 +395,17 @@ impl<'a> Lexer<'a> {
 		res_with_pos!(result, Token, LexerError, span)
 	}
 
+	/// Парсит текущий код из Lexer на токены
+	///
+	/// # Пример
+	/// ```
+	/// let mut spans = Vec::new();
+	/// let lexer = Lexer::new(&mut spans, "2 + 2 * 2".chars());
+	/// let result = lexer.tokenize_loop()?;
+	/// for token in &result {
+	///     println!("{token}");
+	/// }
+	/// ```
 	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
 		let mut result: Vec<Token> = Vec::new();
 

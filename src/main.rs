@@ -1,9 +1,8 @@
 #![warn(clippy::pedantic)]
 // #![warn(clippy::restriction)]
 
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::missing_panics_doc)]
-#![allow(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_errors_doc)]
+// #![deny(clippy::missing_docs_in_private_items)]
 
 use std::fmt::{Debug, Display};
 use std::io::Write;
@@ -21,9 +20,7 @@ mod bytecode;
 mod compiler;
 mod vm;
 
-use crate::compiler::lexer::Lexer;
-use crate::compiler::parser::Parser;
-use crate::compiler::{Compiler, optimizer::Optimizer};
+use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
 use crate::wrapper::{CompilerError, LexerError, OptimizerError, ParserError};
