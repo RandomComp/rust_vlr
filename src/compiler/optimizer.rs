@@ -7,7 +7,9 @@ use crate::wrapper::{ASTNode, OptimizerError, UniResult, UniResultError};
 #[derive(thiserror::Error, Clone, PartialEq, Debug)]
 pub enum RawOptimizerError {
 	#[error("{0}")]
-	UniResultError(#[from] RawUniResultError),
+	UniResult(#[from] UniResultError),
+	#[error("{0}")]
+	RawUniResult(#[from] RawUniResultError),
 	// #[error("'{0}' variable is not known in current scope")]
 	// NotKnownAtThisScope(String),
 }
@@ -270,7 +272,7 @@ impl Optimizer {
 				let condition_folded: Result<UniResult, _> = (**condition).clone().try_into();
 
 				if let Ok(condition) = condition_folded {
-					if bool::from(condition.val) {
+					if bool::try_from(condition.val)? {
 						*ast = *body.clone();
 					} else {
 						ast.val = RawASTNode::None;
@@ -285,7 +287,7 @@ impl Optimizer {
 				self.fold(else_body)?;
 
 				if let Ok(condition) = condition_folded {
-					if bool::from(condition.val) {
+					if bool::try_from(condition.val)? {
 						*ast = *body.clone();
 					} else {
 						*ast = *else_body.clone();
@@ -301,7 +303,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				if !bool::from(condition.val) {
+				if !bool::try_from(condition.val)? {
 					ast.val = RawASTNode::None;
 				}
 			},
@@ -314,7 +316,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				if !bool::from(condition.val) {
+				if !bool::try_from(condition.val)? {
 					ast.val = RawASTNode::None;
 				}
 			},

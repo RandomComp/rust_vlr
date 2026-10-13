@@ -132,6 +132,14 @@ macro_rules! wrapper_connect {
 					).with_pos(span)
 				}
 			}
+
+	 		impl From<$from_raw> for $to_wrapped {
+				fn from(from: $from_raw) -> $to_wrapped {
+					<$to_wrapped>::from(
+						<$to_raw>::from(from)
+					)
+				}
+			}
     	)*
     };
 }

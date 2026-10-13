@@ -28,12 +28,12 @@ impl Display for NativeFunctionID {
 
 #[derive(Clone, Debug)]
 pub enum NativeFunctionArgsNumber {
-	Fixed(usize),
+	Fixed(u32),
 	Dynamic,
 }
 
-impl PartialEq<usize> for NativeFunctionArgsNumber {
-	fn eq(&self, other: &usize) -> bool {
+impl PartialEq<u32> for NativeFunctionArgsNumber {
+	fn eq(&self, other: &u32) -> bool {
 		match self {
 			NativeFunctionArgsNumber::Fixed(fixed) =>
 				fixed == other,
@@ -42,8 +42,8 @@ impl PartialEq<usize> for NativeFunctionArgsNumber {
 	}
 }
 
-impl PartialOrd<usize> for NativeFunctionArgsNumber {
-	fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+impl PartialOrd<u32> for NativeFunctionArgsNumber {
+	fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
 		match self {
 			NativeFunctionArgsNumber::Fixed(fixed) => {
 				Some(fixed.cmp(other))

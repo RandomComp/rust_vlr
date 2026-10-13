@@ -10,13 +10,15 @@ use crate::wrapper::UniResultError;
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum VMError {
 	#[error("{0}")]
-	UniResultError(#[from] UniResultError),
+	UniResult(#[from] UniResultError),
+	#[error("{0}")]
+	RawUniResult(#[from] RawUniResultError),
 	#[error("{0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
 	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
-	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: usize, expected: NativeFunctionArgsNumber },
+	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
@@ -45,7 +47,9 @@ impl VM {
 		RawUniResult::None
 	}
 	fn tuple(args: Vec<RawUniResult>) -> RawUniResult {
-		RawUniResult::Tuple(args.into_iter().map(Into::into).collect())
+		RawUniResult::Tuple(
+			args.into_iter().map(|v| v.clone().into()).collect()
+		)
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
 		if args.len() <= 2 {
@@ -60,7 +64,7 @@ impl VM {
 				Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
 			(&RawUniResult::Range { start, end, step: _ }, &RawUniResult::Float(step)) =>
 				Ok(RawUniResult::Range { start, end, step }),
-			_ => Err(VMError::UniResultError(RawUniResultError::IncompatibleOperationType.into()))
+			_ => Err(VMError::RawUniResult(RawUniResultError::IncompatibleOperationType))
 		}
 	}
 
@@ -71,21 +75,48 @@ impl VM {
 
 		let mut i = 0;
 
-		while expected >= i  {
-			let Some(value) = self.stack.pop() else {
-				return Err(
-					VMError::TooFewArgumentsForNativeFunctionCall {
-						id,
-						found: i,
-						expected
+		match expected {
+			NativeFunctionArgsNumber::Fixed(fixed) => {
+				while i < fixed  {
+					let Some(value) = self.stack.pop() else {
+						return Err(
+							VMError::ArgumentsNativeFunctionCall {
+								id,
+								found: i,
+								expected: fixed
+							}
+						)
+					};
+
+					args.push(value);
+
+					i += 1;
+				}
+			}
+			NativeFunctionArgsNumber::Dynamic => {
+				if let Some(fixed) = self.stack.pop().map(|v| u32::try_from(v)) {
+					let fixed = fixed?;
+
+					while i < fixed  {
+						let Some(value) = self.stack.pop() else {
+							return Err(
+								VMError::ArgumentsNativeFunctionCall {
+									id,
+									found: i,
+									expected: fixed
+								}
+							)
+						};
+
+						args.push(value);
+
+						i += 1;
 					}
-				)
-			};
-
-			args.push(value);
-
-			i += 1;
+				}
+			}
 		}
+
+		args.reverse();
 
 		match id {
 			NativeFunctionID::Print =>
@@ -161,14 +192,14 @@ impl VM {
 				self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
 			},
 			&Bytecode::Jif(dest_pc) => {
-				if !bool::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?) {
+				if !bool::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
 				}
 			},
 			&Bytecode::Jit(dest_pc) => {
-				if bool::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?) {
+				if bool::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
@@ -187,7 +218,7 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::Subprogram => {
-				let pc = u32::from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?);
+				let pc = u32::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)?;
 
 				self.ret_stack.push(pc);
 			},

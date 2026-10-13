@@ -2,7 +2,7 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::native_func::NativeFunctionID;
+use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 
 use std::{collections::HashMap, iter};
 
@@ -12,6 +12,8 @@ use crate::{bytecode::Bytecode, compiler::parser::{BinaryOp::self, RawASTNode, U
 pub enum RawCompilerError {
 	#[error("Unknown function '{0}' call")]
 	UnknownFunctionCall(String),
+	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
+	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
 	#[error("'{0}' variable is not known in current scope")]
 	NotKnownAtThisScope(String),
 	#[error("L-value of assignment should be variable name, not '{0}'")]
@@ -90,7 +92,7 @@ impl Compiler {
 	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError>
 	where T: DoubleEndedIterator<Item=&'a ASTNode> {
 		if let Ok(id) = NativeFunctionID::try_from(name) {
-			let mut len = 0;
+			let mut len: u32 = 0;
 
 			for arg in args {
 				self.compile(arg, result, context)?;
@@ -98,7 +100,20 @@ impl Compiler {
 				len += 1;
 			}
 
-			result.push(Bytecode::PushNumberU32(len));
+			match id.args() {
+				NativeFunctionArgsNumber::Fixed(fixed) => {
+					if len != fixed {
+						return Err(
+							RawCompilerError::ArgumentsNativeFunctionCall {
+								id,
+								found: len,
+								expected: fixed
+							}
+						)
+					}
+				}
+				NativeFunctionArgsNumber::Dynamic => result.push(Bytecode::PushNumberU32(len)),
+			}
 
 			result.push(Bytecode::NativeCall(id));
 			self.stack -= len;

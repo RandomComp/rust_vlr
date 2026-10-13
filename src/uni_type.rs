@@ -8,6 +8,8 @@ pub enum RawUniResultError {
 	IncompatibleOperationType,
 	#[error("Use '{0}' on tuple is ambigous, use all() or any() instead")]
 	LogicalOperationOnTupleAmbigous(BinaryOp),
+	#[error("Using 'into' on incompatible type {0:?}")]
+	UsingIntoOnIncompatibleType(RawUniResult),
 	#[error("Unsupported operation '{0}'")]
 	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
@@ -582,52 +584,62 @@ impl From<Vec<UniResult>> for RawUniResult {
 	}
 }
 
-impl From<RawUniResult> for bool {
-	fn from(value: RawUniResult) -> bool {
+impl TryFrom<RawUniResult> for bool {
+	type Error = RawUniResultError;
+
+	fn try_from(value: RawUniResult) -> Result<bool, Self::Error> {
 		let RawUniResult::Boolean(x) = value else {
-			panic!("Using 'into' on incompatible type {value:?}")
+			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
 		};
 
-		x
+		Ok(x)
 	}
 }
 
-impl From<RawUniResult> for u32 {
-	fn from(value: RawUniResult) -> u32 {
+impl TryFrom<RawUniResult> for u32 {
+	type Error = RawUniResultError;
+
+	fn try_from(value: RawUniResult) -> Result<u32, Self::Error> {
 		let RawUniResult::NumberU32(x) = value else {
-			panic!("Using 'into' on incompatible type {value:?}")
+			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
 		};
 
-		x
+		Ok(x)
 	}
 }
 
-impl From<RawUniResult> for f64 {
-	fn from(value: RawUniResult) -> f64 {
+impl TryFrom<RawUniResult> for f64 {
+	type Error = RawUniResultError;
+
+	fn try_from(value: RawUniResult) -> Result<f64, Self::Error> {
 		let RawUniResult::Float(x) = value else {
-			panic!("Using 'into' on incompatible type {value:?}")
+			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
 		};
 
-		x
+		Ok(x)
 	}
 }
 
-impl From<RawUniResult> for String {
-	fn from(value: RawUniResult) -> String {
+impl TryFrom<RawUniResult> for String {
+	type Error = RawUniResultError;
+
+	fn try_from(value: RawUniResult) -> Result<String, Self::Error> {
 		let RawUniResult::String(x) = value else {
-			panic!("Using 'into' on incompatible type {value:?}")
+			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
 		};
 
-		x
+		Ok(x)
 	}
 }
 
-impl From<RawUniResult> for Vec<UniResult> {
-	fn from(value: RawUniResult) -> Vec<UniResult> {
+impl TryFrom<RawUniResult> for Vec<UniResult> {
+	type Error = RawUniResultError;
+
+	fn try_from(value: RawUniResult) -> Result<Vec<UniResult>, Self::Error> {
 		let RawUniResult::Tuple(x) = value else {
-			panic!("Using 'into' on incompatible type {value:?}")
+			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
 		};
 
-		x
+		Ok(x)
 	}
 }
