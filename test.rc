@@ -1,5 +1,1 @@
-condition = 123 < 124;
-
-x = 10 + (if condition { 5 } else { 20 });
-
-print(x)
+print("Hello, world!")

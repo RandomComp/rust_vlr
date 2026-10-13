@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{cmp::Ordering, fmt::Display};
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 #[repr(u8)]
@@ -26,6 +26,44 @@ impl Display for NativeFunctionID {
 	}
 }
 
+#[derive(Clone, Debug)]
+pub enum NativeFunctionArgsNumber {
+	Fixed(usize),
+	Dynamic,
+}
+
+impl PartialEq<usize> for NativeFunctionArgsNumber {
+	fn eq(&self, other: &usize) -> bool {
+		match self {
+			NativeFunctionArgsNumber::Fixed(fixed) =>
+				fixed == other,
+			NativeFunctionArgsNumber::Dynamic => false,
+		}
+	}
+}
+
+impl PartialOrd<usize> for NativeFunctionArgsNumber {
+	fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+		match self {
+			NativeFunctionArgsNumber::Fixed(fixed) => {
+				Some(fixed.cmp(other))
+			},
+			NativeFunctionArgsNumber::Dynamic => Some(Ordering::Greater),
+		}
+	}
+}
+
+impl Display for NativeFunctionArgsNumber {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			NativeFunctionArgsNumber::Fixed(fixed) =>
+				write!(f, "{fixed}"),
+			NativeFunctionArgsNumber::Dynamic =>
+				write!(f, "dynamic"),
+		}
+	}
+}
+
 impl NativeFunctionID {
 	pub fn to_le_bytes(self) -> [u8; 1] {
 		(self as u8).to_le_bytes()
@@ -39,11 +77,11 @@ impl NativeFunctionID {
 		}
 	}
 
-	pub fn args(self) -> usize {
+	pub fn args(self) -> NativeFunctionArgsNumber {
 		match self {
-			NativeFunctionID::Print => 1,
-			NativeFunctionID::Tuple => 2,
-			NativeFunctionID::Range => 3,
+			NativeFunctionID::Print => NativeFunctionArgsNumber::Dynamic,
+			NativeFunctionID::Tuple => NativeFunctionArgsNumber::Dynamic,
+			NativeFunctionID::Range => NativeFunctionArgsNumber::Fixed(3),
 		}
 	}
 }

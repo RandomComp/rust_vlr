@@ -3,7 +3,7 @@ use std::string::FromUtf8Error;
 // use std::time::Duration;
 
 use crate::bytecode::Bytecode;
-use crate::native_func::NativeFunctionID;
+use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::uni_type::{RawUniResult, RawUniResultError};
 use crate::wrapper::UniResultError;
 
@@ -15,8 +15,8 @@ pub enum VMError {
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
-	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
-	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: usize, expected: usize },
+	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
+	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: usize, expected: NativeFunctionArgsNumber },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
@@ -49,7 +49,7 @@ impl VM {
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
 		if args.len() <= 2 {
-			return Err(VMError::TooFewArgumentsForNativeFunctionCall { id: NativeFunctionID::Range, found: 1, expected: 2 })
+			unreachable!("invalid native function range call");
 		}
 
 		let start = &args[0];
@@ -71,12 +71,8 @@ impl VM {
 
 		let mut i = 0;
 
-		while i < expected {
-			if let Some(value) = self.stack.pop() {
-				args.push(value);
-
-				i += 1;
-			} else {
+		while expected >= i  {
+			let Some(value) = self.stack.pop() else {
 				return Err(
 					VMError::TooFewArgumentsForNativeFunctionCall {
 						id,
@@ -84,7 +80,11 @@ impl VM {
 						expected
 					}
 				)
-			}
+			};
+
+			args.push(value);
+
+			i += 1;
 		}
 
 		match id {
