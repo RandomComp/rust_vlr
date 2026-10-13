@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, string::FromUtf8Error};
 
 use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
 
@@ -6,7 +6,9 @@ use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::pa
 pub enum Bytecode {
 	/// Do nothing
 	Halt,
-	/// Pushes number
+	/// Pushes u32 number
+	PushNumberU32(u32),
+	/// Pushes float number
 	PushFloat(f64),
 	/// Pushes string to stack
 	PushString(String),
@@ -73,6 +75,8 @@ impl Display for Bytecode {
 				write!(f, "hlt"),
 			Bytecode::PushBoolean(v) =>
 				write!(f, "push {v}"),
+			Bytecode::PushNumberU32(val) =>
+				write!(f, "push {val}"),
 			Bytecode::PushFloat(val) =>
 				write!(f, "push {val}"),
 			Bytecode::PushString(text) =>
@@ -135,6 +139,8 @@ pub enum BytecodeError {
 	},
 	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
 	StringTooLong,
+	#[error("String have invalid UTF-8 invalid sequence: ")]
+	StringHasInvalidUTF8Sequence(#[from] FromUtf8Error),
 	#[error("{0}")]
 	NativeFunctionID(#[from] NativeFunctionIDError),
 }
@@ -148,6 +154,7 @@ impl Bytecode {
 	pub const LOOK: u8 = 0x05; // Copy value from N
 	pub const LOAD: u8 = 0x06; // Copy value to N
 	pub const REMOVE: u8 = 0x07; // Remove value
+	pub const PUSH_NUMBER_U32: u8 = 0x08; // Pushes number
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
@@ -194,9 +201,12 @@ impl Bytecode {
 		Some(result)
 	}
 
+	// TODO: use macro_rules! for automatically generate functions for assembling, disassembling and representation
+
 	fn get_opcode(&self) -> u8 {
 		match self {
 			Self::Halt 					=> Self::HLT, // Halt VM
+			Self::PushNumberU32(..) 	=> Self::PUSH_NUMBER_U32, // Pushes number
 			Self::PushFloat(..) 		=> Self::PUSH_FLOAT, // Pushes number
 			Self::PushString(..) 		=> Self::PUSH_STRING, // Pushes string to stack
 			Self::PushBoolean(false) 	=> Self::PUSH_FALSE, // Pushes false to stack
@@ -231,6 +241,9 @@ impl Bytecode {
 		result.push(value.get_opcode());
 
 		match value {
+			Self::PushNumberU32(x) => {
+				result.extend(x.to_le_bytes());
+			}, // Pushes number
 			Self::PushFloat(x) => {
 				result.extend(x.to_le_bytes());
 			}, // Pushes number
@@ -278,6 +291,11 @@ impl Bytecode {
 
 		let result = match opcode {
 			Self::HLT | Self::HLT_FF => Self::Halt, // Do nothing
+			Self::PUSH_NUMBER_U32 => { // Pushes number
+				let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+				Self::PushNumberU32(value)
+			},
 			Self::PUSH_FLOAT => { // Pushes number
 				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes)?);
 
@@ -288,7 +306,7 @@ impl Bytecode {
 
 				let utf8 = bytes.take(u32_len as usize).collect();
 
-				let text = String::from_utf8(utf8).unwrap();
+				let text = String::from_utf8(utf8)?;
 
 				Self::PushString(text)
 			},
@@ -345,7 +363,7 @@ impl Bytecode {
 			Self::NOT 			=> Self::Not, // Logical not
 			Self::LOGICAL_AND 	=> Self::LogicalAnd, // Logical AND
 			Self::LOGICAL_OR 	=> Self::LogicalOr, // Logical OR
-			x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }),
+			x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
 		};
 
 		Ok(Some(result))

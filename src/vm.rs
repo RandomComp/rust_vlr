@@ -16,7 +16,7 @@ pub enum VMError {
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
 	#[error("Too few arguments for native function with id {id} call, expected {expected}, found {found}")]
-	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: u8, expected: u8 },
+	TooFewArgumentsForNativeFunctionCall {id: NativeFunctionID, found: usize, expected: usize },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
@@ -35,7 +35,7 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn print(args: Vec<RawUniResult>) -> RawUniResult {
+	fn print(args: &[RawUniResult]) -> RawUniResult {
 		for arg in args {
 			print!("{arg} ");
 		}
@@ -67,18 +67,33 @@ impl VM {
 	fn call_native(&mut self, id: NativeFunctionID) -> Result<RawUniResult, VMError> {
 		let mut args = Vec::new();
 
+		let expected = id.args();
+
 		let mut i = 0;
 
-		while let Some(value) = self.stack.pop() && i < id.args() {
-			args.push(value);
+		while i < expected {
+			if let Some(value) = self.stack.pop() {
+				args.push(value);
 
-			i += 1;
+				i += 1;
+			} else {
+				return Err(
+					VMError::TooFewArgumentsForNativeFunctionCall {
+						id,
+						found: i,
+						expected
+					}
+				)
+			}
 		}
 
 		match id {
-			NativeFunctionID::Print => Ok(Self::print(args)),
-			NativeFunctionID::Tuple => Ok(Self::tuple(args)),
-			NativeFunctionID::Range => Self::range(&args),
+			NativeFunctionID::Print =>
+				Ok(Self::print(&args)),
+			NativeFunctionID::Tuple =>
+				Ok(Self::tuple(args)),
+			NativeFunctionID::Range =>
+				Self::range(&args),
 		}
 	}
 
@@ -110,8 +125,12 @@ impl VM {
 		println!("{inst}");
 
 		match inst {
-			Bytecode::Halt => return Ok((false, false)),
+			Bytecode::Halt =>
+				return Ok((false, false)),
 			&Bytecode::PushBoolean(val) => {
+				self.stack.push(val.into());
+			},
+			&Bytecode::PushNumberU32(val) => {
 				self.stack.push(val.into());
 			},
 			&Bytecode::PushFloat(val) => {

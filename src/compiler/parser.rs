@@ -2,7 +2,7 @@ mod formatter;
 
 use crate::{res_with_pos, wmatch, wrapper::ASTNode};
 
-use std::{collections::VecDeque, fmt::{self, Write}, mem};
+use std::{fmt::{self, Write}, mem};
 
 use crate::{compiler::lexer::RawToken, val_with_pos, wrapper::{ParserError, Token}};
 
@@ -223,15 +223,17 @@ impl std::fmt::Display for UnaryOp {
 	}
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub enum RawASTNode {
+	#[default]
 	None,
+
 	Boolean(bool),
 	Float(f64),
 	String(String),
 	Tuple(Vec<ASTNode>),
 	Variable(String),
-	Block(VecDeque<ASTNode>),
+	Block(Vec<ASTNode>),
 	Break(Box<ASTNode>),
 	Return(Box<ASTNode>),
 	If {
@@ -262,12 +264,6 @@ pub enum RawASTNode {
 		args: Vec<String>,
 		body: Box<ASTNode>,
 	},
-}
-
-impl Default for RawASTNode {
-	fn default() -> Self {
-		RawASTNode::None
-	}
 }
 
 pub struct Parser {
@@ -342,20 +338,33 @@ impl Parser {
 	fn parse_block(&mut self) -> Result<ASTNode, ParserError> {
 		self.consume(&RawToken::LBrace)?;
 
-		self.parse_instructions()
+		let result = self.parse_instructions()?;
+
+		self.consume(&RawToken::RBrace)?;
+
+		Ok(result)
 	}
 
 	pub fn parse_instructions(&mut self) -> Result<ASTNode, ParserError> {
-		let mut result: VecDeque<ASTNode> = VecDeque::new();
+		let mut result: Vec<ASTNode> = Vec::new();
+
+		let mut i = 0;
+
+		self.skip(&RawToken::Semicolon);
 
 		while let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
-			self.skip(&RawToken::Semicolon);
+			if i > 0 {
+				self.consume(&RawToken::Semicolon)?;
+				self.skip(&RawToken::Semicolon);
+			}
 
-			result.push_back(
-				self.parse(BinaryOp::MAX_PRECEDENCE)?
-			);
+			i += 1;
 
-			self.consumes(&[RawToken::Semicolon, RawToken::RBrace])?;
+			if let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
+				result.push(
+					self.parse(BinaryOp::MAX_PRECEDENCE)?
+				);
+			}
 		}
 
 		if result.len() > 1 {
@@ -363,7 +372,7 @@ impl Parser {
 				RawASTNode::Block(result).into()
 			)
 		} else {
-			Ok(result.pop_front().unwrap_or(RawASTNode::None.into()))
+			Ok(result.pop().unwrap_or(RawASTNode::None.into()))
 		}
 	}
 
@@ -472,22 +481,20 @@ impl Parser {
 				let condition = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				match self.peek(0) {
-					Some(wmatch!(RawToken::Else)) => {
-						self.consume_next();
+				if let Some(wmatch!(RawToken::Else)) = self.peek(0) {
+					self.consume_next();
 
-						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+					let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-						Ok(
-							RawASTNode::If {
-								condition: Box::new(condition),
-								body: Box::new(block),
-								else_body: Some(Box::new(block_else))
-							}
-						)
-					}
-
-					_ => Ok(
+					Ok(
+						RawASTNode::If {
+							condition: Box::new(condition),
+							body: Box::new(block),
+							else_body: Some(Box::new(block_else))
+						}
+					)
+				} else {
+					Ok(
 						RawASTNode::If {
 							condition: Box::new(condition),
 							body: Box::new(block),
@@ -662,7 +669,9 @@ impl Parser {
 			}
 
 			(wmatch!(RawToken::LBrace), ..) => {
-				self.parse_block().map(|v| v.val)
+				let block = self.parse_block();
+
+				block.map(|v| v.val)
 			}
 
 			(wmatch!(RawToken::Word(word)), Some(wmatch!(RawToken::LPar))) => {

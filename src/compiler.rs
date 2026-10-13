@@ -98,8 +98,10 @@ impl Compiler {
 				len += 1;
 			}
 
+			result.push(Bytecode::PushNumberU32(len));
+
 			result.push(Bytecode::NativeCall(id));
-			self.stack -= len + 1;
+			self.stack -= len;
 		} else if let Some(pos) = context.get_function(name) {
 			for arg in args {
 				self.compile(arg, result, context)?;
@@ -207,24 +209,26 @@ impl Compiler {
 					CompilerError::from(e).with_pos(span)
 				)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::Assignment, right } => if let RawASTNode::Variable(name) = &left.val {
-				if let Some(stack_pos) = context.get_var(name) {
-					self.compile(right, result, context)?;
+			RawASTNode::Binary { left, op: BinaryOp::Assignment, right } => {
+				if let RawASTNode::Variable(name) = &left.val {
+					if let Some(stack_pos) = context.get_var(name) {
+						self.compile(right, result, context)?;
 
-					self.load(stack_pos, result);
+						self.load(stack_pos, result);
+					} else {
+						let stack_pos = self.stack;
+
+						self.compile(right, result, context)?;
+
+						context.insert_var(name.to_owned(), stack_pos);
+					}
 				} else {
-					let stack_pos = self.stack;
-
-					self.compile(right, result, context)?;
-
-					context.insert_var(name.to_owned(), stack_pos);
+					return Err(
+						CompilerError::from(
+							RawCompilerError::LeftExprShouldBeId(left.val.to_string())
+						).with_pos(span)
+					);
 				}
-			} else {
-				return Err(
-					CompilerError::from(
-						RawCompilerError::LeftExprShouldBeId(left.val.to_string())
-					).with_pos(span)
-				);
 			},
 			RawASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Add, result, context)?;

@@ -23,7 +23,7 @@ mod vm;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
-use crate::wrapper::{CompilerError, LexerError, OptimizerError, ParserError};
+use crate::wrapper::{LexerError, ParserError, OptimizerError, CompilerError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -65,7 +65,7 @@ impl Display for AppError {
 				write!(f, "Compiler error: {e}")
 			}
 			Self::Bytecode(e) => {
-				write!(f, "Assembling error: {e}")
+				write!(f, "Assembling/Dissasembling error: {e}")
 			}
 			Self::VM(e) => {
 				write!(f, "VM error: {e}")
@@ -110,7 +110,7 @@ fn format(e: &AppError, spans: &[(usize, usize)]) -> String {
 
 			// format!("line {} at {}: Assembling error: {e}", row + 1, column + 1)
 
-			format!("Assembling error: {e}")
+			format!("Assembling/Dissasembling error: {e}")
 		}
 		AppError::VM(e) => {
 			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
