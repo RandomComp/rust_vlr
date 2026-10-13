@@ -1,1 +1,6 @@
-print("Hello, world!", 123)
+x = {
+	print("Hello, world!", 123, 456);
+	123
+};
+
+print(123,"x = {x}",);

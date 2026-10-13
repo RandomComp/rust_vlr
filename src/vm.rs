@@ -37,18 +37,22 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn print(args: &[RawUniResult]) -> RawUniResult {
+	fn print(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
+		let mut buf = String::new();
+
 		for arg in args {
-			print!("{arg} ");
+			arg.format_to_str(&mut buf)?;
+
+			buf.push(' ');
 		}
 
-		println!();
+		println!("{buf}");
 
-		RawUniResult::None
+		Ok(RawUniResult::None)
 	}
 	fn tuple(args: Vec<RawUniResult>) -> RawUniResult {
 		RawUniResult::Tuple(
-			args.into_iter().map(|v| v.clone().into()).collect()
+			args.into_iter().map(Into::into).collect()
 		)
 	}
 	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
@@ -120,7 +124,7 @@ impl VM {
 
 		match id {
 			NativeFunctionID::Print =>
-				Ok(Self::print(&args)),
+				Ok(Self::print(&args)?),
 			NativeFunctionID::Tuple =>
 				Ok(Self::tuple(args)),
 			NativeFunctionID::Range =>

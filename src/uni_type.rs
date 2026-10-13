@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::zip};
+use std::{fmt::{self, Display, Write}, iter::zip};
 
 use crate::{compiler::parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
 
@@ -94,7 +94,7 @@ impl TryFrom<ASTNode> for UniResult {
 }
 
 impl Display for RawUniResult {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::None => write!(f, "None"),
 			Self::Boolean(x) => write!(f, "{x}"),
@@ -122,6 +122,26 @@ impl Display for RawUniResult {
 }
 
 impl RawUniResult {
+	pub fn format_to_str(&self, f: &mut String) -> fmt::Result {
+		match self {
+			Self::String(x) => write!(f, "{x}"),
+			Self::Tuple(values) => {
+				write!(f, "(")?;
+
+				for (i, value) in values.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					value.format_to_str(f)?;
+				}
+
+				write!(f, ")")
+			},
+			_ => write!(f, "{self}"),
+		}
+	}
+
 	pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
 		let result = match op {
 			BinaryOp::Plus 			=> Self::add(left, right),

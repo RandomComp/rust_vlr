@@ -10,9 +10,9 @@ use crate::{compiler::lexer::RawToken, val_with_pos, wrapper::{ParserError, Toke
 pub enum RawParserError {
 	// #[error("line {row} at {column}: invalid syntax")]
 	// InvalidSyntax {row: usize, column: usize},
-	#[error("expected {kind} token, found {found}")]
+	#[error("expected '{kind}' token, found '{found}'")]
 	ExpectedToken {kind: RawToken, found: RawToken},
-	#[error("expected {} token, found {found}", Self::get_tokens_fmt(types)?)]
+	#[error("expected '{}' token, found '{found}'", Self::get_tokens_fmt(types)?)]
 	ExpectedTokens {types: &'static [RawToken], found: RawToken},
 	#[error("token {token_type} unexpected")]
 	UnexpectedToken {token_type: RawToken},
@@ -381,32 +381,23 @@ impl Parser {
 
 		let mut result: Vec<ASTNode> = Vec::new();
 
-		loop {
-			if let Some(kind) = self.peek(0) && kind == &RawToken::RPar {
-				self.consume(&RawToken::RPar)?;
+		let mut i = 0;
 
-				return Ok(RawASTNode::Tuple(result).into());
+		while let Some(kind) = self.peek(0) && *kind != RawToken::RPar {
+			if i > 0 {
+				self.consume(&RawToken::Comma)?;
 			}
 
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-			match self.peek(0) {
-				Some(wmatch!(RawToken::Comma)) => {
-					result.push(value);
+			result.push(value);
 
-					self.consume_next();
-				},
-				Some(wmatch!(RawToken::RPar)) if result.is_empty() => {
-					self.consume(&RawToken::RPar)?;
-
-					return Ok(value)
-				},
-				Some(_) => {
-					result.push(value);
-				},
-				None => {},
-			}
+			i += 1;
 		}
+
+		self.consume(&RawToken::RPar)?;
+
+		Ok(RawASTNode::Tuple(result).into())
 	}
 
 	// fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
