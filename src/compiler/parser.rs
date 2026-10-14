@@ -356,22 +356,23 @@ impl Parser {
 	pub fn parse_instructions(&mut self) -> Result<ASTNode, ParserError> {
 		let mut result: Vec<ASTNode> = Vec::new();
 
-		let mut i = 0;
+		loop {
+			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-		self.skip(&RawToken::Semicolon);
+			result.push(value);
 
-		while let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
-			if i > 0 {
-				self.consume(RawToken::Semicolon)?;
-				self.skip(&RawToken::Semicolon);
+			let cur = self.peek(0);
+
+			if let Some(kind) = cur && *kind != RawToken::Semicolon {
+				break
+			} else if cur.is_none() {
+				break
 			}
 
-			i += 1;
+			self.consume(RawToken::Semicolon)?;
 
-			if let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
-				result.push(
-					self.parse(BinaryOp::MAX_PRECEDENCE)?
-				);
+			if let Some(kind) = self.peek(0) && *kind == RawToken::Eof {
+				break
 			}
 		}
 
