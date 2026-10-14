@@ -231,7 +231,7 @@ pub enum RawASTNode {
 	Boolean(bool),
 	Float(f64),
 	String(String),
-	Tuple(Vec<ASTNode>),
+	List(Vec<ASTNode>),
 	Variable(String),
 	Block(Vec<ASTNode>),
 	Break(Box<ASTNode>),
@@ -257,7 +257,7 @@ pub enum RawASTNode {
 	},
 	Function {
 		name: String,
-		arg: Box<ASTNode>,
+		args: Vec<ASTNode>,
 	},
 	FunctionDefinition {
 		name: Option<String>,
@@ -294,15 +294,23 @@ impl Parser {
 		result
 	}
 
-	fn consume(&mut self, expected_token_type: &RawToken) -> Result<(), RawParserError> {
+	fn consume(&mut self, expected_token_type: RawToken) -> Result<(), ParserError> {
 		match self.peek(0) {
-			Some(kind) if kind == expected_token_type => {
+			Some(kind) if *kind == expected_token_type => {
 				self.consume_next();
 
 				Ok(())
 			},
 			Some(kind) => {
-				Err(RawParserError::ExpectedToken { kind: expected_token_type.clone(), found: kind.val.clone() })
+				Err(
+					ParserError {
+						span: kind.span,
+						val: RawParserError::ExpectedToken {
+							kind: expected_token_type,
+							found: kind.val.clone()
+						}
+					}
+				)
 			},
 			None => unreachable!("EOF missing or logical error"),
 		}
@@ -336,11 +344,11 @@ impl Parser {
 	}
 
 	fn parse_block(&mut self) -> Result<ASTNode, ParserError> {
-		self.consume(&RawToken::LBrace)?;
+		self.consume(RawToken::LBrace)?;
 
 		let result = self.parse_instructions()?;
 
-		self.consume(&RawToken::RBrace)?;
+		self.consume(RawToken::RBrace)?;
 
 		Ok(result)
 	}
@@ -354,7 +362,7 @@ impl Parser {
 
 		while let Some(cur) = self.peek(0) && !matches!(&**cur, RawToken::RBrace | RawToken::Eof) {
 			if i > 0 {
-				self.consume(&RawToken::Semicolon)?;
+				self.consume(RawToken::Semicolon)?;
 				self.skip(&RawToken::Semicolon);
 			}
 
@@ -376,16 +384,14 @@ impl Parser {
 		}
 	}
 
-	fn parse_tuple(&mut self) -> Result<ASTNode, ParserError> {
-		self.consume(&RawToken::LPar)?;
-
+	fn parse_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		let mut i = 0;
 
 		while let Some(kind) = self.peek(0) && *kind != RawToken::RPar {
 			if i > 0 {
-				self.consume(&RawToken::Comma)?;
+				self.consume(RawToken::Comma)?;
 			}
 
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
@@ -395,9 +401,33 @@ impl Parser {
 			i += 1;
 		}
 
-		self.consume(&RawToken::RPar)?;
+		Ok(result)
+	}
 
-		Ok(RawASTNode::Tuple(result).into())
+	fn parse_tuple_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
+		self.consume(RawToken::LPar)?;
+
+		let result = self.parse_elements()?;
+
+		self.consume(RawToken::RPar)?;
+
+		Ok(result)
+	}
+
+	fn parse_list_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
+		self.consume(RawToken::LBracket)?;
+
+		let result = self.parse_elements()?;
+
+		self.consume(RawToken::RBracket)?;
+
+		Ok(result)
+	}
+
+	fn parse_list(&mut self) -> Result<ASTNode, ParserError> {
+		let result = self.parse_list_elements()?;
+
+		Ok(RawASTNode::List(result).into())
 	}
 
 	// fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
@@ -531,7 +561,7 @@ impl Parser {
 
 				self.consume_next();
 				self.consume_next();
-				self.consume(&RawToken::LPar)?;
+				self.consume(RawToken::LPar)?;
 
 				let mut args = Vec::new();
 
@@ -549,7 +579,7 @@ impl Parser {
 					}
 				}
 
-				self.consume(&RawToken::RPar)?;
+				self.consume(RawToken::RPar)?;
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
@@ -564,7 +594,7 @@ impl Parser {
 
 			(wmatch!(RawToken::Def), Some(wmatch!(RawToken::LPar))) => {
 				self.consume_next();
-				self.consume(&RawToken::LPar)?;
+				self.consume(RawToken::LPar)?;
 
 				let mut args = Vec::new();
 
@@ -582,7 +612,7 @@ impl Parser {
 					}
 				}
 
-				self.consume(&RawToken::RPar)?;
+				self.consume(RawToken::RPar)?;
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
@@ -656,7 +686,17 @@ impl Parser {
 			}
 
 			(wmatch!(RawToken::LPar), ..) => {
-				self.parse_tuple().map(|v| v.val)
+				self.consume_next();
+
+				let result = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+
+				self.consume(RawToken::RPar)?;
+
+				Ok(result.val)
+			}
+
+			(wmatch!(RawToken::LBracket), ..) => {
+				self.parse_list().map(|v| v.val)
 			}
 
 			(wmatch!(RawToken::LBrace), ..) => {
@@ -666,16 +706,16 @@ impl Parser {
 			}
 
 			(wmatch!(RawToken::Word(word)), Some(wmatch!(RawToken::LPar))) => {
-				let word = word.to_owned();
+				let name = word.to_owned();
 
 				self.consume_next();
 
-				let value = self.parse_tuple()?;
+				let args = self.parse_tuple_elements()?;
 
 				Ok(
 					RawASTNode::Function {
-						name: word,
-						arg: Box::new(value)
+						name,
+						args
 					}
 				)
 			}

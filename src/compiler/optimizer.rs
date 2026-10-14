@@ -253,13 +253,15 @@ impl Optimizer {
 					Err(e) => return Err(RawOptimizerError::from(e.val).into()),
 				};
 			},
-			RawASTNode::Tuple(values) => {
+			RawASTNode::List(values) => {
 				for value in values {
 					self.fold(value)?;
 				}
 			},
-			RawASTNode::Function { name: _, arg } => {
-				self.fold(arg)?;
+			RawASTNode::Function { name: _, args } => {
+				for arg in args {
+					self.fold(arg)?;
+				}
 			},
 			RawASTNode::FunctionDefinition { name: _, args: _, body } => {
 				self.fold(body)?;

@@ -90,9 +90,9 @@ impl Compiler {
 	}
 
 	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError>
-	where T: DoubleEndedIterator<Item=&'a ASTNode> {
+	where T: Iterator<Item=&'a ASTNode> {
 		if let Ok(id) = NativeFunctionID::try_from(name) {
-			let mut len: u32 = 0;
+			let mut len = 0;
 
 			for arg in args {
 				self.compile(arg, result, context)?;
@@ -112,6 +112,7 @@ impl Compiler {
 						)
 					}
 				}
+
 				NativeFunctionArgsNumber::Dynamic => result.push(Bytecode::PushNumberU32(len)),
 			}
 
@@ -214,8 +215,8 @@ impl Compiler {
 
 				result.push(Bytecode::PushString(x.clone()));
 			},
-			RawASTNode::Tuple(values) => if !values.is_empty() {
-				self.call_func("tuple", values.iter(), result, context).map_err(|e|
+			RawASTNode::List(values) => if !values.is_empty() {
+				self.call_func("list", values.iter(), result, context).map_err(|e|
 					CompilerError::from(e).with_pos(span)
 				)?;
 			},
@@ -299,11 +300,8 @@ impl Compiler {
 
 				result.extend(Bytecode::bytecodes_from_binary_op(op));
 			},
-			RawASTNode::Function { name, arg } if let RawASTNode::Tuple(values) = &arg.val => {
-				self.call_func(name, values.iter(), result, context)?;
-			},
-			RawASTNode::Function { name, arg } => {
-				self.call_func(name, iter::once(&**arg), result, context)?;
+			RawASTNode::Function { name, args } => {
+				self.call_func(name, args.iter(), result, context)?;
 			},
 			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
 				let cond = Self::pc(result);

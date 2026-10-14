@@ -50,8 +50,8 @@ impl VM {
 
 		Ok(RawUniResult::None)
 	}
-	fn tuple(args: Vec<RawUniResult>) -> RawUniResult {
-		RawUniResult::Tuple(
+	fn list(args: Vec<RawUniResult>) -> RawUniResult {
+		RawUniResult::List(
 			args.into_iter().map(Into::into).collect()
 		)
 	}
@@ -125,8 +125,8 @@ impl VM {
 		match id {
 			NativeFunctionID::Print =>
 				Ok(Self::print(&args)?),
-			NativeFunctionID::Tuple =>
-				Ok(Self::tuple(args)),
+			NativeFunctionID::List =>
+				Ok(Self::list(args)),
 			NativeFunctionID::Range =>
 				Self::range(&args),
 		}

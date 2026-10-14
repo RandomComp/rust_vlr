@@ -122,7 +122,7 @@ impl Display for Bytecode {
 			Bytecode::Ret =>
 				write!(f, "ret"),
 			Bytecode::NativeCall(id) =>
-				write!(f, "native_call {}", id.get_name())
+				write!(f, "native_call {id}")
 		}
 	}
 }

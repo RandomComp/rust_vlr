@@ -46,12 +46,14 @@ pub enum RawToken {
 	Semicolon,
 	LPar,
 	RPar,
+	LBracket,
+	RBracket,
 	LBrace,
 	RBrace,
 	Eof,
 }
 
-macro_rules! gen_code_for_ops {
+macro_rules! gen_code_for_ops_and_to_const_str {
 	([ $($kind:path => $text:expr),* ] [ $($kind_word:pat_param => $text_word:expr),* ] ) => {
 		const TOKEN_OPERATORS: &[(Self, &str)] = &[
 			$(
@@ -74,7 +76,7 @@ macro_rules! gen_code_for_ops {
 }
 
 impl RawToken {
-	gen_code_for_ops!(
+	gen_code_for_ops_and_to_const_str!(
 		[
 			Self::Equals => "==",
 			Self::Neq => "!=",
@@ -105,6 +107,8 @@ impl RawToken {
 			Self::Semicolon => ";",
 			Self::LPar => "(",
 			Self::RPar => ")",
+			Self::LBracket => "[",
+			Self::RBracket => "]",
 			Self::LBrace => "{",
 			Self::RBrace => "}",
 

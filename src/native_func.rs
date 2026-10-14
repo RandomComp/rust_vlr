@@ -4,7 +4,7 @@ use std::{cmp::Ordering, fmt::Display};
 #[repr(u8)]
 pub enum NativeFunctionID {
 	Print,
-	Tuple,
+	List,
 	Range
 }
 
@@ -20,7 +20,7 @@ impl Display for NativeFunctionID {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			NativeFunctionID::Print => write!(f, "print"),
-			NativeFunctionID::Tuple => write!(f, "tuple"),
+			NativeFunctionID::List => write!(f, "list"),
 			NativeFunctionID::Range => write!(f, "range"),
 		}
 	}
@@ -69,18 +69,10 @@ impl NativeFunctionID {
 		(self as u8).to_le_bytes()
 	}
 
-	pub fn get_name(self) -> &'static str {
-		match self {
-			NativeFunctionID::Print => "print",
-			NativeFunctionID::Tuple => "tuple",
-			NativeFunctionID::Range => "range",
-		}
-	}
-
 	pub fn args(self) -> NativeFunctionArgsNumber {
 		match self {
 			NativeFunctionID::Print => NativeFunctionArgsNumber::Dynamic,
-			NativeFunctionID::Tuple => NativeFunctionArgsNumber::Dynamic,
+			NativeFunctionID::List => NativeFunctionArgsNumber::Dynamic,
 			NativeFunctionID::Range => NativeFunctionArgsNumber::Fixed(3),
 		}
 	}
@@ -92,7 +84,7 @@ impl TryFrom<u8> for NativeFunctionID {
 	fn try_from(value: u8) -> Result<Self, Self::Error> {
 		match value {
 			0 => Ok(NativeFunctionID::Print),
-			1 => Ok(NativeFunctionID::Tuple),
+			1 => Ok(NativeFunctionID::List),
 			2 => Ok(NativeFunctionID::Range),
 			_ => Err(NativeFunctionIDError::UnknownNativeFunctionWithID(value)),
 		}
@@ -105,7 +97,7 @@ impl TryFrom<&str> for NativeFunctionID {
 	fn try_from(name: &str) -> Result<Self, Self::Error> {
 		match name {
 			"print" => Ok(NativeFunctionID::Print),
-			"tuple" => Ok(NativeFunctionID::Tuple),
+			"tuple" => Ok(NativeFunctionID::List),
 			"range" => Ok(NativeFunctionID::Range),
 			_ => Err(
 				NativeFunctionIDError::UnknownNativeFunctionWithName(

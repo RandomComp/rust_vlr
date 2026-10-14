@@ -10,18 +10,18 @@ impl std::fmt::Display for RawASTNode {
 			RawASTNode::Float(value) => write!(f, "{value}"),
 			RawASTNode::String(text) => write!(f, "\"{text}\""),
 			RawASTNode::Variable(name) => write!(f, "{name}"),
-			RawASTNode::Tuple(values) => {
-				write!(f, "(")?;
+			RawASTNode::List(values) => {
+				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
-					if i < values.len() - 1 {
-						write!(f, "{value}, ")?;
-					} else {
-						write!(f, "{value}")?;
+					if i > 0 {
+						write!(f, ", ")?;
 					}
+
+					write!(f, "{value}")?;
 				}
 
-				write!(f, ")")
+				write!(f, "]")
 			},
 			RawASTNode::Block(values) => {
 				write!(f, "{{ ")?;
@@ -33,6 +33,19 @@ impl std::fmt::Display for RawASTNode {
 				write!(f, "}}")?;
 
 				Ok(())
+			},
+			RawASTNode::Function {name, args} => {
+				write!(f, "{name}(")?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{arg}")?;
+				}
+
+				write!(f, ")")
 			},
 			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if {condition} {body} else {else_body}")
@@ -58,9 +71,6 @@ impl std::fmt::Display for RawASTNode {
 				write!(f, "({left} {op} {right})"),
 			RawASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			RawASTNode::Function {name, arg} => {
-				write!(f, "{name}({arg})")
-			},
 			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
@@ -107,8 +117,8 @@ impl RawASTNode {
 			RawASTNode::Float(value) => write!(f, "{value}"),
 			RawASTNode::String(text) => write!(f, "\"{text}\""),
 			RawASTNode::Variable(name) => write!(f, "{name}"),
-			RawASTNode::Tuple(values) => {
-				write!(f, "(")?;
+			RawASTNode::List(values) => {
+				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
 					if i > 0 {
@@ -118,7 +128,7 @@ impl RawASTNode {
 					value.format_human_readable(f, false, 0)?;
 				}
 
-				write!(f, ")")
+				write!(f, "]")
 			},
 			RawASTNode::Block(values) => {
 				writeln!(f, "{{")?;
@@ -193,8 +203,18 @@ impl RawASTNode {
 				write!(f, "({left} {op} {right})"),
 			RawASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			RawASTNode::Function {name, arg} => {
-				write!(f, "{name}({arg})")
+			RawASTNode::Function {name, args} => {
+				write!(f, "{name}(")?;
+
+				for (i, arg) in args.iter().enumerate() {
+					if i > 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{arg}")?;
+				}
+
+				write!(f, ")")
 			},
 			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
