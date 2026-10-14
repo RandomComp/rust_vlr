@@ -262,7 +262,7 @@ impl VM {
 			},
 			Bytecode::Eq |
 			Bytecode::Lt |
-			Bytecode::Add |
+		 	Bytecode::Add |
 			Bytecode::Sub |
 			Bytecode::Mul |
 			Bytecode::Pow |
@@ -273,9 +273,9 @@ impl VM {
 				let left = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				let result = UniResult::calc_binary_by_op(
-					&Spanned::from_with_span(left.into(), 0),
-					&Spanned::from_with_span(right.into(), 0),
-					&inst.to_binary_op().unwrap()
+					&Spanned::from_with_span(left, 0),
+					&Spanned::from_with_span(right, 0),
+					&inst.to_binary_op().unwrap_or_else(|| unreachable!("invalid binary operation {inst} in match"))
 				).map(|v| v.val).map_err(|e| e.val)?;
 
 				self.stack.push(result);
@@ -285,8 +285,8 @@ impl VM {
 				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				let result = UniResult::calc_unary_by_op(
-					&Spanned::from_with_span(value.into(), 0),
-					&inst.to_unary_op().unwrap()
+					&Spanned::from_with_span(value, 0),
+					&inst.to_unary_op().unwrap_or_else(|| unreachable!("invalid unary operation {inst} in match"))
 				).map(|v| v.val).map_err(|e| e.val)?;
 
 				self.stack.push(result);
