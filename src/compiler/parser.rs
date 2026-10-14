@@ -12,10 +12,8 @@ pub enum RawParserError {
 	// InvalidSyntax {row: usize, column: usize},
 	#[error("expected '{kind}' token, found '{found}'")]
 	ExpectedToken {kind: RawToken, found: RawToken},
-	#[error("expected '{}' token, found '{found}'", Self::get_tokens_fmt(types)?)]
+	#[error("expected {}, found '{found}'", Self::get_tokens_fmt(types)?)]
 	ExpectedTokens {types: &'static [RawToken], found: RawToken},
-	#[error("token {token_type} unexpected")]
-	UnexpectedToken {token_type: RawToken},
 	#[error("Cannot convert from {0:?} to BinaryOp")]
 	CannotConvertToBinaryOp(RawToken),
 	#[error("Cannot convert from {0:?} to UnaryOp")]
@@ -24,14 +22,10 @@ pub enum RawParserError {
 
 impl RawParserError {
 	fn get_tokens_fmt(types: &[RawToken]) -> Result<String, fmt::Error> {
-		let mut result = String::new();
+		let mut result = types.iter().take(types.len() - 1).map(|v| v.to_string()).collect::<Vec<String>>().join(", ");
 
-		for (i, token) in types.iter().enumerate() {
-			if i > 0 {
-				write!(result, " or ")?;
-			}
-
-			write!(result, "'{token}'")?;
+		if let Some(token) = types.iter().last() {
+			write!(result, " or {token}")?;
 		}
 
 		Ok(result)
@@ -44,8 +38,8 @@ pub enum OpAssoc {
 	Right
 }
 
-impl std::fmt::Display for OpAssoc {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for OpAssoc {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::Left => write!(f, "left"),
 			Self::Right => write!(f, "right")
@@ -123,8 +117,8 @@ impl BinaryOp {
 	}
 }
 
-impl std::fmt::Display for BinaryOp {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for BinaryOp {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::Assignment => write!(f, "="),
 			Self::PlusAssignment => write!(f, "+="),
@@ -214,8 +208,8 @@ pub enum UnaryOp {
 	Not,
 }
 
-impl std::fmt::Display for UnaryOp {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for UnaryOp {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::Minus => write!(f, "-"),
 			Self::Not => write!(f, "!"),
@@ -356,24 +350,22 @@ impl Parser {
 	pub fn parse_instructions(&mut self) -> Result<ASTNode, ParserError> {
 		let mut result: Vec<ASTNode> = Vec::new();
 
+		let mut i = 0;
+
 		loop {
+			if i > 0 {
+				self.consume(RawToken::Semicolon)?;
+			}
+
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 			result.push(value);
 
-			let cur = self.peek(0);
-
-			if let Some(kind) = cur && *kind != RawToken::Semicolon {
-				break
-			} else if cur.is_none() {
+			if let Some(kind) = self.peek(0) && (*kind == RawToken::Eof || *kind == RawToken::RBrace) {
 				break
 			}
 
-			self.consume(RawToken::Semicolon)?;
-
-			if let Some(kind) = self.peek(0) && *kind == RawToken::Eof {
-				break
-			}
+			i += 1;
 		}
 
 		if result.len() > 1 {
@@ -464,17 +456,13 @@ impl Parser {
 			(wmatch!(RawToken::True), ..) => {
 				self.consume_next();
 
-				Ok(
-					RawASTNode::Boolean(true)
-				)
+				RawASTNode::Boolean(true)
 			}
 
 			(wmatch!(RawToken::False), ..) => {
 				self.consume_next();
 
-				Ok(
-					RawASTNode::Boolean(false)
-				)
+				RawASTNode::Boolean(false)
 			}
 
 			(wmatch!(RawToken::Return), ..) => {
@@ -482,9 +470,7 @@ impl Parser {
 
 				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(
-					RawASTNode::Return(Box::new(value))
-				)
+				RawASTNode::Return(Box::new(value))
 			}
 
 			(wmatch!(RawToken::Break), ..) => {
@@ -492,9 +478,7 @@ impl Parser {
 
 				let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(
-					RawASTNode::Break(Box::new(value))
-				)
+				RawASTNode::Break(Box::new(value))
 			}
 
 			(wmatch!(RawToken::If), ..) => {
@@ -508,21 +492,17 @@ impl Parser {
 
 					let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-					Ok(
-						RawASTNode::If {
-							condition: Box::new(condition),
-							body: Box::new(block),
-							else_body: Some(Box::new(block_else))
-						}
-					)
+					RawASTNode::If {
+						condition: Box::new(condition),
+						body: Box::new(block),
+						else_body: Some(Box::new(block_else))
+					}
 				} else {
-					Ok(
-						RawASTNode::If {
-							condition: Box::new(condition),
-							body: Box::new(block),
-							else_body: None
-						}
-					)
+					RawASTNode::If {
+						condition: Box::new(condition),
+						body: Box::new(block),
+						else_body: None
+					}
 				}
 			}
 
@@ -538,22 +518,18 @@ impl Parser {
 
 						let block_else = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-						Ok(
-							RawASTNode::While {
-								condition: Box::new(condition),
-								body: Box::new(block),
-								else_body: Some(Box::new(block_else))
-							}
-						)
-					}
-
-					_ => Ok(
 						RawASTNode::While {
 							condition: Box::new(condition),
 							body: Box::new(block),
+							else_body: Some(Box::new(block_else))
+						}
+					}
+
+					_ => RawASTNode::While {
+							condition: Box::new(condition),
+							body: Box::new(block),
 							else_body: None
-						},
-					)
+						}
 				}
 			}
 
@@ -584,13 +560,11 @@ impl Parser {
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(
-					RawASTNode::FunctionDefinition {
-						name: Some(name),
-						args,
-						body: Box::new(block)
-					}
-				)
+				RawASTNode::FunctionDefinition {
+					name: Some(name),
+					args,
+					body: Box::new(block)
+				}
 			}
 
 			(wmatch!(RawToken::Def), Some(wmatch!(RawToken::LPar))) => {
@@ -617,13 +591,11 @@ impl Parser {
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				Ok(
-					RawASTNode::FunctionDefinition {
-						name: None,
-						args,
-						body: Box::new(block)
-					},
-				)
+				RawASTNode::FunctionDefinition {
+					name: None,
+					args,
+					body: Box::new(block)
+				}
 			}
 
 			// (&Token {token_type: TokenType::Everything, column, row}, ..) => {
@@ -637,9 +609,7 @@ impl Parser {
 			(&wmatch!(RawToken::Float(value)), _) => {
 				self.consume_next();
 
-				Ok(
-					RawASTNode::Float(value),
-				)
+				RawASTNode::Float(value)
 			}
 
 			(wmatch!(RawToken::String(value)), ..) => {
@@ -647,9 +617,7 @@ impl Parser {
 
 				self.consume_next();
 
-				Ok(
-					RawASTNode::String(value)
-				)
+				RawASTNode::String(value)
 			}
 
 			// TODO: сделать генерацию парсинга унарных операторов
@@ -665,12 +633,10 @@ impl Parser {
 
 				let value = self.parse_unary()?;
 
-				Ok(
-					RawASTNode::Unary {
-						op: UnaryOp::Minus,
-						value: Box::new(value)
-					}
-				)
+				RawASTNode::Unary {
+					op: UnaryOp::Minus,
+					value: Box::new(value)
+				}
 			}
 
 			(wmatch!(RawToken::Exclamation), ..) => {
@@ -678,12 +644,10 @@ impl Parser {
 
 				let value = self.parse_unary()?;
 
-				Ok(
-					RawASTNode::Unary {
-						op: UnaryOp::Not,
-						value: Box::new(value)
-					},
-				)
+				RawASTNode::Unary {
+					op: UnaryOp::Not,
+					value: Box::new(value)
+				}
 			}
 
 			(wmatch!(RawToken::LPar), ..) => {
@@ -693,17 +657,17 @@ impl Parser {
 
 				self.consume(RawToken::RPar)?;
 
-				Ok(result.val)
+				result.val
 			}
 
 			(wmatch!(RawToken::LBracket), ..) => {
-				self.parse_list().map(|v| v.val)
+				self.parse_list().map(|v| v.val)?
 			}
 
 			(wmatch!(RawToken::LBrace), ..) => {
 				let block = self.parse_block();
 
-				block.map(|v| v.val)
+				block.map(|v| v.val)?
 			}
 
 			(wmatch!(RawToken::Word(word)), Some(wmatch!(RawToken::LPar))) => {
@@ -713,12 +677,10 @@ impl Parser {
 
 				let args = self.parse_tuple_elements()?;
 
-				Ok(
-					RawASTNode::Function {
-						name,
-						args
-					}
-				)
+				RawASTNode::Function {
+					name,
+					args
+				}
 			}
 
 			(wmatch!(RawToken::Word(word)), ..) => {
@@ -726,19 +688,37 @@ impl Parser {
 
 				self.consume_next();
 
-				Ok(
-					RawASTNode::Variable(word),
-				)
+				RawASTNode::Variable(word)
 			}
 
 			(kind, ..) => {
-				let value: Result<RawASTNode, ParserError> = Err(RawParserError::UnexpectedToken { token_type: kind.val.clone() }.into());
-
-				value
+				return Err(
+					ParserError::from(RawParserError::ExpectedTokens {
+						types: &[
+							RawToken::True,
+							RawToken::False,
+							RawToken::Return,
+							RawToken::Break,
+							RawToken::If,
+							RawToken::While,
+							RawToken::Def,
+							// RawToken::Float(0.0),
+							// RawToken::String("".to_string()),
+							RawToken::Plus,
+							RawToken::Minus,
+							RawToken::Exclamation,
+							RawToken::LPar,
+							RawToken::LBracket,
+							RawToken::LBrace,
+							// RawToken::Word("".to_string()),
+						],
+						found: kind.val.clone()
+					}).with_pos(span)
+				)
 			},
 		};
 
-		res_with_pos!(result, ASTNode, ParserError, span)
+		Ok(val_with_pos!(result, ASTNode, span))
 	}
 
 	fn parse(&mut self, precedence: usize) -> Result<ASTNode, ParserError> {

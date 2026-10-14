@@ -128,7 +128,7 @@ impl RawToken {
 			Self::Break => "break",
 			Self::Return => "return",
 			Self::Def => "def",
-			Self::Eof => "eof"
+			Self::Eof => "Eof"
 		]
 	);
 
@@ -148,7 +148,10 @@ impl RawToken {
 	}
 
 	fn from_op(expected_op: &str) -> Option<&(Self, &str)> {
-		Self::TOKEN_OPERATORS.iter().find(|(_, text)| expected_op.starts_with(text))
+		Self::TOKEN_OPERATORS.iter()
+			.find(|(_, text)|
+				expected_op.starts_with(text)
+			)
 	}
 }
 
@@ -159,23 +162,9 @@ impl std::fmt::Display for RawToken {
 			Self::Word(word) => write!(f, "{word}"),
 			Self::String(word) => write!(f, "\"{word}\""),
 
-			Self::True => write!(f, "true"),
-			Self::False => write!(f, "false"),
-
-			Self::If => write!(f, "if"),
-			Self::Else => write!(f, "else"),
-
-			Self::While => write!(f, "while"),
-			Self::For => write!(f, "for"),
-
-			Self::Break => write!(f, "break"),
-			Self::Return => write!(f, "return"),
-
-			Self::Def => write!(f, "def"),
-
-			Self::Eof => write!(f, "EOF"),
-
-			_ => f.write_str(self.to_const_str()),
+			_ => f.write_str(
+				self.to_const_str()
+			),
 		}
 	}
 }
