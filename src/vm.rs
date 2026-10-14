@@ -245,13 +245,6 @@ impl VM {
 					pc_changed = true;
 				}
 			},
-			&Bytecode::Jit(dest_pc) => {
-				if bool::try_from(self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)? {
-					self.pc = dest_pc;
-
-					pc_changed = true;
-				}
-			},
 			&Bytecode::Jmp(dest_pc) => {
 				self.pc = dest_pc;
 

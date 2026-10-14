@@ -24,8 +24,6 @@ pub enum Bytecode {
 	IndirectLoad(u32),
 	/// Remove value from stack upper
 	Remove,
-	/// Jump if condition
-	Jit(u32),
 	/// Jump if not condition
 	Jif(u32),
 	/// Jump without condition
@@ -117,8 +115,6 @@ impl Display for Bytecode {
 				write!(f, "neg"),
 			Bytecode::Not =>
 				write!(f, "not"),
-			Bytecode::Jit(pos) =>
-				write!(f, "jit {pos:02}"),
 			Bytecode::Jif(pos) =>
 				write!(f, "jif {pos:02}"),
 			Bytecode::Jmp(pos) =>
@@ -229,7 +225,6 @@ impl Bytecode {
 			Self::IndirectLook(..) 		=> Self::INDIRECT_LOOK,
 			Self::IndirectLoad(..) 		=> Self::INDIRECT_LOAD,
 			Self::Remove 				=> Self::REMOVE,
-			Self::Jit(..) 				=> Self::JIT,
 			Self::Jif(..) 				=> Self::JIF,
 			Self::Jmp(..) 				=> Self::JMP,
 			Self::Call(..) 				=> Self::CALL,
@@ -274,7 +269,6 @@ impl Bytecode {
 			Self::DirectLoad(pos) |
 			Self::IndirectLook(pos) |
 			Self::IndirectLoad(pos) |
-			Self::Jit(pos) |
 			Self::Jif(pos) |
 			Self::Jmp(pos) |
 			Self::Call(pos) => {
@@ -350,11 +344,6 @@ impl Bytecode {
 				Self::IndirectLoad(stack_pos)
 			},
 			Self::REMOVE => Self::Remove, // Remove value
-			Self::JIT => { // Jump if condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Jit(pos)
-			},
 			Self::JIF => { // Jump if not condition
 				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
