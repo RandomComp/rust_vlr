@@ -703,6 +703,62 @@ impl From<Vec<Spanned<UniResult>>> for UniResult {
 	}
 }
 
+impl TryFrom<UniResult> for bool {
+	type Error = UniResultError;
+
+	fn try_from(value: UniResult) -> Result<bool, Self::Error> {
+		let UniResult::Boolean(x) = value else {
+			return Err(
+				UniResultError::UsingIntoOnIncompatibleType(value)
+			)
+		};
+
+		Ok(x)
+	}
+}
+
+impl TryFrom<UniResult> for u32 {
+	type Error = UniResultError;
+
+	fn try_from(value: UniResult) -> Result<u32, Self::Error> {
+		let UniResult::NumberU32(x) = value else {
+			return Err(
+				UniResultError::UsingIntoOnIncompatibleType(value)
+			)
+		};
+
+		Ok(x)
+	}
+}
+
+impl TryFrom<UniResult> for f64 {
+	type Error = UniResultError;
+
+	fn try_from(value: UniResult) -> Result<f64, Self::Error> {
+		let UniResult::Float(x) = value else {
+			return Err(
+				UniResultError::UsingIntoOnIncompatibleType(value)
+			)
+		};
+
+		Ok(x)
+	}
+}
+
+impl TryFrom<UniResult> for String {
+	type Error = UniResultError;
+
+	fn try_from(value: UniResult) -> Result<String, Self::Error> {
+		let UniResult::String(x) = value else {
+			return Err(
+				UniResultError::UsingIntoOnIncompatibleType(value)
+			)
+		};
+
+		Ok(x)
+	}
+}
+
 impl TryFrom<Spanned<UniResult>> for bool {
 	type Error = Spanned<UniResultError>;
 

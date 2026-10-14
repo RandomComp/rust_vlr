@@ -6,7 +6,8 @@ use std::string::FromUtf8Error;
 use crate::bytecode::Bytecode;
 use crate::compiler::parser::BinaryOp;
 use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
-use crate::uni_type::UniResultError;
+use crate::uni_type::{UniResult, UniResultError};
+use crate::wrapper::Spanned;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
@@ -43,7 +44,7 @@ impl fmt::Display for VMError {
 pub struct VM {
 	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
-	stack: Vec<RawUniResult>,
+	stack: Vec<UniResult>,
 	ret_stack: Vec<u32>,
 }
 
@@ -52,7 +53,7 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn print(args: &[RawUniResult]) -> Result<RawUniResult, RawVMError> {
+	fn print(args: &[UniResult]) -> Result<UniResult, RawVMError> {
 		let mut buf = String::new();
 
 		for arg in args {
@@ -63,14 +64,14 @@ impl VM {
 
 		println!("{buf}");
 
-		Ok(RawUniResult::None)
+		Ok(UniResult::None)
 	}
-	fn list(args: Vec<RawUniResult>) -> RawUniResult {
-		RawUniResult::List(
-			args.into_iter().map(Into::into).collect()
+	fn list(args: Vec<UniResult>) -> UniResult {
+		UniResult::List(
+			args.into_iter().map(|v| Spanned::from_with_span(v, 0).into()).collect()
 		)
 	}
-	fn range(args: &[RawUniResult]) -> Result<RawUniResult, RawVMError> {
+	fn range(args: &[UniResult]) -> Result<UniResult, RawVMError> {
 		if args.len() <= 2 {
 			unreachable!("invalid native function range call");
 		}
@@ -79,13 +80,13 @@ impl VM {
 		let end = &args[1];
 
 		match (start, end) {
-			(RawUniResult::Float(start), RawUniResult::Float(end)) =>
-				Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
-			(&RawUniResult::Range { start, end, step: _ }, &RawUniResult::Float(step)) =>
-				Ok(RawUniResult::Range { start, end, step }),
+			(&UniResult::Float(start), &UniResult::Float(end)) =>
+				Ok(UniResult::Range { start, end, step: 1.0 }),
+			(&UniResult::Range { start, end, step: _ }, &UniResult::Float(step)) =>
+				Ok(UniResult::Range { start, end, step }),
 			(left, right) => Err(
-				RawVMError::RawUniResult(
-					RawUniResultError::IncompatibleOperationType {
+				RawVMError::UniResult(
+					UniResultError::IncompatibleOperationType {
 						left: left.result_type(),
 						op: BinaryOp::Range,
 						right: right.result_type()
@@ -95,7 +96,7 @@ impl VM {
 		}
 	}
 
-	fn call_native(&mut self, id: NativeFunctionID) -> Result<RawUniResult, RawVMError> {
+	fn call_native(&mut self, id: NativeFunctionID) -> Result<UniResult, RawVMError> {
 		let mut args = Vec::new();
 
 		let expected = id.args();
@@ -271,24 +272,31 @@ impl VM {
 				let right = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 				let left = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
-				let result = RawUniResult::calc_binary_by_op(&left.into(), &right.into(), &inst.to_binary_op().unwrap())?;
+				let result = UniResult::calc_binary_by_op(
+					&Spanned::from_with_span(left.into(), 0),
+					&Spanned::from_with_span(right.into(), 0),
+					&inst.to_binary_op().unwrap()
+				).map(|v| v.val).map_err(|e| e.val)?;
 
-				self.stack.push(result.val);
+				self.stack.push(result);
 			},
 			Bytecode::Neg |
 			Bytecode::Not => {
 				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
-				let result = RawUniResult::calc_unary_by_op(&value.into(), &inst.to_unary_op().unwrap())?;
+				let result = UniResult::calc_unary_by_op(
+					&Spanned::from_with_span(value.into(), 0),
+					&inst.to_unary_op().unwrap()
+				).map(|v| v.val).map_err(|e| e.val)?;
 
-				self.stack.push(result.val);
+				self.stack.push(result);
 			},
 		}
 
 		Ok((true, pc_changed))
 	}
 
-	pub fn exec(&mut self) -> Result<Option<RawUniResult>, VMError> {
+	pub fn exec(&mut self) -> Result<Option<UniResult>, VMError> {
 		self.pc = 0;
 
 		loop {
@@ -296,23 +304,29 @@ impl VM {
 				Ok(value) => value,
 				Err(e) => {
 					let Some(bytecode) = &self.bytecode else {
-						return Err(VMError {
-							val: e,
-							inst: None
-						})
+						return Err(
+							VMError {
+								val: e,
+								inst: None
+							}
+						)
 					};
 
 					let Some(inst) = bytecode.get(self.pc as usize) else {
-						return Err(VMError {
-							val: e,
-							inst: None
-						})
+						return Err(
+							VMError {
+								val: e,
+								inst: None
+							}
+						)
 					};
 
-					return Err(VMError {
-						val: e,
-						inst: Some(inst.clone())
-					})
+					return Err(
+						VMError {
+							val: e,
+							inst: Some(inst.clone())
+						}
+					)
 				}
 			};
 

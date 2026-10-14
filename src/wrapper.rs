@@ -1,7 +1,10 @@
 use std::fmt::Write;
 use std::fmt;
 
+use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ASTNode;
+use crate::uni_type::UniResultError;
+use crate::vm::RawVMError;
 
 type Span = usize;
 
@@ -17,13 +20,13 @@ impl<T: fmt::Display> Spanned<T> {
 	}
 
 	pub fn from_with_span(val: T, span: Span) -> Self {
-		Self {span, val}
+		Self {val, span}
 	}
 
-	pub fn format(&self, spans: &[(usize, usize)], f: &mut String) -> fmt::Result {
+	pub fn format(&self, spans: &[(usize, usize)]) -> String {
 		let (row, column) = spans.get(self.span).unwrap_or_else(|| panic!("invalid span present {}", self.span));
 
-		write!(f, "line {} at {}: {}", row + 1, column + 1, self.val)
+		format!("line {} at {}: {}", row + 1, column + 1, self.val)
 	}
 }
 
@@ -91,34 +94,37 @@ macro_rules! wmatch {
 
 // map_err(|e| OptimizerError::from(RawOptimizerError::from(e.val))
 
-// macro_rules! wrapper_connect {
-// 	( $( $from_wrapped:ident ($from_raw:ty) => $to_wrapped:ident ($to_raw:ty) ),* $(,)* ) => {
-//   		$(
-// 	  		impl From<$from_wrapped> for $to_wrapped {
-// 				fn from(from: $from_wrapped) -> $to_wrapped {
+macro_rules! wrapper_connect {
+	( $( $from:ident => $to:ident ),* $(,)* ) => {
+  		$(
+	  		impl From<Spanned<$from>> for Spanned<$to> {
+				fn from(from: Spanned<$from>) -> Spanned<$to> {
+					let span = from.span;
+
+					Spanned::from_with_span(
+						<$to>::from(from.val),
+						span
+					)
+				}
+			}
+// 	 		impl From<Spanned<$to>> for Spanned<$from> {
+// 				fn from(from: Spanned<$to>) -> Spanned<$from> {
 // 					let span = from.span;
 //
-// 					<$to_wrapped>::from_with_span(
-// 						<$to_raw>::from(from.val),
+// 					Spanned::from_with_span(
+// 						<$from>::from(from.val),
 // 						span
 // 					)
 // 				}
 // 			}
-//
-// 	 	// 	impl From<$from_raw> for $to_wrapped {
-// 			// 	fn from(from: $from_raw) -> $to_wrapped {
-// 			// 		<$to_wrapped>::from(
-// 			// 			<$to_raw>::from(from)
-// 			// 		)
-// 			// 	}
-// 			// }
-//     	)*
-//     };
-// }
-//
-// wrapper_connect!(
-// 	UniResultError(RawUniResultError) => OptimizerError(RawOptimizerError),
-// );
+    	)*
+    };
+}
+
+wrapper_connect!(
+	UniResultError => OptimizerError,
+	UniResultError => RawVMError,
+);
 
 impl Default for Spanned<ASTNode> {
 	fn default() -> Self {

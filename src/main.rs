@@ -4,8 +4,8 @@
 #![deny(clippy::missing_errors_doc)]
 // #![deny(clippy::missing_docs_in_private_items)]
 
-use std::fmt::{Debug, Display};
-use std::io::Write;
+use std::fmt::{Write, Debug, Display};
+use std::io::Write as IoWrite;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,11 +20,14 @@ mod bytecode;
 mod compiler;
 mod vm;
 
+use crate::compiler::CompilerError;
 use crate::compiler::lexer::LexerError;
+use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
+use crate::wrapper::Spanned;
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -48,6 +51,20 @@ enum AppError {
 	IO(#[from] io::Error),
 	Fmt(#[from] fmt::Error),
 	Readline(#[from] ReadlineError),
+	Spanned(Box<Spanned<AppError>>)
+}
+
+impl<T> From<Spanned<T>> for AppError where AppError: From<T>  {
+	fn from(value: Spanned<T>) -> Self {
+		let span = value.span;
+
+		AppError::Spanned(Box::new(
+			Spanned::from_with_span(
+				value.val.into(),
+				span
+			)
+		))
+	}
 }
 
 impl From<VMError> for AppError {
@@ -86,7 +103,19 @@ impl Display for AppError {
 			Self::Readline(e) => {
 				write!(f, "Readline error: {e}")
 			}
+			Self::Spanned(spanned) => {
+				write!(f, "{}", spanned.val)
+			}
 		}
+	}
+}
+
+fn format(spans: Option<&[(usize, usize)]>, e: &AppError, f: &mut String) -> fmt::Result {
+	match e {
+		AppError::Spanned(spanned) if let Some(spans) = spans => {
+			write!(f, "{}", spanned.format(spans))
+		},
+		_ => write!(f, "{e}")
 	}
 }
 
@@ -224,9 +253,9 @@ fn format_code(code: &str) -> Result<(), AppError> {
 	Ok(())
 }
 
-type Span = Vec<(usize, usize)>;
+type Spans = Vec<(usize, usize)>;
 
-fn compile(code: &str) -> Result<Vec<u8>, (AppError, Span)> {
+fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 	// println!("Tokenizing expr '{}'", code);
 
 	let mut spans = Vec::new();
@@ -262,23 +291,23 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Span)> {
 	println!("ast = {ast}");
 	println!("ast = {ast_str}");
 
-// 	let mut optimizer = Optimizer::new();
-//
-// 	if let Err(e) = optimizer.fold(&mut ast) {
-// 		return Err((e.into(), spans))
-// 	}
-//
-// 	ast_str.clear();
-//
-// 	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
-// 		return Err((e.into(), spans))
-// 	}
-//
-// 	println!("ast after optimizer = {ast_str}");
-//
-// 	for var in optimizer.unused_vars {
-// 		println!("'{var}' unused");
-// 	}
+	let mut optimizer = Optimizer::new();
+
+	if let Err(e) = optimizer.fold(&mut ast) {
+		return Err((e.into(), spans))
+	}
+
+	ast_str.clear();
+
+	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
+		return Err((e.into(), spans))
+	}
+
+	println!("ast after optimizer = {ast_str}");
+
+	for var in optimizer.unused_vars {
+		println!("'{var}' unused");
+	}
 
 	let mut compiler = Compiler::new();
 
@@ -314,7 +343,7 @@ fn format_file(file: &str) -> Result<(), AppError> {
 	format_code(&code)
 }
 
-fn compile_file(file: &str) -> Result<(), (AppError, Option<Span>)> {
+fn compile_file(file: &str) -> Result<(), (AppError, Option<Spans>)> {
 	let code = std::fs::read_to_string(file).map_err(|e| (e.into(), None))?;
 
 	let mut out_file = PathBuf::from(file);
@@ -341,7 +370,10 @@ fn app(args: Args) -> Result<(), AppError> {
 			format_file(&format),
 		Args { run: None, compile: Some(file), .. } => {
 			if let Err((e, spans)) = compile_file(&file) {
-				eprintln!("{e}");
+				let mut e_str = String::new();
+				format(spans.as_deref(), &e, &mut e_str)?;
+
+				eprintln!("{e_str}");
 
 				return Err(e)
 			}
@@ -350,11 +382,10 @@ fn app(args: Args) -> Result<(), AppError> {
 		},
 		Args { run: Some(file_to_run), compile: Some(file_to_compile), .. } => {
 			if let Err((e, spans)) = compile_file(&file_to_compile) {
-				if let Some(spans) = spans {
-					eprintln!("{}", format(&e, &spans));
-				} else {
-					eprintln!("{e}");
-				}
+				let mut e_str = String::new();
+				format(spans.as_deref(), &e, &mut e_str)?;
+
+				eprintln!("{e_str}");
 
 				return Err(e)
 			}

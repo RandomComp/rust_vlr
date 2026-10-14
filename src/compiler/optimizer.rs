@@ -2,6 +2,7 @@ use std::{collections::HashMap, mem};
 
 use crate::compiler::parser::{BinaryOp, ASTNode, UnaryOp};
 use crate::uni_type::{UniResult, UniResultError};
+use crate::wrapper::Spanned;
 
 #[derive(thiserror::Error, Clone, PartialEq, Debug)]
 pub enum OptimizerError {
@@ -16,13 +17,16 @@ pub struct Optimizer {
 	// constants: HashMap<String, UniResult>,
 }
 
+type SpannedASTNode = Spanned<ASTNode>;
+type SpannedUniResult = Spanned<UniResult>;
+
 impl Optimizer {
 	pub fn new() -> Self {
 		Self {unused_vars: Vec::new()} // constants: HashMap::new()}
 	}
 
 	pub fn have_no_effects(ast: &ASTNode) -> bool {
-		match &ast.val {
+		match ast {
 			ASTNode::Function { .. } |
 			ASTNode::FunctionDefinition { name: Some(_), .. } |
 			ASTNode::Binary {
@@ -42,7 +46,7 @@ impl Optimizer {
 		}
 	}
 
-	pub fn simplify(ast: &mut ASTNode) {
+	pub fn simplify(ast: &mut Spanned<ASTNode>) {
 		let span = ast.span;
 
 		match &mut ast.val {
@@ -98,7 +102,9 @@ impl Optimizer {
 				ast.val = ASTNode::Binary {
 					left: mem::take(left),
 					op: BinaryOp::Multiply,
-					right: Box::new(ASTNode::from_with_span(ASTNode::Float(2.0), right.span)),
+					right: Box::new(
+						Spanned::from_with_span(ASTNode::Float(2.0), right.span)
+					),
 				}
 			},
 			ASTNode::Binary {
@@ -166,7 +172,7 @@ impl Optimizer {
 		}
 	}
 
-	pub fn fold(&mut self, ast: &mut Spanned<ASTNode>) -> Result<(), OptimizerError> {
+	pub fn fold(&mut self, ast: &mut Spanned<ASTNode>) -> Result<(), Spanned<OptimizerError>> {
 		let span = ast.span;
 
 		Self::simplify(ast);
@@ -230,23 +236,19 @@ impl Optimizer {
 					return Ok(())
 				}
 
-				let Ok(left) = SpannedUniResult::try_from(left.val) else {
+				let Ok(left) = SpannedUniResult::try_from((**left).clone()) else {
 					return Ok(())
 				};
 
-				let Ok(right) = SpannedUniResult::try_from(right.val) else {
+				let Ok(right) = SpannedUniResult::try_from((**right).clone()) else {
 					return Ok(())
 				};
 
-				*ast = match UniResult::calc_binary_by_op(&left, &right.val, op).map(ASTNode::try_from) {
-					Ok(Ok(x)) => x,
-					Ok(Err(
-						UniResultError { val: UniResultError::UnsupportedOperation(..), .. }
-					)) |
+				*ast = match UniResult::calc_binary_by_op(&left, &right, op).map(|v| SpannedASTNode::try_from(v)).flatten() {
+					Ok(x) => x,
 					Err(
-						UniResultError { val: UniResultError::UnsupportedOperation(..), .. }
+						Spanned { val: UniResultError::UnsupportedOperation(..), .. }
 					) => return Ok(()),
-					Ok(Err(e)) |
 					Err(e) => return Err(e.into()),
 				};
 			},
@@ -268,7 +270,7 @@ impl Optimizer {
 
 				self.fold(condition)?;
 
-				let condition_folded: Result<UniResult, _> = (**condition).clone().try_into();
+				let condition_folded: Result<Spanned<UniResult>, _> = (**condition).clone().try_into();
 
 				if let Ok(condition) = condition_folded {
 					if bool::try_from(condition)? {
@@ -281,7 +283,7 @@ impl Optimizer {
 			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				self.fold(condition)?;
 
-				let condition_folded: Result<UniResult, UniResultError> = (**condition).clone().try_into();
+				let condition_folded: Result<Spanned<UniResult>, _> = (**condition).clone().try_into();
 				self.fold(body)?;
 				self.fold(else_body)?;
 
@@ -298,7 +300,7 @@ impl Optimizer {
 
 				self.fold(condition)?;
 
-				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
+				let Ok(condition): Result<Spanned<UniResult>, _> = (**condition).clone().try_into() else {
 					return Ok(())
 				};
 
@@ -311,7 +313,7 @@ impl Optimizer {
 				self.fold(body)?;
 				self.fold(else_body)?;
 
-				let Ok(condition): Result<UniResult, _> = (**condition).clone().try_into() else {
+				let Ok(condition): Result<Spanned<UniResult>, _> = (**condition).clone().try_into() else {
 					return Ok(())
 				};
 

@@ -89,7 +89,7 @@ impl Compiler {
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: Spanned<&str>, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
+	fn call_func<'a, T>(&mut self, name: &Spanned<&str>, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
 	where T: Iterator<Item=&'a Spanned<ASTNode>> {
 		if let Ok(id) = NativeFunctionID::try_from(name.val) {
 			let mut len = 0;
@@ -240,13 +240,13 @@ impl Compiler {
 			},
 			ASTNode::List(values) => if !values.is_empty() {
 				self.call_func(
-					Spanned::from_with_span("list", span),
+					&Spanned::from_with_span("list", span),
 					values.iter(), result, context
 				)?;
 			},
 			ASTNode::Binary { left, op: BinaryOp::Range, right } => {
 				self.call_func(
-					Spanned::from_with_span("range", left.span),
+					&Spanned::from_with_span("range", left.span),
 					[&**left, &**right].into_iter(), result, context
 				)?;
 			},
@@ -329,7 +329,7 @@ impl Compiler {
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(
-					Spanned::from_with_span(name, span),
+					&Spanned::from_with_span(name, span),
 					args.iter(), result, context
 				)?;
 			},
@@ -416,7 +416,7 @@ impl Compiler {
 		Ok(())
 	}
 
-	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>) -> Result<(), Span<CompilerError>> {
+	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>) -> Result<(), Spanned<CompilerError>> {
 		self.compile(ast, result, &mut CompilerContext::new(None))
 	}
 }

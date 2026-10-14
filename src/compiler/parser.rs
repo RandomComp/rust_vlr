@@ -691,7 +691,7 @@ impl Parser {
 			(wmatch!(Token::LBrace), ..) => {
 				let block = self.parse_block();
 
-				block?
+				block?.val
 			}
 
 			(wmatch!(Token::Word(word)), Some(wmatch!(Token::LPar))) => {
