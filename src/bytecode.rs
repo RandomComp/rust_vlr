@@ -14,10 +14,14 @@ pub enum Bytecode {
 	PushString(String),
 	/// Pushes boolean to stack
 	PushBoolean(bool),
+	/// Copy value from stack, uses direct index
+	DirectLook(u32),
+	/// Copy value to stack, uses direct index
+	DirectLoad(u32),
 	/// Copy value from stack, uses indirect index
-	Look(u32),
+	IndirectLook(u32),
 	/// Copy value to stack, uses indirect index
-	Load(u32),
+	IndirectLoad(u32),
 	/// Remove value from stack upper
 	Remove,
 	/// Jump if condition
@@ -81,9 +85,13 @@ impl Display for Bytecode {
 				write!(f, "push {val}"),
 			Bytecode::PushString(text) =>
 				write!(f, "push \"{text}\""),
-			Bytecode::Look(stack_pos) =>
+			Bytecode::DirectLook(stack_pos) =>
+				write!(f, "look {stack_pos}"),
+			Bytecode::DirectLoad(stack_pos) =>
+				write!(f, "load {stack_pos}"),
+			Bytecode::IndirectLook(stack_pos) =>
 				write!(f, "look -{stack_pos}"),
-			Bytecode::Load(stack_pos) =>
+			Bytecode::IndirectLoad(stack_pos) =>
 				write!(f, "load -{stack_pos}"),
 			Bytecode::Remove =>
 				write!(f, "remove"),
@@ -151,10 +159,15 @@ impl Bytecode {
 	pub const PUSH_STRING: u8 = 0x02; // Pushes string to stack (needing len)
 	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
 	pub const PUSH_TRUE: u8 = 0x04; // Pushes true to stack
-	pub const LOOK: u8 = 0x05; // Copy value from N
-	pub const LOAD: u8 = 0x06; // Copy value to N
-	pub const REMOVE: u8 = 0x07; // Remove value
-	pub const PUSH_NUMBER_U32: u8 = 0x08; // Pushes number
+
+	pub const DIRECT_LOOK: u8 = 0x05; // Copy value from N
+	pub const DIRECT_LOAD: u8 = 0x06; // Copy value to N
+	pub const INDIRECT_LOOK: u8 = 0x07; // Copy value from N
+	pub const INDIRECT_LOAD: u8 = 0x08; // Copy value to N
+
+	pub const REMOVE: u8 = 0x09; // Remove value
+	pub const PUSH_NUMBER_U32: u8 = 0x0A; // Pushes number
+
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
 	pub const JMP: u8 = 0x28; // Jump without condition
@@ -205,33 +218,35 @@ impl Bytecode {
 
 	fn get_opcode(&self) -> u8 {
 		match self {
-			Self::Halt 					=> Self::HLT, // Halt VM
-			Self::PushNumberU32(..) 	=> Self::PUSH_NUMBER_U32, // Pushes number
-			Self::PushFloat(..) 		=> Self::PUSH_FLOAT, // Pushes number
-			Self::PushString(..) 		=> Self::PUSH_STRING, // Pushes string to stack
-			Self::PushBoolean(false) 	=> Self::PUSH_FALSE, // Pushes false to stack
-			Self::PushBoolean(true) 	=> Self::PUSH_TRUE, // Pushes true to stack
-			Self::Look(..) 				=> Self::LOOK, // Copy value from N
-			Self::Load(..) 				=> Self::LOAD, // Copy value to N
-			Self::Remove 				=> Self::REMOVE, // Remove value
-			Self::Jit(..) 				=> Self::JIT, // Jump if condition
-			Self::Jif(..) 				=> Self::JIF, // Jump if not condition
-			Self::Jmp(..) 				=> Self::JMP, // Jump without condition
-			Self::Call(..) 				=> Self::CALL, // Jump to pc from stack
-			Self::Subprogram 			=> Self::SUBPROGRAM, // Jump to pc from stack
-			Self::Ret 					=> Self::RET, // Jump to pc from stack
-			Self::Eq 					=> Self::EQ, // Equals
-			Self::Lt 					=> Self::LT, // Less than
+			Self::Halt 					=> Self::HLT,
+			Self::PushNumberU32(..) 	=> Self::PUSH_NUMBER_U32,
+			Self::PushFloat(..) 		=> Self::PUSH_FLOAT,
+			Self::PushString(..) 		=> Self::PUSH_STRING,
+			Self::PushBoolean(false) 	=> Self::PUSH_FALSE,
+			Self::PushBoolean(true) 	=> Self::PUSH_TRUE,
+			Self::DirectLook(..) 		=> Self::DIRECT_LOOK,
+			Self::DirectLoad(..) 		=> Self::DIRECT_LOAD,
+			Self::IndirectLook(..) 		=> Self::INDIRECT_LOOK,
+			Self::IndirectLoad(..) 		=> Self::INDIRECT_LOAD,
+			Self::Remove 				=> Self::REMOVE,
+			Self::Jit(..) 				=> Self::JIT,
+			Self::Jif(..) 				=> Self::JIF,
+			Self::Jmp(..) 				=> Self::JMP,
+			Self::Call(..) 				=> Self::CALL,
+			Self::Subprogram 			=> Self::SUBPROGRAM,
+			Self::Ret 					=> Self::RET,
+			Self::Eq 					=> Self::EQ,
+			Self::Lt 					=> Self::LT,
 			Self::NativeCall(..) 		=> Self::NATIVE_CALL,
-			Self::Add 					=> Self::ADD, // Additive
-			Self::Sub 					=> Self::SUB, // Subtraction
-			Self::Mul 					=> Self::MUL, // Multiplication
-			Self::Div 					=> Self::DIV, // Division
-			Self::Pow 					=> Self::POW, // Power of
-			Self::Neg 					=> Self::NEG, // Negative value (-)
-			Self::Not 					=> Self::NOT, // Logical not
-			Self::LogicalAnd 			=> Self::LOGICAL_AND, // Logical AND
-			Self::LogicalOr 			=> Self::LOGICAL_OR, // Logical OR
+			Self::Add 					=> Self::ADD,
+			Self::Sub 					=> Self::SUB,
+			Self::Mul 					=> Self::MUL,
+			Self::Div 					=> Self::DIV,
+			Self::Pow 					=> Self::POW,
+			Self::Neg 					=> Self::NEG,
+			Self::Not 					=> Self::NOT,
+			Self::LogicalAnd 			=> Self::LOGICAL_AND,
+			Self::LogicalOr 			=> Self::LOGICAL_OR,
 		}
 	}
 
@@ -255,8 +270,10 @@ impl Bytecode {
 				result.extend(u32_len.to_le_bytes());
 				result.extend(text.bytes());
 			}, // Pushes string to stack
-			Self::Look(pos) |
-			Self::Load(pos) |
+			Self::DirectLook(pos) |
+			Self::DirectLoad(pos) |
+			Self::IndirectLook(pos) |
+			Self::IndirectLoad(pos) |
 			Self::Jit(pos) |
 			Self::Jif(pos) |
 			Self::Jmp(pos) |
@@ -312,15 +329,25 @@ impl Bytecode {
 			},
 			Self::PUSH_FALSE => Self::PushBoolean(false), // Pushes false to stack
 			Self::PUSH_TRUE => Self::PushBoolean(true), // Pushes true to stack
-			Self::LOOK => { // Copy value from N
+			Self::DIRECT_LOOK => { // Copy value from N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
-				Self::Look(stack_pos)
+				Self::DirectLook(stack_pos)
 			},
-			Self::LOAD => { // Copy value to N
+			Self::DIRECT_LOAD => { // Copy value to N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
-				Self::Load(stack_pos)
+				Self::DirectLoad(stack_pos)
+			},
+			Self::INDIRECT_LOOK => { // Copy value from N
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+				Self::IndirectLook(stack_pos)
+			},
+			Self::INDIRECT_LOAD => { // Copy value to N
+				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+				Self::IndirectLoad(stack_pos)
 			},
 			Self::REMOVE => Self::Remove, // Remove value
 			Self::JIT => { // Jump if condition

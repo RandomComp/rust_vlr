@@ -28,7 +28,7 @@ pub enum ParserError {
 
 impl ParserError {
 	fn get_tokens_fmt(types: &[Token]) -> Result<String, fmt::Error> {
-		let mut result = types.iter().take(types.len() - 1).map(|v| v.to_string()).collect::<Vec<String>>().join(", ");
+		let mut result = types.iter().take(types.len() - 1).map(ToString::to_string).collect::<Vec<String>>().join(", ");
 
 		if let Some(token) = types.iter().last() {
 			write!(result, " or {token}")?;
@@ -281,8 +281,8 @@ impl Parser {
 		self.tokens.get((self.index as isize + offset) as usize)
 	}
 
-	fn skip(&mut self, expected_token_type: Token) {
-		while let Some(kind) = self.peek(0) && *kind == expected_token_type {
+	fn skip(&mut self, expected_token_type: &Token) {
+		while let Some(kind) = self.peek(0) && kind == expected_token_type {
 			self.index += 1;
 		}
 	}
@@ -377,7 +377,7 @@ impl Parser {
 					self.consume(Token::Semicolon)?;
 				}
 
-				self.skip(Token::Semicolon);
+				self.skip(&Token::Semicolon);
 			}
 
 			if let Some(kind) = self.peek(0) && (*kind == Token::Eof || *kind == Token::RBrace) {

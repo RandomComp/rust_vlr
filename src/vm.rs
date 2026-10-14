@@ -22,7 +22,7 @@ pub enum RawVMError {
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
-	InvalidStackPosition(u32),
+	InvalidStackPosition(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -181,7 +181,7 @@ impl VM {
 
 		let mut pc_changed = false;
 
-		// println!("{inst}");
+		println!("{inst}");
 
 		match inst {
 			Bytecode::Halt =>
@@ -198,14 +198,33 @@ impl VM {
 			Bytecode::PushString(val) => {
 				self.stack.push(val.clone().into());
 			},
-			&Bytecode::Look(stack_pos) => {
-				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
+			&Bytecode::DirectLook(stack_pos) => {
+				let usize_stack_pos = stack_pos as usize;
 
-				let val = self.stack.get(usize_stack_pos).ok_or(RawVMError::InvalidStackPosition(stack_pos))?;
+				let val = self.stack.get(usize_stack_pos).ok_or(RawVMError::InvalidStackPosition(usize_stack_pos))?;
 
 				self.stack.push(val.clone());
 			},
-			&Bytecode::Load(stack_pos) => {
+			&Bytecode::DirectLoad(stack_pos) => {
+				let usize_stack_pos = stack_pos as usize;
+
+				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
+
+				if let Some(val) = self.stack.get_mut(usize_stack_pos) {
+					*val = value;
+				} else {
+					return Err(RawVMError::InvalidStackPosition(usize_stack_pos));
+				}
+			},
+			&Bytecode::IndirectLook(stack_pos) => {
+				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
+
+				let val = self.stack.get(usize_stack_pos)
+							.ok_or(RawVMError::InvalidStackPosition(usize_stack_pos))?;
+
+				self.stack.push(val.clone());
+			},
+			&Bytecode::IndirectLoad(stack_pos) => {
 				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
 
 				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
@@ -213,7 +232,7 @@ impl VM {
 				if let Some(val) = self.stack.get_mut(usize_stack_pos) {
 					*val = value;
 				} else {
-					return Err(RawVMError::InvalidStackPosition(stack_pos));
+					return Err(RawVMError::InvalidStackPosition(usize_stack_pos));
 				}
 			},
 			Bytecode::Remove => {
@@ -334,7 +353,7 @@ impl VM {
 				break
 			}
 
-			// self.dump_stack();
+			self.dump_stack();
 
 			if !pc_changed {
 				self.pc += 1;
