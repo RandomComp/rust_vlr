@@ -26,8 +26,12 @@ impl std::fmt::Display for ASTNode {
 			ASTNode::Block(values) => {
 				write!(f, "{{ ")?;
 
-				for value in values {
-					write!(f, "{value}; ")?;
+				for (i, value) in values.iter().enumerate() {
+					if i > 0 {
+						write!(f, "; ")?;
+					}
+
+					write!(f, "{value}")?;
 				}
 
 				write!(f, "}}")?;
@@ -133,13 +137,15 @@ impl ASTNode {
 			ASTNode::Block(values) => {
 				writeln!(f, "{{")?;
 
-				for value in values {
-					value.format_human_readable(f, false, tab_level + 1)?;
+				for (i, value) in values.iter().enumerate() {
+					if i > 0 {
+						writeln!(f, ";")?;
+					}
 
-					writeln!(f, ";")?;
+					value.format_human_readable(f, false, tab_level + 1)?;
 				}
 
-				write!(f, "{tab_level_syms}}}")
+				write!(f, "\n{tab_level_syms}}}")
 			},
 			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if ")?;
@@ -150,9 +156,7 @@ impl ASTNode {
 
 				body.format_human_readable(f, true, tab_level + 1)?;
 
-				write!(f, " ")?;
-
-				write!(f, "else ")?;
+				write!(f, " else ")?;
 
 				write!(f, " ")?;
 
@@ -182,9 +186,7 @@ impl ASTNode {
 
 				body.format_human_readable(f, false, tab_level + 1)?;
 
-				write!(f, " ")?;
-
-				write!(f, "else ")?;
+				write!(f, " else ")?;
 
 				write!(f, " ")?;
 

@@ -251,25 +251,25 @@ impl Compiler {
 				)?;
 			},
 			ASTNode::Binary { left, op: BinaryOp::Assignment, right } => {
-				if let ASTNode::Variable(name) = &left.val {
-					if let Some(stack_pos) = context.get_var(name) {
-						self.compile(right, result, context)?;
-
-						self.load(stack_pos, result);
-					} else {
-						let stack_pos = self.stack;
-
-						self.compile(right, result, context)?;
-
-						context.insert_var(name.to_owned(), stack_pos);
-					}
-				} else {
+				let ASTNode::Variable(name) = &left.val else {
 					return Err(
 						Spanned::from_with_span(
 							CompilerError::LeftExprShouldBeId(left.val.to_string()),
 							span
 						)
 					);
+				};
+
+				if let Some(stack_pos) = context.get_var(name) {
+					self.compile(right, result, context)?;
+
+					self.load(stack_pos, result);
+				} else {
+					let stack_pos = self.stack;
+
+					self.compile(right, result, context)?;
+
+					context.insert_var(name.to_owned(), stack_pos);
 				}
 			},
 			ASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
@@ -287,15 +287,17 @@ impl Compiler {
 			ASTNode::Binary { left, op: BinaryOp::DivideAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
 			},
-			ASTNode::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
+			ASTNode::Variable(name) => {
+				let Some(stack_pos) = context.get_var(name) else {
+					return Err(
+						Spanned::from_with_span(
+							CompilerError::NotKnownAtThisScope(name.clone()),
+							span
+						)
+					);
+				};
+
 				self.look(stack_pos, result);
-			} else {
-				return Err(
-					Spanned::from_with_span(
-						CompilerError::NotKnownAtThisScope(name.clone()),
-						span
-					)
-				);
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;

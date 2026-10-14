@@ -373,6 +373,8 @@ impl Parser {
 			}
 
 			if let Some(kind) = self.peek(0) && (*kind == Token::Eof || *kind == Token::RBrace) {
+				result.push(Spanned { val: ASTNode::None, span: kind.span });
+
 				break
 			}
 
@@ -467,7 +469,7 @@ impl Parser {
 	// 	}
 	// }
 
-	fn parse_unary(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
+	fn parse_statement(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
 		let Some(cur) = self.peek(0) else {
 			return Ok(
 				Spanned::from_with_span(ASTNode::None, 0) // fix: span
@@ -477,18 +479,6 @@ impl Parser {
 		let span = cur.span;
 
 		let result = match (cur, self.peek(1)) {
-			(wmatch!(Token::True), ..) => {
-				self.consume_next();
-
-				ASTNode::Boolean(true)
-			}
-
-			(wmatch!(Token::False), ..) => {
-				self.consume_next();
-
-				ASTNode::Boolean(false)
-			}
-
 			(wmatch!(Token::Return), ..) => {
 				self.consume_next();
 
@@ -622,6 +612,37 @@ impl Parser {
 				}
 			}
 
+			(wmatch!(Token::LBrace), ..) => {
+				self.parse_block()?.val
+			}
+
+			(kind, ..) => {
+				return Err(
+					Spanned::from_with_span(
+						ParserError::ExpectedExpression {
+							found: kind.val.clone()
+						},
+						span
+					)
+				)
+			},
+		};
+
+		Ok(
+			Spanned::from_with_span(result, span)
+		)
+	}
+
+	fn parse_unary(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
+		let Some(cur) = self.peek(0) else {
+			return Ok(
+				Spanned::from_with_span(ASTNode::None, 0) // fix: span
+			)
+		};
+
+		let span = cur.span;
+
+		let result = match (cur, self.peek(1)) {
 			// (&Token {token_type: TokenType::Everything, column, row}, ..) => {
 			// 	self.consume_next();
 
@@ -629,6 +650,18 @@ impl Parser {
 			// 		ASTNode { value: ASTNodeEnum::Everything, row, column }
 			// 	))
 			// }
+
+			(wmatch!(Token::True), ..) => {
+				self.consume_next();
+
+				ASTNode::Boolean(true)
+			}
+
+			(wmatch!(Token::False), ..) => {
+				self.consume_next();
+
+				ASTNode::Boolean(false)
+			}
 
 			(&wmatch!(Token::Float(value)), _) => {
 				self.consume_next();
@@ -688,12 +721,6 @@ impl Parser {
 				self.parse_list()?
 			}
 
-			(wmatch!(Token::LBrace), ..) => {
-				let block = self.parse_block();
-
-				block?.val
-			}
-
 			(wmatch!(Token::Word(word)), Some(wmatch!(Token::LPar))) => {
 				let name = word.to_owned();
 
@@ -715,16 +742,7 @@ impl Parser {
 				ASTNode::Variable(word)
 			}
 
-			(kind, ..) => {
-				return Err(
-					Spanned::from_with_span(
-						ParserError::ExpectedExpression {
-							found: kind.val.clone()
-						},
-						span
-					)
-				)
-			},
+			_ => return self.parse_statement(),
 		};
 
 		Ok(
