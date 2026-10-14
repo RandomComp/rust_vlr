@@ -277,12 +277,12 @@ impl Parser {
 		Self {tokens, index: 0}
 	}
 
-	fn peek(&self, offset: usize) -> Option<&Spanned<Token>> {
-		self.tokens.get(self.index + offset)
+	fn peek(&self, offset: isize) -> Option<&Spanned<Token>> {
+		self.tokens.get((self.index as isize + offset) as usize)
 	}
 
-	fn skip(&mut self, expected_token_type: &Token) {
-		while let Some(kind) = self.peek(0) && kind == expected_token_type {
+	fn skip(&mut self, expected_token_type: Token) {
+		while let Some(kind) = self.peek(0) && *kind == expected_token_type {
 			self.index += 1;
 		}
 	}
@@ -369,7 +369,15 @@ impl Parser {
 
 		loop {
 			if i > 0 {
-				self.consume(Token::Semicolon)?;
+				if let Some(kind) = self.peek(-1) {
+					if *kind != Token::RBrace {
+						self.consume(Token::Semicolon)?;
+					}
+				} else {
+					self.consume(Token::Semicolon)?;
+				}
+
+				self.skip(Token::Semicolon);
 			}
 
 			if let Some(kind) = self.peek(0) && (*kind == Token::Eof || *kind == Token::RBrace) {
@@ -446,28 +454,6 @@ impl Parser {
 
 		Ok(ASTNode::List(result))
 	}
-
-	// fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
-	// 	match self.peek(0) {
-	// 		Some(Token { token_type: TokenType::TokenWord(name), column, row }) => {
-	// 			let (row, column) = (*row, *column);
-
-	// 			let name = name.clone();
-
-	// 			self.consume_next();
-
-	// 			self.consume(TokenType::TokenAssignment)?;
-
-	// 			let value = self.parse(TokenType::MAX_PRECEDENCE)?;
-
-	// 			Ok(Some(
-	// 				ASTNode { value: ASTNodeEnum::Assignment {name: name, value: Box::new(value)}, row, column }
-	// 			))
-	// 		},
-	// 		Some(_) => return Ok(Some(self.parse(TokenType::MAX_PRECEDENCE)?)),
-	// 		None => return Ok(None),
-	// 	}
-	// }
 
 	fn parse_statement(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
 		let Some(cur) = self.peek(0) else {
