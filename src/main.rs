@@ -43,10 +43,16 @@ enum AppError {
 	Optimizer(#[from] OptimizerError),
 	Compiler(#[from] CompilerError),
 	Bytecode(#[from] BytecodeError),
-	VM(#[from] VMError),
+	VM(VMError),
 	IO(#[from] io::Error),
 	Fmt(#[from] fmt::Error),
 	Readline(#[from] ReadlineError),
+}
+
+impl From<VMError> for AppError {
+	fn from(value: VMError) -> Self {
+		AppError::VM(value)
+	}
 }
 
 impl Display for AppError {
@@ -315,23 +321,23 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Span)> {
 	println!("ast = {ast}");
 	println!("ast = {ast_str}");
 
-	let mut optimizer = Optimizer::new();
-
-	if let Err(e) = optimizer.fold(&mut ast) {
-		return Err((e.into(), spans))
-	}
-
-	ast_str.clear();
-
-	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
-		return Err((e.into(), spans))
-	}
-
-	println!("ast after optimizer = {ast_str}");
-
-	for var in optimizer.unused_vars {
-		println!("'{var}' unused");
-	}
+// 	let mut optimizer = Optimizer::new();
+//
+// 	if let Err(e) = optimizer.fold(&mut ast) {
+// 		return Err((e.into(), spans))
+// 	}
+//
+// 	ast_str.clear();
+//
+// 	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
+// 		return Err((e.into(), spans))
+// 	}
+//
+// 	println!("ast after optimizer = {ast_str}");
+//
+// 	for var in optimizer.unused_vars {
+// 		println!("'{var}' unused");
+// 	}
 
 	let mut compiler = Compiler::new();
 

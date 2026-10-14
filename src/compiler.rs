@@ -118,6 +118,7 @@ impl Compiler {
 
 			result.push(Bytecode::NativeCall(id));
 			self.stack -= len;
+			self.stack += 1;
 		} else if let Some(pos) = context.get_function(name) {
 			for arg in args {
 				self.compile(arg, result, context)?;

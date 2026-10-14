@@ -1,14 +1,16 @@
+use std::fmt;
 use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
 use crate::bytecode::Bytecode;
+use crate::compiler::parser::BinaryOp;
 use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::uni_type::{RawUniResult, RawUniResultError};
 use crate::wrapper::UniResultError;
 
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum VMError {
+pub enum RawVMError {
 	#[error("{0}")]
 	UniResult(#[from] UniResultError),
 	#[error("{0}")]
@@ -25,6 +27,22 @@ pub enum VMError {
 	InvalidStackPosition(u32),
 }
 
+#[derive(Debug, Clone)]
+pub struct VMError {
+	val: RawVMError,
+	inst: Option<Bytecode>,
+}
+
+impl fmt::Display for VMError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if let Some(inst) = &self.inst {
+			write!(f, "While executing instruction \"{inst}\", an error occured: {}", self.val)
+		} else {
+			write!(f, "While executing instruction, an error occured: {}", self.val)
+		}
+	}
+}
+
 pub struct VM {
 	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
@@ -37,7 +55,7 @@ impl VM {
 		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
 	}
 
-	fn print(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
+	fn print(args: &[RawUniResult]) -> Result<RawUniResult, RawVMError> {
 		let mut buf = String::new();
 
 		for arg in args {
@@ -55,7 +73,7 @@ impl VM {
 			args.into_iter().map(Into::into).collect()
 		)
 	}
-	fn range(args: &[RawUniResult]) -> Result<RawUniResult, VMError> {
+	fn range(args: &[RawUniResult]) -> Result<RawUniResult, RawVMError> {
 		if args.len() <= 2 {
 			unreachable!("invalid native function range call");
 		}
@@ -68,11 +86,19 @@ impl VM {
 				Ok(RawUniResult::Range { start: *start, end: *end, step: 1.0 }),
 			(&RawUniResult::Range { start, end, step: _ }, &RawUniResult::Float(step)) =>
 				Ok(RawUniResult::Range { start, end, step }),
-			_ => Err(VMError::RawUniResult(RawUniResultError::IncompatibleOperationType))
+			(left, right) => Err(
+				RawVMError::RawUniResult(
+					RawUniResultError::IncompatibleOperationType {
+						left: left.result_type(),
+						op: BinaryOp::Range,
+						right: right.result_type()
+					}
+				)
+			),
 		}
 	}
 
-	fn call_native(&mut self, id: NativeFunctionID) -> Result<RawUniResult, VMError> {
+	fn call_native(&mut self, id: NativeFunctionID) -> Result<RawUniResult, RawVMError> {
 		let mut args = Vec::new();
 
 		let expected = id.args();
@@ -84,7 +110,7 @@ impl VM {
 				while i < fixed  {
 					let Some(value) = self.stack.pop() else {
 						return Err(
-							VMError::ArgumentsNativeFunctionCall {
+							RawVMError::ArgumentsNativeFunctionCall {
 								id,
 								found: i,
 								expected: fixed
@@ -104,7 +130,7 @@ impl VM {
 					while i < fixed  {
 						let Some(value) = self.stack.pop() else {
 							return Err(
-								VMError::ArgumentsNativeFunctionCall {
+								RawVMError::ArgumentsNativeFunctionCall {
 									id,
 									found: i,
 									expected: fixed
@@ -146,7 +172,7 @@ impl VM {
 		println!("]");
 	}
 
-	fn exec_inst(&mut self) -> Result<(bool, bool), VMError> {
+	fn exec_inst(&mut self) -> Result<(bool, bool), RawVMError> {
 		let Some(bytecode) = &self.bytecode else {
 			return Ok((false, false))
 		};
@@ -177,33 +203,33 @@ impl VM {
 			&Bytecode::Look(stack_pos) => {
 				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
 
-				let val = self.stack.get(usize_stack_pos).ok_or(VMError::InvalidStackPosition(stack_pos))?;
+				let val = self.stack.get(usize_stack_pos).ok_or(RawVMError::InvalidStackPosition(stack_pos))?;
 
 				self.stack.push(val.clone());
 			},
 			&Bytecode::Load(stack_pos) => {
 				let usize_stack_pos = self.stack.len() - (stack_pos as usize) - 1;
 
-				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				if let Some(val) = self.stack.get_mut(usize_stack_pos) {
 					*val = value;
 				} else {
-					return Err(VMError::InvalidStackPosition(stack_pos));
+					return Err(RawVMError::InvalidStackPosition(stack_pos));
 				}
 			},
 			Bytecode::Remove => {
-				self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 			},
 			&Bytecode::Jif(dest_pc) => {
-				if !bool::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)? {
+				if !bool::try_from(self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
 				}
 			},
 			&Bytecode::Jit(dest_pc) => {
-				if bool::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)? {
+				if bool::try_from(self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)? {
 					self.pc = dest_pc;
 
 					pc_changed = true;
@@ -222,12 +248,12 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::Subprogram => {
-				let pc = u32::try_from(self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?)?;
+				let pc = u32::try_from(self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)?;
 
 				self.ret_stack.push(pc);
 			},
 			&Bytecode::Ret => {
-				self.pc = self.ret_stack.pop().unwrap();
+				self.pc = self.ret_stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				pc_changed = true;
 			},
@@ -245,8 +271,8 @@ impl VM {
 			Bytecode::Div |
 			Bytecode::LogicalAnd |
 			Bytecode::LogicalOr => {
-				let right = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
-				let left = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let right = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
+				let left = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				let result = RawUniResult::calc_binary_by_op(&left.into(), &right.into(), &inst.to_binary_op().unwrap())?;
 
@@ -254,7 +280,7 @@ impl VM {
 			},
 			Bytecode::Neg |
 			Bytecode::Not => {
-				let value = self.stack.pop().ok_or(VMError::StackEmptyButExpectedValue)?;
+				let value = self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 				let result = RawUniResult::calc_unary_by_op(&value.into(), &inst.to_unary_op().unwrap())?;
 
@@ -268,7 +294,35 @@ impl VM {
 	pub fn exec(&mut self) -> Result<Option<RawUniResult>, VMError> {
 		self.pc = 0;
 
-		while let (is_not_hlt, pc_changed) = self.exec_inst()? && is_not_hlt {
+		loop {
+			let (is_not_hlt, pc_changed) = match self.exec_inst() {
+				Ok(value) => value,
+				Err(e) => {
+					let Some(bytecode) = &self.bytecode else {
+						return Err(VMError {
+							val: e,
+							inst: None
+						})
+					};
+
+					let Some(inst) = bytecode.get(self.pc as usize) else {
+						return Err(VMError {
+							val: e,
+							inst: None
+						})
+					};
+
+					return Err(VMError {
+						val: e,
+						inst: Some(inst.clone())
+					})
+				}
+			};
+
+			if !is_not_hlt {
+				break
+			}
+
 			self.dump_stack();
 
 			if !pc_changed {

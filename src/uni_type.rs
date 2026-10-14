@@ -4,9 +4,11 @@ use crate::{compiler::parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum RawUniResultError {
-	#[error("Incompatible operation")]
-	IncompatibleOperationType,
-	#[error("Use '{0}' on tuple is ambigous, use all() or any() instead")]
+	#[error("Incompatible {op:?} operation between {left} and {right}")]
+	IncompatibleOperationType {left: RawUniResultType, op: BinaryOp, right: RawUniResultType},
+	#[error("Incompatible operation for \"{val}\"")]
+	IncompatibleUnaryOperationType {val: RawUniResultType},
+	#[error("Use '{0:?}' on list is ambigous, use all() or any() instead")]
 	LogicalOperationOnTupleAmbigous(BinaryOp),
 	#[error("Using 'into' on incompatible type {0:?}")]
 	UsingIntoOnIncompatibleType(RawUniResult),
@@ -16,6 +18,33 @@ pub enum RawUniResultError {
 	CannotConvertToUniResult(RawASTNode),
 	#[error("Cannot convert to {0:?} from UniResult")]
 	CannotConvertFromUniResult(RawUniResult),
+}
+
+// todo: сделать типы полноценными объектами с функциями, и тогда выдавать на type_name имя типа
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RawUniResultType {
+	None,
+	Boolean,
+	NumberU32,
+	Float,
+	String,
+	List,
+	Range,
+}
+
+impl fmt::Display for RawUniResultType {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			RawUniResultType::None 		=> write!(f, "none"),
+			RawUniResultType::Boolean 	=> write!(f, "boolean"),
+			RawUniResultType::NumberU32	=> write!(f, "u32 number"),
+			RawUniResultType::Float 	=> write!(f, "float"),
+			RawUniResultType::String 	=> write!(f, "string"),
+			RawUniResultType::List 		=> write!(f, "list"),
+			RawUniResultType::Range 	=> write!(f, "range"),
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +131,7 @@ impl Display for RawUniResult {
 			Self::Float(x) => write!(f, "{x}"),
 			Self::String(x) => write!(f, "\"{x}\""),
 			Self::List(values) => {
-				write!(f, "(")?;
+				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
 					if i > 0 {
@@ -112,7 +141,7 @@ impl Display for RawUniResult {
 					write!(f, "{value}")?;
 				}
 
-				write!(f, ")")
+				write!(f, "]")
 			},
 			Self::Range { start, end, step } => {
 				write!(f, "{start}..{end}..{step}")
@@ -122,11 +151,23 @@ impl Display for RawUniResult {
 }
 
 impl RawUniResult {
+	pub fn result_type(&self) -> RawUniResultType {
+		match self {
+			RawUniResult::None =>			RawUniResultType::None,
+			RawUniResult::Boolean(..) =>	RawUniResultType::Boolean,
+			RawUniResult::Float(..) =>		RawUniResultType::Float,
+			RawUniResult::NumberU32(..) =>	RawUniResultType::NumberU32,
+			RawUniResult::String(..) =>		RawUniResultType::String,
+			RawUniResult::List(..) =>		RawUniResultType::List,
+			RawUniResult::Range {..} =>		RawUniResultType::Range,
+		}
+	}
+
 	pub fn format_to_str(&self, f: &mut String) -> fmt::Result {
 		match self {
 			Self::String(x) => write!(f, "{x}"),
 			Self::List(values) => {
-				write!(f, "(")?;
+				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
 					if i > 0 {
@@ -136,7 +177,7 @@ impl RawUniResult {
 					value.format_to_str(f)?;
 				}
 
-				write!(f, ")")
+				write!(f, "]")
 			},
 			_ => write!(f, "{self}"),
 		}
@@ -202,7 +243,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Plus, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -238,7 +283,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Minus, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -274,7 +323,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Pow, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -310,7 +363,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Multiply, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -346,7 +403,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Divide, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -382,7 +443,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Remainder, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -427,7 +492,13 @@ impl RawUniResult {
 
 				result.into()
 			},
-			_ => return Err(UniResultError::from(RawUniResultError::IncompatibleOperationType).with_pos(left.span)),
+			_ => return Err(
+				UniResultError::from(
+					RawUniResultError::IncompatibleOperationType {
+						left: left.result_type(), op: BinaryOp::Equals, right: right.result_type()
+					}
+				).with_pos(left.span)
+			),
 		};
 
 		Ok(val_with_pos!(result, UniResult, left.span))
@@ -465,7 +536,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Less, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -504,7 +579,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Great, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -517,7 +596,11 @@ impl RawUniResult {
 			(Self::List(..) | Self::Boolean(..), Self::List(..) | Self::Boolean(..)) => {
 				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalAnd))
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::LogicalAnd, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -530,7 +613,11 @@ impl RawUniResult {
 			(Self::List(..) | Self::Boolean(..), Self::List(..) | Self::Boolean(..)) => {
 				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalOr))
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			(left, right) => Err(
+				RawUniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::LogicalOr, right: right.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, left.span)
@@ -549,7 +636,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			val => Err(
+				RawUniResultError::IncompatibleUnaryOperationType {
+					val: val.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, value.span)
@@ -567,7 +658,11 @@ impl RawUniResult {
 
 				Ok(result.into())
 			},
-			_ => Err(RawUniResultError::IncompatibleOperationType),
+			val => Err(
+				RawUniResultError::IncompatibleUnaryOperationType {
+					val: val.result_type()
+				}
+			),
 		};
 
 		res_with_pos!(result, UniResult, UniResultError, value.span)

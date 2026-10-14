@@ -97,7 +97,7 @@ impl TryFrom<&str> for NativeFunctionID {
 	fn try_from(name: &str) -> Result<Self, Self::Error> {
 		match name {
 			"print" => Ok(NativeFunctionID::Print),
-			"tuple" => Ok(NativeFunctionID::List),
+			"list" => Ok(NativeFunctionID::List),
 			"range" => Ok(NativeFunctionID::Range),
 			_ => Err(
 				NativeFunctionIDError::UnknownNativeFunctionWithName(

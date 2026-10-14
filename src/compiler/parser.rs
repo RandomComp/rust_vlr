@@ -1,6 +1,6 @@
 mod formatter;
 
-use crate::{res_with_pos, wmatch, wrapper::ASTNode};
+use crate::{wmatch, wrapper::ASTNode};
 
 use std::{fmt::{self, Write}, mem};
 
@@ -12,10 +12,16 @@ pub enum RawParserError {
 	// InvalidSyntax {row: usize, column: usize},
 	#[error("expected '{kind}' token, found '{found}'")]
 	ExpectedToken {kind: RawToken, found: RawToken},
+
+	#[error("expected expression, found '{found}'")]
+	ExpectedExpression {found: RawToken},
+
 	#[error("expected {}, found '{found}'", Self::get_tokens_fmt(types)?)]
 	ExpectedTokens {types: &'static [RawToken], found: RawToken},
+
 	#[error("Cannot convert from {0:?} to BinaryOp")]
 	CannotConvertToBinaryOp(RawToken),
+
 	#[error("Cannot convert from {0:?} to UnaryOp")]
 	CannotConvertToUnaryOp(RawToken),
 }
@@ -357,6 +363,10 @@ impl Parser {
 				self.consume(RawToken::Semicolon)?;
 			}
 
+			if let Some(kind) = self.peek(0) && (*kind == RawToken::Eof || *kind == RawToken::RBrace) {
+				break
+			}
+
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
 			result.push(value);
@@ -377,12 +387,12 @@ impl Parser {
 		}
 	}
 
-	fn parse_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
+	fn parse_elements(&mut self, end_sym: &RawToken) -> Result<Vec<ASTNode>, ParserError> {
 		let mut result: Vec<ASTNode> = Vec::new();
 
 		let mut i = 0;
 
-		while let Some(kind) = self.peek(0) && *kind != RawToken::RPar {
+		while let Some(kind) = self.peek(0) && kind != end_sym {
 			if i > 0 {
 				self.consume(RawToken::Comma)?;
 			}
@@ -400,7 +410,7 @@ impl Parser {
 	fn parse_tuple_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
 		self.consume(RawToken::LPar)?;
 
-		let result = self.parse_elements()?;
+		let result = self.parse_elements(&RawToken::RPar)?;
 
 		self.consume(RawToken::RPar)?;
 
@@ -410,17 +420,17 @@ impl Parser {
 	fn parse_list_elements(&mut self) -> Result<Vec<ASTNode>, ParserError> {
 		self.consume(RawToken::LBracket)?;
 
-		let result = self.parse_elements()?;
+		let result = self.parse_elements(&RawToken::RBracket)?;
 
 		self.consume(RawToken::RBracket)?;
 
 		Ok(result)
 	}
 
-	fn parse_list(&mut self) -> Result<ASTNode, ParserError> {
+	fn parse_list(&mut self) -> Result<RawASTNode, ParserError> {
 		let result = self.parse_list_elements()?;
 
-		Ok(RawASTNode::List(result).into())
+		Ok(RawASTNode::List(result))
 	}
 
 	// fn parse_assignment(&mut self) -> Result<Option<ASTNode>, ParserError> {
@@ -661,7 +671,7 @@ impl Parser {
 			}
 
 			(wmatch!(RawToken::LBracket), ..) => {
-				self.parse_list().map(|v| v.val)?
+				self.parse_list()?
 			}
 
 			(wmatch!(RawToken::LBrace), ..) => {
@@ -693,25 +703,7 @@ impl Parser {
 
 			(kind, ..) => {
 				return Err(
-					ParserError::from(RawParserError::ExpectedTokens {
-						types: &[
-							RawToken::True,
-							RawToken::False,
-							RawToken::Return,
-							RawToken::Break,
-							RawToken::If,
-							RawToken::While,
-							RawToken::Def,
-							// RawToken::Float(0.0),
-							// RawToken::String("".to_string()),
-							RawToken::Plus,
-							RawToken::Minus,
-							RawToken::Exclamation,
-							RawToken::LPar,
-							RawToken::LBracket,
-							RawToken::LBrace,
-							// RawToken::Word("".to_string()),
-						],
+					ParserError::from(RawParserError::ExpectedExpression {
 						found: kind.val.clone()
 					}).with_pos(span)
 				)
