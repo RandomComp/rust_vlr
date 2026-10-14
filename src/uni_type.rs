@@ -1,29 +1,29 @@
 use std::{fmt::{self, Display, Write}, iter::zip};
 
-use crate::{compiler::parser::{BinaryOp, RawASTNode, UnaryOp}, res_with_pos, val_with_pos, wrapper::{ASTNode, UniResult, UniResultError}};
+use crate::{compiler::parser::{ASTNode, BinaryOp, UnaryOp}, res_with_pos, val_with_pos, wrapper::Spanned};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum RawUniResultError {
+pub enum UniResultError {
 	#[error("Incompatible {op:?} operation between {left} and {right}")]
-	IncompatibleOperationType {left: RawUniResultType, op: BinaryOp, right: RawUniResultType},
+	IncompatibleOperationType {left: UniResultType, op: BinaryOp, right: UniResultType},
 	#[error("Incompatible operation for \"{val}\"")]
-	IncompatibleUnaryOperationType {val: RawUniResultType},
+	IncompatibleUnaryOperationType {val: UniResultType},
 	#[error("Use '{0:?}' on list is ambigous, use all() or any() instead")]
 	LogicalOperationOnTupleAmbigous(BinaryOp),
 	#[error("Using 'into' on incompatible type {0:?}")]
-	UsingIntoOnIncompatibleType(RawUniResult),
+	UsingIntoOnIncompatibleType(UniResult),
 	#[error("Unsupported operation '{0}'")]
 	UnsupportedOperation(BinaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
-	CannotConvertToUniResult(RawASTNode),
+	CannotConvertToUniResult(ASTNode),
 	#[error("Cannot convert to {0:?} from UniResult")]
-	CannotConvertFromUniResult(RawUniResult),
+	CannotConvertFromUniResult(UniResult),
 }
 
 // todo: сделать типы полноценными объектами с функциями, и тогда выдавать на type_name имя типа
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RawUniResultType {
+pub enum UniResultType {
 	None,
 	Boolean,
 	NumberU32,
@@ -33,96 +33,101 @@ pub enum RawUniResultType {
 	Range,
 }
 
-impl fmt::Display for RawUniResultType {
+impl fmt::Display for UniResultType {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			RawUniResultType::None 		=> write!(f, "none"),
-			RawUniResultType::Boolean 	=> write!(f, "boolean"),
-			RawUniResultType::NumberU32	=> write!(f, "u32 number"),
-			RawUniResultType::Float 	=> write!(f, "float"),
-			RawUniResultType::String 	=> write!(f, "string"),
-			RawUniResultType::List 		=> write!(f, "list"),
-			RawUniResultType::Range 	=> write!(f, "range"),
+			UniResultType::None 		=> write!(f, "none"),
+			UniResultType::Boolean 	=> write!(f, "boolean"),
+			UniResultType::NumberU32	=> write!(f, "u32 number"),
+			UniResultType::Float 	=> write!(f, "float"),
+			UniResultType::String 	=> write!(f, "string"),
+			UniResultType::List 		=> write!(f, "list"),
+			UniResultType::Range 	=> write!(f, "range"),
 		}
 	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RawUniResult {
+pub enum UniResult {
 	None,
 	Boolean(bool),
 	NumberU32(u32),
 	Float(f64),
 	String(String),
-	List(Vec<UniResult>),
+	List(Vec<Spanned<UniResult>>),
 	Range { start: f64, end: f64, step: f64 },
 }
 
-impl TryFrom<UniResult> for ASTNode {
-	type Error = UniResultError;
+impl TryFrom<Spanned<UniResult>> for Spanned<ASTNode> {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: UniResult) -> Result<Self, Self::Error> {
+	fn try_from(value: Spanned<UniResult>) -> Result<Self, Self::Error> {
 		let span = value.span;
 
 		let result = match value.val {
-			RawUniResult::None =>
-				RawASTNode::None,
-			RawUniResult::Boolean(val) =>
-				RawASTNode::Boolean(val),
-			RawUniResult::Float(val) =>
-				RawASTNode::Float(val),
-			RawUniResult::String(val) =>
-				RawASTNode::String(val),
-			RawUniResult::List(values) => {
-				let result: Result<Vec<ASTNode>, _> = values.into_iter().map(TryInto::try_into).collect();
+			UniResult::None =>
+				ASTNode::None,
+			UniResult::Boolean(val) =>
+				ASTNode::Boolean(val),
+			UniResult::Float(val) =>
+				ASTNode::Float(val),
+			UniResult::String(val) =>
+				ASTNode::String(val),
+			UniResult::List(values) => {
+				let result: Result<Vec<Spanned<ASTNode>>, _> = values.into_iter().map(TryInto::try_into).collect();
 
-				RawASTNode::List(result?)
+				ASTNode::List(result?)
 			},
 			v => return Err(
-				Self::Error::from(
-					RawUniResultError::CannotConvertFromUniResult(v)
-				).with_pos(span)
+				Spanned::from_with_span(
+					UniResultError::CannotConvertFromUniResult(v),
+					span
+				)
 			),
 		};
 
 		Ok(
-			Self::from(result).with_pos(span)
+			Spanned::from_with_span(
+				result,
+				span
+			)
 		)
 	}
 }
 
-impl TryFrom<ASTNode> for UniResult {
-	type Error = UniResultError;
+impl TryFrom<Spanned<ASTNode>> for Spanned<UniResult> {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: ASTNode) -> Result<Self, Self::Error> {
-		use RawUniResult as RawSelf;
+	fn try_from(value: Spanned<ASTNode>) -> Result<Self, Self::Error> {
+		use UniResult as RawSelf;
 
 		let span = value.span;
 
 		let result = match value.val {
-			RawASTNode::None => RawSelf::None,
-			RawASTNode::Boolean(val) => RawSelf::Boolean(val),
-			RawASTNode::Float(val) => RawSelf::Float(val),
-			RawASTNode::String(val) => RawSelf::String(val),
-			RawASTNode::List(values) => {
+			ASTNode::None => RawSelf::None,
+			ASTNode::Boolean(val) => RawSelf::Boolean(val),
+			ASTNode::Float(val) => RawSelf::Float(val),
+			ASTNode::String(val) => RawSelf::String(val),
+			ASTNode::List(values) => {
 				let result: Result<Vec<Self>, _> = values.into_iter().map(TryInto::try_into).collect();
 
 				RawSelf::List(result?)
 			},
 			v => return Err(
-				Self::Error::from(
-					RawUniResultError::CannotConvertToUniResult(v)
-				).with_pos(span)
+				Spanned::from_with_span(
+					UniResultError::CannotConvertToUniResult(v),
+					span
+				)
 			),
 		};
 
 		Ok(
-			Self::from(result).with_pos(span)
+			Self::from_with_span(result, span)
 		)
 	}
 }
 
-impl Display for RawUniResult {
+impl Display for UniResult {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			Self::None => write!(f, "None"),
@@ -150,16 +155,18 @@ impl Display for RawUniResult {
 	}
 }
 
-impl RawUniResult {
-	pub fn result_type(&self) -> RawUniResultType {
+type OpResult = Result<Spanned<UniResult>, Spanned<UniResultError>>;
+
+impl UniResult {
+	pub fn result_type(&self) -> UniResultType {
 		match self {
-			RawUniResult::None =>			RawUniResultType::None,
-			RawUniResult::Boolean(..) =>	RawUniResultType::Boolean,
-			RawUniResult::Float(..) =>		RawUniResultType::Float,
-			RawUniResult::NumberU32(..) =>	RawUniResultType::NumberU32,
-			RawUniResult::String(..) =>		RawUniResultType::String,
-			RawUniResult::List(..) =>		RawUniResultType::List,
-			RawUniResult::Range {..} =>		RawUniResultType::Range,
+			UniResult::None 			=>	UniResultType::None,
+			UniResult::Boolean(..) 		=>	UniResultType::Boolean,
+			UniResult::Float(..) 		=>	UniResultType::Float,
+			UniResult::NumberU32(..) 	=>	UniResultType::NumberU32,
+			UniResult::String(..) 		=>	UniResultType::String,
+			UniResult::List(..) 		=>	UniResultType::List,
+			UniResult::Range {..} 		=>	UniResultType::Range,
 		}
 	}
 
@@ -183,8 +190,8 @@ impl RawUniResult {
 		}
 	}
 
-	pub fn calc_binary_by_op(left: &UniResult, right: &UniResult, op: &BinaryOp) -> Result<UniResult, UniResultError> {
-		let result = match op {
+	pub fn calc_binary_by_op(left: &Spanned<UniResult>, right: &Spanned<UniResult>, op: &BinaryOp) -> Result<Spanned<UniResult>, Spanned<UniResultError>> {
+		match op {
 			BinaryOp::Plus 			=> Self::add(left, right),
 			BinaryOp::Minus 		=> Self::sub(left, right),
 			BinaryOp::Multiply 		=> Self::mul(left, right),
@@ -196,23 +203,22 @@ impl RawUniResult {
 			BinaryOp::LogicalAnd 	=> Self::log_and(left, right),
 			BinaryOp::LogicalOr 	=> Self::log_or(left, right),
 			_ => Err(
-				UniResultError::from(
-					RawUniResultError::UnsupportedOperation(op.to_owned())
-				).with_pos_from(left)
+				Spanned::from_with_span(
+					UniResultError::UnsupportedOperation(op.to_owned()),
+					left.span
+				)
 			),
-		};
-
-		res_with_pos!(result, UniResult, UniResultError, left.span)
-	}
-
-	pub fn calc_unary_by_op(left: &UniResult, op: &UnaryOp) -> Result<UniResult, UniResultError> {
-		match op {
-			UnaryOp::Minus => Self::neg(left),
-			UnaryOp::Not => Self::not(left),
 		}
 	}
 
-	pub fn add(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn calc_unary_by_op(left: &Spanned<UniResult>, op: &UnaryOp) -> Result<Spanned<UniResult>, Spanned<UniResultError>> {
+		match op {
+			UnaryOp::Minus 	=> Self::neg(left),
+			UnaryOp::Not 	=> Self::not(left),
+		}
+	}
+
+	fn add(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a + b)),
@@ -244,15 +250,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Plus, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
-	pub fn sub(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn sub(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a - b)),
@@ -284,15 +290,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Minus, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
-	pub fn pow(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn pow(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a.powf(b))),
@@ -324,15 +330,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Pow, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
-	pub fn mul(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn mul(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a * b)),
@@ -364,15 +370,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Multiply, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
-	pub fn div(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn div(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a / b)),
@@ -404,15 +410,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Divide, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
-	pub fn rem(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn rem(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a % b)),
@@ -444,27 +450,27 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Remainder, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
 
-	pub fn eq(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	fn eq(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(Self::None, Self::None)
-				=> Self::Boolean(true),
+				=> Ok(Self::Boolean(true)),
 			(Self::Float(a), &Self::Float(b))
-				=> Self::Boolean((a - b).abs() < f64::EPSILON),
+				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
 			(Self::String(a), Self::String(b))
-				=> Self::Boolean(a == b),
+				=> Ok(Self::Boolean(a == b)),
 			(Self::Boolean(a), Self::Boolean(b))
-				=> Self::Boolean(a == b),
+				=> Ok(Self::Boolean(a == b)),
 			(Self::NumberU32(a), Self::NumberU32(b))
-				=> Self::Boolean(a == b),
+				=> Ok(Self::Boolean(a == b)),
 			(Self::List(values), Self::Float(..)) => {
 				let mut result = Vec::new();
 
@@ -472,7 +478,7 @@ impl RawUniResult {
 					result.push(Self::eq(value, right)?);
 				}
 
-				result.into()
+				Ok(result.into())
 			},
 			(Self::Float(..), Self::List(values)) => {
 				let mut result = Vec::new();
@@ -481,7 +487,7 @@ impl RawUniResult {
 					result.push(Self::eq(left, value)?);
 				}
 
-				result.into()
+				Ok(result.into())
 			},
 			(Self::List(values_a), Self::List(values_b)) => {
 				let mut result = Vec::new();
@@ -490,20 +496,18 @@ impl RawUniResult {
 					result.push(Self::eq(a, b)?);
 				}
 
-				result.into()
+				Ok(result.into())
 			},
-			_ => return Err(
-				UniResultError::from(
-					RawUniResultError::IncompatibleOperationType {
-						left: left.result_type(), op: BinaryOp::Equals, right: right.result_type()
-					}
-				).with_pos(left.span)
+			_ => Err(
+				UniResultError::IncompatibleOperationType {
+					left: left.result_type(), op: BinaryOp::Equals, right: right.result_type()
+				}
 			),
 		};
 
-		Ok(val_with_pos!(result, UniResult, left.span))
+		res_with_pos!(result, left.span)
 	}
-	pub fn lt(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn lt(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a < b)),
@@ -537,16 +541,16 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Less, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
 
-	pub fn gt(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn gt(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a > b)),
@@ -580,50 +584,50 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::Great, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
 
-	pub fn log_and(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn log_and(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(Self::Boolean(a && b)),
 			(Self::List(..) | Self::Boolean(..), Self::List(..) | Self::Boolean(..)) => {
-				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalAnd))
+				Err(UniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalAnd))
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::LogicalAnd, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
 
-	pub fn log_or(left: &UniResult, right: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn log_or(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
 			(&Self::Boolean(a), &Self::Boolean(b))
 				=> Ok(Self::Boolean(a || b)),
 			(Self::List(..) | Self::Boolean(..), Self::List(..) | Self::Boolean(..)) => {
-				Err(RawUniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalOr))
+				Err(UniResultError::LogicalOperationOnTupleAmbigous(BinaryOp::LogicalOr))
 			},
 			(left, right) => Err(
-				RawUniResultError::IncompatibleOperationType {
+				UniResultError::IncompatibleOperationType {
 					left: left.result_type(), op: BinaryOp::LogicalOr, right: right.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, left.span)
+		res_with_pos!(result, left.span)
 	}
 
-	pub fn neg(value: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn neg(value: &Spanned<UniResult>) -> OpResult {
 		let result = match &value.val {
 			&Self::Float(b)
 				=> Ok(Self::Float(-b)),
@@ -637,15 +641,15 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			val => Err(
-				RawUniResultError::IncompatibleUnaryOperationType {
+				UniResultError::IncompatibleUnaryOperationType {
 					val: val.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, value.span)
+		res_with_pos!(result, value.span)
 	}
-	pub fn not(value: &UniResult) -> Result<UniResult, UniResultError> {
+	pub fn not(value: &Spanned<UniResult>) -> OpResult {
 		let result = match &value.val {
 			&Self::Boolean(b)
 				=> Ok(Self::Boolean(!b)),
@@ -659,100 +663,125 @@ impl RawUniResult {
 				Ok(result.into())
 			},
 			val => Err(
-				RawUniResultError::IncompatibleUnaryOperationType {
+				UniResultError::IncompatibleUnaryOperationType {
 					val: val.result_type()
 				}
 			),
 		};
 
-		res_with_pos!(result, UniResult, UniResultError, value.span)
+		res_with_pos!(result, value.span)
 	}
 }
 
-impl From<bool> for RawUniResult {
+impl From<bool> for UniResult {
 	fn from(value: bool) -> Self {
-		RawUniResult::Boolean(value)
+		Self::Boolean(value)
 	}
 }
 
-impl From<u32> for RawUniResult {
+impl From<u32> for UniResult {
 	fn from(value: u32) -> Self {
-		RawUniResult::NumberU32(value)
+		Self::NumberU32(value)
 	}
 }
 
-impl From<f64> for RawUniResult {
+impl From<f64> for UniResult {
 	fn from(value: f64) -> Self {
-		RawUniResult::Float(value)
+		Self::Float(value)
 	}
 }
 
-impl From<String> for RawUniResult {
+impl From<String> for UniResult {
 	fn from(value: String) -> Self {
-		RawUniResult::String(value)
+		Self::String(value)
 	}
 }
 
-impl From<Vec<UniResult>> for RawUniResult {
-	fn from(values: Vec<UniResult>) -> Self {
-		RawUniResult::List(values)
+impl From<Vec<Spanned<UniResult>>> for UniResult {
+	fn from(values: Vec<Spanned<UniResult>>) -> Self {
+		Self::List(values)
 	}
 }
 
-impl TryFrom<RawUniResult> for bool {
-	type Error = RawUniResultError;
+impl TryFrom<Spanned<UniResult>> for bool {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: RawUniResult) -> Result<bool, Self::Error> {
-		let RawUniResult::Boolean(x) = value else {
-			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
+	fn try_from(value: Spanned<UniResult>) -> Result<bool, Self::Error> {
+		let UniResult::Boolean(x) = value.val else {
+			return Err(
+				Spanned::from_with_span(
+					UniResultError::UsingIntoOnIncompatibleType(value.val),
+					value.span
+				)
+			)
 		};
 
 		Ok(x)
 	}
 }
 
-impl TryFrom<RawUniResult> for u32 {
-	type Error = RawUniResultError;
+impl TryFrom<Spanned<UniResult>> for u32 {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: RawUniResult) -> Result<u32, Self::Error> {
-		let RawUniResult::NumberU32(x) = value else {
-			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
+	fn try_from(value: Spanned<UniResult>) -> Result<u32, Self::Error> {
+		let UniResult::NumberU32(x) = value.val else {
+			return Err(
+				Spanned::from_with_span(
+					UniResultError::UsingIntoOnIncompatibleType(value.val),
+					value.span
+				)
+			)
 		};
 
 		Ok(x)
 	}
 }
 
-impl TryFrom<RawUniResult> for f64 {
-	type Error = RawUniResultError;
+impl TryFrom<Spanned<UniResult>> for f64 {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: RawUniResult) -> Result<f64, Self::Error> {
-		let RawUniResult::Float(x) = value else {
-			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
+	fn try_from(value: Spanned<UniResult>) -> Result<f64, Self::Error> {
+		let UniResult::Float(x) = value.val else {
+			return Err(
+				Spanned::from_with_span(
+					UniResultError::UsingIntoOnIncompatibleType(value.val),
+					value.span
+				)
+			)
 		};
 
 		Ok(x)
 	}
 }
 
-impl TryFrom<RawUniResult> for String {
-	type Error = RawUniResultError;
+impl TryFrom<Spanned<UniResult>> for String {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: RawUniResult) -> Result<String, Self::Error> {
-		let RawUniResult::String(x) = value else {
-			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
+	fn try_from(value: Spanned<UniResult>) -> Result<String, Self::Error> {
+		let UniResult::String(x) = value.val else {
+			return Err(
+				Spanned::from_with_span(
+					UniResultError::UsingIntoOnIncompatibleType(value.val),
+					value.span
+				)
+			)
 		};
 
 		Ok(x)
 	}
 }
 
-impl TryFrom<RawUniResult> for Vec<UniResult> {
-	type Error = RawUniResultError;
+impl TryFrom<Spanned<UniResult>> for Vec<Spanned<UniResult>> {
+	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: RawUniResult) -> Result<Vec<UniResult>, Self::Error> {
-		let RawUniResult::List(x) = value else {
-			return Err(RawUniResultError::UsingIntoOnIncompatibleType(value))
+	fn try_from(value: Spanned<UniResult>) -> Result<Vec<Spanned<UniResult>>, Self::Error> {
+		let UniResult::List(x) = value.val else {
+			return Err(
+				Spanned::from_with_span(
+					UniResultError::UsingIntoOnIncompatibleType(value.val),
+					value.span
+				)
+			)
 		};
 
 		Ok(x)

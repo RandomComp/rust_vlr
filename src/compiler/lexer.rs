@@ -1,9 +1,9 @@
 use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
-use crate::{res_with_pos, wrapper::{LexerError, Token}};
+use crate::{res_with_pos, wrapper::Spanned};
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum RawToken {
+pub enum Token {
 	Float(f64),
 	Word(String),
 	String(String),
@@ -75,7 +75,7 @@ macro_rules! gen_code_for_ops_and_to_const_str {
 	};
 }
 
-impl RawToken {
+impl Token {
 	gen_code_for_ops_and_to_const_str!(
 		[
 			Self::Equals => "==",
@@ -155,7 +155,7 @@ impl RawToken {
 	}
 }
 
-impl std::fmt::Display for RawToken {
+impl std::fmt::Display for Token {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			Self::Float(x) => write!(f, "{x}"),
@@ -170,7 +170,7 @@ impl std::fmt::Display for RawToken {
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
-pub enum RawLexerError {
+pub enum LexerError {
 	#[error("unknown operation")]
 	UnknownOperation,
 	#[error("invalid number")]
@@ -205,22 +205,22 @@ impl<'a> Lexer<'a> {
 		self.column += len;
 	}
 
-	fn consume(&mut self, expected_c: char) -> Result<(), RawLexerError> {
+	fn consume(&mut self, expected_c: char) -> Result<(), LexerError> {
 		match self.peek(0) {
 			Some(c) if c == expected_c => {
 				self.consume_next(1);
 
 				Ok(())
 			},
-			_ => Err(RawLexerError::ExpectedSymbol { c: expected_c })
+			_ => Err(LexerError::ExpectedSymbol { c: expected_c })
 		}
 	}
 
-	fn tokenize_operator(&mut self) -> Result<RawToken, RawLexerError> {
+	fn tokenize_operator(&mut self) -> Result<Token, LexerError> {
 		let expected_op = self.get().take(3).collect::<String>();
 
-		let Some((result, text)) = RawToken::from_op(&expected_op) else {
-		 	return Err(RawLexerError::UnknownOperation)
+		let Some((result, text)) = Token::from_op(&expected_op) else {
+		 	return Err(LexerError::UnknownOperation)
 		};
 
 		self.consume_next(text.len());
@@ -228,7 +228,7 @@ impl<'a> Lexer<'a> {
 		Ok(result.clone())
 	}
 
-	fn tokenize_number(&mut self) -> Result<RawToken, RawLexerError> {
+	fn tokenize_number(&mut self) -> Result<Token, LexerError> {
 		let mut word_chr_cnt = 0;
 
 		let mut dots = 0;
@@ -257,10 +257,10 @@ impl<'a> Lexer<'a> {
 
 		self.consume_next(word_chr_cnt);
 
-		Ok(RawToken::Float(result))
+		Ok(Token::Float(result))
 	}
 
-	fn tokenize_word(&mut self) -> RawToken {
+	fn tokenize_word(&mut self) -> Token {
 		let mut word_chr_cnt = 0;
 
 		let mut word_str = String::new();
@@ -274,18 +274,18 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		if let Some(token_type) = RawToken::get_keyword(word_str.as_str()) {
+		if let Some(token_type) = Token::get_keyword(word_str.as_str()) {
 			self.consume_next(word_chr_cnt);
 
 			token_type
 		} else {
 			self.consume_next(word_chr_cnt);
 
-			RawToken::Word(word_str)
+			Token::Word(word_str)
 		}
 	}
 
-	fn tokenize_string(&mut self) -> Result<RawToken, RawLexerError> {
+	fn tokenize_string(&mut self) -> Result<Token, LexerError> {
 		self.consume('"')?;
 
 		let mut word_chr_cnt: usize = 0;
@@ -305,7 +305,7 @@ impl<'a> Lexer<'a> {
 
 		self.consume('"')?;
 
-		Ok(RawToken::String(word_str))
+		Ok(Token::String(word_str))
 	}
 
 	fn skip_comments(&mut self) {
@@ -357,7 +357,9 @@ impl<'a> Lexer<'a> {
 		self.index = index;
 	}
 
-	fn tokenize(&mut self) -> Result<Token, LexerError> {
+	fn tokenize(&mut self) -> Result<Spanned<Token>, Spanned<LexerError>> {
+		let span = self.spans.len();
+
 		loop {
 			match self.peek(0) {
 				Some(c) if c.is_whitespace() =>
@@ -365,7 +367,7 @@ impl<'a> Lexer<'a> {
 				Some('#') =>
 					self.skip_comments(),
 				Some(_) => break,
-				None => return Ok(RawToken::Eof.into())
+				None => return Ok(Spanned::from_with_span(Token::Eof, span))
 			}
 		}
 
@@ -382,10 +384,10 @@ impl<'a> Lexer<'a> {
 			Some(_) =>
 				self.tokenize_operator(),
 
-			None => Ok(RawToken::Eof)
+			None => Ok(Token::Eof)
 		};
 
-		res_with_pos!(result, Token, LexerError, span)
+		res_with_pos!(result, span)
 	}
 
 	/// Парсит текущий код из Lexer на токены
@@ -399,17 +401,17 @@ impl<'a> Lexer<'a> {
 	///     println!("{token}");
 	/// }
 	/// ```
-	pub fn tokenize_loop(&mut self) -> Result<Vec<Token>, LexerError> {
-		let mut result: Vec<Token> = Vec::new();
+	pub fn tokenize_loop(&mut self) -> Result<Vec<Spanned<Token>>, Spanned<LexerError>> {
+		let mut result: Vec<Spanned<Token>> = Vec::new();
 
-		while let token = self.tokenize()? && token != RawToken::Eof {
+		while let token = self.tokenize()? && token != Token::Eof {
 			result.push(token);
 		}
 
 		let span = self.spans.len();
 		self.spans.push((self.row, self.column));
 
-		result.push(Token::from(RawToken::Eof).with_pos(span));
+		result.push(Spanned::from_with_span(Token::Eof, span));
 
 		Ok(result)
 	}

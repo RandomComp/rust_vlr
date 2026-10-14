@@ -2,14 +2,14 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
+use crate::{native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wrapper::Spanned};
 
-use std::{collections::HashMap, iter};
+use std::{collections::HashMap};
 
-use crate::{bytecode::Bytecode, compiler::parser::{BinaryOp::self, RawASTNode, UnaryOp}, wrapper::{ASTNode, CompilerError}};
+use crate::{bytecode::Bytecode, compiler::parser::{BinaryOp::self, ASTNode, UnaryOp}};
 
 #[derive(thiserror::Error, PartialEq, Clone, Debug)]
-pub enum RawCompilerError {
+pub enum CompilerError {
 	#[error("Unknown function '{0}' call")]
 	UnknownFunctionCall(String),
 	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
@@ -89,9 +89,9 @@ impl Compiler {
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: &str, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError>
-	where T: Iterator<Item=&'a ASTNode> {
-		if let Ok(id) = NativeFunctionID::try_from(name) {
+	fn call_func<'a, T>(&mut self, name: Spanned<&str>, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
+	where T: Iterator<Item=&'a Spanned<ASTNode>> {
+		if let Ok(id) = NativeFunctionID::try_from(name.val) {
 			let mut len = 0;
 
 			for arg in args {
@@ -104,11 +104,14 @@ impl Compiler {
 				NativeFunctionArgsNumber::Fixed(fixed) => {
 					if len != fixed {
 						return Err(
-							RawCompilerError::ArgumentsNativeFunctionCall {
-								id,
-								found: len,
-								expected: fixed
-							}
+							Spanned::from_with_span(
+								CompilerError::ArgumentsNativeFunctionCall {
+									id,
+									found: len,
+									expected: fixed
+								},
+								name.span
+							)
 						)
 					}
 				}
@@ -119,26 +122,43 @@ impl Compiler {
 			result.push(Bytecode::NativeCall(id));
 			self.stack -= len;
 			self.stack += 1;
-		} else if let Some(pos) = context.get_function(name) {
+
+			return Ok(())
+		} else if let Some(pos) = context.get_function(name.val) {
 			for arg in args {
 				self.compile(arg, result, context)?;
 			}
 
 			result.push(Bytecode::Call(pos));
-		} else {
-			return Err(RawCompilerError::UnknownFunctionCall(name.to_owned()))
+
+			return Ok(())
 		}
 
-		Ok(())
+		Err(
+			Spanned::from_with_span(
+				CompilerError::UnknownFunctionCall(name.val.to_owned()),
+				name.span
+			)
+		)
 	}
 
-	fn compile_assignment(&mut self, left: &ASTNode, right: &ASTNode, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), RawCompilerError> {
-		let RawASTNode::Variable(name) = &left.val else {
-			return Err(RawCompilerError::LeftExprShouldBeId(left.val.to_string()));
+	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+		let ASTNode::Variable(name) = &left.val else {
+			return Err(
+				Spanned::from_with_span(
+					CompilerError::LeftExprShouldBeId(left.val.to_string()),
+					left.span
+				)
+			);
 		};
 
 		let Some(stack_pos) = context.get_var(name) else {
-			return Err(RawCompilerError::NotKnownAtThisScope(name.to_owned()));
+			return Err(
+				Spanned::from_with_span(
+					CompilerError::NotKnownAtThisScope(name.to_owned()),
+					left.span
+				)
+			);
 		};
 
 		self.look(stack_pos, result);
@@ -153,7 +173,7 @@ impl Compiler {
 		Ok(())
 	}
 
-	fn compile(&mut self, ast: &ASTNode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), CompilerError> {
+	fn compile(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
 		println!("context = {context:?}");
 
 		println!("stack_pos = {}; ast = {ast}", self.stack);
@@ -161,7 +181,7 @@ impl Compiler {
 		let span = ast.span;
 
 		match &ast.val {
-			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
@@ -183,51 +203,55 @@ impl Compiler {
 
 				*result.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 			},
-			RawASTNode::Return(value) => {
+			ASTNode::Return(value) => {
 				self.compile(value, result, context)?;
 
 				result.push(Bytecode::Ret);
 			},
-			RawASTNode::Break(value) => {
+			ASTNode::Break(value) => {
 				self.compile(value, result, context)?;
 
 				let Some(pos) = self.break_pos.last_mut() else {
-					return Err(CompilerError::from(RawCompilerError::BreakOutsideOfLoop).with_pos(span))
+					return Err(
+						Spanned::from_with_span(CompilerError::BreakOutsideOfLoop, span)
+					)
 				};
 
 				*pos = Some(Self::pc(result));
 
 				result.push(Bytecode::Jmp(0));
 			},
-			RawASTNode::FunctionDefinition {..} => todo!("{}", ast.val),
-			RawASTNode::None => return Ok(()),
-			&RawASTNode::Boolean(x) => {
+			ASTNode::FunctionDefinition {..} => todo!("{}", ast.val),
+			ASTNode::None => return Ok(()),
+			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushBoolean(x));
 			},
-			&RawASTNode::Float(x) => {
+			&ASTNode::Float(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushFloat(x));
 			},
-			RawASTNode::String(x) => {
+			ASTNode::String(x) => {
 				self.stack += 1;
 
 				result.push(Bytecode::PushString(x.clone()));
 			},
-			RawASTNode::List(values) => if !values.is_empty() {
-				self.call_func("list", values.iter(), result, context).map_err(|e|
-					CompilerError::from(e).with_pos(span)
+			ASTNode::List(values) => if !values.is_empty() {
+				self.call_func(
+					Spanned::from_with_span("list", span),
+					values.iter(), result, context
 				)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::Range, right } => {
-				self.call_func("range", [&**left, &**right].into_iter(), result, context).map_err(|e|
-					CompilerError::from(e).with_pos(span)
+			ASTNode::Binary { left, op: BinaryOp::Range, right } => {
+				self.call_func(
+					Spanned::from_with_span("range", left.span),
+					[&**left, &**right].into_iter(), result, context
 				)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::Assignment, right } => {
-				if let RawASTNode::Variable(name) = &left.val {
+			ASTNode::Binary { left, op: BinaryOp::Assignment, right } => {
+				if let ASTNode::Variable(name) = &left.val {
 					if let Some(stack_pos) = context.get_var(name) {
 						self.compile(right, result, context)?;
 
@@ -241,42 +265,44 @@ impl Compiler {
 					}
 				} else {
 					return Err(
-						CompilerError::from(
-							RawCompilerError::LeftExprShouldBeId(left.val.to_string())
-						).with_pos(span)
+						Spanned::from_with_span(
+							CompilerError::LeftExprShouldBeId(left.val.to_string()),
+							span
+						)
 					);
 				}
 			},
-			RawASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::MinusAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::MinusAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Sub, result, context)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Mul, result, context)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::PowAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::PowAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Pow, result, context)?;
 			},
-			RawASTNode::Binary { left, op: BinaryOp::DivideAssignment, right } => {
+			ASTNode::Binary { left, op: BinaryOp::DivideAssignment, right } => {
 				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
 			},
-			RawASTNode::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
+			ASTNode::Variable(name) => if let Some(stack_pos) = context.get_var(name) {
 				self.look(stack_pos, result);
 			} else {
 				return Err(
-					CompilerError::from(
-						RawCompilerError::NotKnownAtThisScope(name.clone())
-					).with_pos(span)
+					Spanned::from_with_span(
+						CompilerError::NotKnownAtThisScope(name.clone()),
+						span
+					)
 				);
 			},
-			RawASTNode::Unary { op, value } => {
+			ASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;
 
 				result.push(Bytecode::from_unary_op(op));
 			},
-			RawASTNode::Binary { left, op: BinaryOp::LessOrEquals, right } => {
+			ASTNode::Binary { left, op: BinaryOp::LessOrEquals, right } => {
 				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
 
@@ -285,7 +311,7 @@ impl Compiler {
 				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 				result.push(Bytecode::from_unary_op(&UnaryOp::Not));
 			},
-			RawASTNode::Binary { left, op: BinaryOp::Great, right } => {
+			ASTNode::Binary { left, op: BinaryOp::Great, right } => {
 				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
 
@@ -293,7 +319,7 @@ impl Compiler {
 
 				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 			},
-			RawASTNode::Binary { left, op, right } => {
+			ASTNode::Binary { left, op, right } => {
 				self.compile(left, result, context)?;
 				self.compile(right, result, context)?;
 
@@ -301,10 +327,13 @@ impl Compiler {
 
 				result.extend(Bytecode::bytecodes_from_binary_op(op));
 			},
-			RawASTNode::Function { name, args } => {
-				self.call_func(name, args.iter(), result, context)?;
+			ASTNode::Function { name, args } => {
+				self.call_func(
+					Spanned::from_with_span(name, span),
+					args.iter(), result, context
+				)?;
 			},
-			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -326,7 +355,7 @@ impl Compiler {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			RawASTNode::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				let cond = Self::pc(result);
 
 				self.compile(condition, result, context)?;
@@ -346,7 +375,7 @@ impl Compiler {
 					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
 				}
 			},
-			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
@@ -363,7 +392,7 @@ impl Compiler {
 
 				*result.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(Self::pc(result));
 			},
-			RawASTNode::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				self.compile(condition, result, context)?;
 
 				self.stack -= 1;
@@ -375,7 +404,7 @@ impl Compiler {
 
 				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
 			},
-			RawASTNode::Block(statements) => {
+			ASTNode::Block(statements) => {
 				let mut local_context = CompilerContext::new(Some(context));
 
 				for statement in statements {
@@ -387,7 +416,7 @@ impl Compiler {
 		Ok(())
 	}
 
-	pub fn compile_loop(&mut self, ast: &ASTNode, result: &mut Vec<Bytecode>) -> Result<(), CompilerError> {
+	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>) -> Result<(), Span<CompilerError>> {
 		self.compile(ast, result, &mut CompilerContext::new(None))
 	}
 }

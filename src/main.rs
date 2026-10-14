@@ -20,10 +20,11 @@ mod bytecode;
 mod compiler;
 mod vm;
 
+use crate::compiler::lexer::LexerError;
+use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
 use crate::vm::{VM, VMError};
-use crate::wrapper::{LexerError, ParserError, OptimizerError, CompilerError};
 
 #[derive(argh::FromArgs, Debug)]
 #[argh(description="An programming language made by RDevel in Rust")]
@@ -85,66 +86,6 @@ impl Display for AppError {
 			Self::Readline(e) => {
 				write!(f, "Readline error: {e}")
 			}
-		}
-	}
-}
-
-fn format(e: &AppError, spans: &[(usize, usize)]) -> String {
-	match e {
-		AppError::Lexer(e) => {
-			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
-
-			format!("line {} at {}: Tokenizing error: {e}", row + 1, column + 1)
-		}
-		AppError::Parser(e) => {
-			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
-
-			format!("line {} at {}: Parsing error: {e}", row + 1, column + 1)
-		}
-		AppError::Optimizer(e) => {
-			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
-
-			format!("line {} at {}: Optimizing error: {e}", row + 1, column + 1)
-		}
-		AppError::Compiler(e) => {
-			let (row, column) = spans.get(e.span).unwrap_or_else(|| panic!("invalid span present {}", e.span));
-
-			format!("line {} at {}: Compiler error: {e}", row + 1, column + 1)
-		}
-		AppError::Bytecode(e) => {
-			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
-
-			// format!("line {} at {}: Assembling error: {e}", row + 1, column + 1)
-
-			format!("Assembling/Dissasembling error: {e}")
-		}
-		AppError::VM(e) => {
-			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
-
-			// format!("line {} at {}: VM error: {e}", row + 1, column + 1)
-
-			format!("VM error: {e}")
-		}
-		AppError::IO(e) => {
-			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
-
-			// format!("line {} at {}: IO error: {e}", row + 1, column + 1)
-
-			format!("IO error: {e}")
-		}
-		AppError::Fmt(e) => {
-			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
-
-			// format!("line {} at {}: Fmt error: {e}", row + 1, column + 1)
-
-			format!("Fmt error: {e}")
-		}
-		AppError::Readline(e) => {
-			// let (row, column) = spans.get(e.span).expect(&format!("invalid span present {}", e.span));
-
-			// format!("line {} at {}: Readline error: {e}", row + 1, column + 1)
-
-			format!("Readline error: {e}")
 		}
 	}
 }
@@ -400,11 +341,7 @@ fn app(args: Args) -> Result<(), AppError> {
 			format_file(&format),
 		Args { run: None, compile: Some(file), .. } => {
 			if let Err((e, spans)) = compile_file(&file) {
-				if let Some(spans) = spans {
-					eprintln!("{}", format(&e, &spans));
-				} else {
-					eprintln!("{e}");
-				}
+				eprintln!("{e}");
 
 				return Err(e)
 			}

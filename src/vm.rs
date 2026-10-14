@@ -6,15 +6,12 @@ use std::string::FromUtf8Error;
 use crate::bytecode::Bytecode;
 use crate::compiler::parser::BinaryOp;
 use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
-use crate::uni_type::{RawUniResult, RawUniResultError};
-use crate::wrapper::UniResultError;
+use crate::uni_type::UniResultError;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
 	#[error("{0}")]
 	UniResult(#[from] UniResultError),
-	#[error("{0}")]
-	RawUniResult(#[from] RawUniResultError),
 	#[error("{0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]

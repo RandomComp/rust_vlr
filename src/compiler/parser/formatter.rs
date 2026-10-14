@@ -1,16 +1,16 @@
 use std::fmt::Write;
 
-use crate::compiler::parser::RawASTNode;
+use crate::compiler::parser::ASTNode;
 
-impl std::fmt::Display for RawASTNode {
+impl std::fmt::Display for ASTNode {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			RawASTNode::None => write!(f, "()"),
-			RawASTNode::Boolean(value) => write!(f, "{value}"),
-			RawASTNode::Float(value) => write!(f, "{value}"),
-			RawASTNode::String(text) => write!(f, "\"{text}\""),
-			RawASTNode::Variable(name) => write!(f, "{name}"),
-			RawASTNode::List(values) => {
+			ASTNode::None => write!(f, "()"),
+			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Float(value) => write!(f, "{value}"),
+			ASTNode::String(text) => write!(f, "\"{text}\""),
+			ASTNode::Variable(name) => write!(f, "{name}"),
+			ASTNode::List(values) => {
 				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -23,7 +23,7 @@ impl std::fmt::Display for RawASTNode {
 
 				write!(f, "]")
 			},
-			RawASTNode::Block(values) => {
+			ASTNode::Block(values) => {
 				write!(f, "{{ ")?;
 
 				for value in values {
@@ -34,7 +34,7 @@ impl std::fmt::Display for RawASTNode {
 
 				Ok(())
 			},
-			RawASTNode::Function {name, args} => {
+			ASTNode::Function {name, args} => {
 				write!(f, "{name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -47,31 +47,31 @@ impl std::fmt::Display for RawASTNode {
 
 				write!(f, ")")
 			},
-			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if {condition} {body} else {else_body}")
 			},
-			RawASTNode::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if {condition} {body}")
 			},
-			RawASTNode::Break(value) => {
+			ASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			RawASTNode::Return(value) => {
+			ASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while {condition} {body} else {else_body}")
 			},
-			RawASTNode::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while {condition} {body}")
 			},
 			// ASTNodeEnum::Ternary { left, op, center, right } =>
 			// 	write!(f, "({} {} {} {} {})", left, op, center, op, right),
-			RawASTNode::Binary { left, op, right } =>
+			ASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			RawASTNode::Unary {op, value} =>
+			ASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -86,7 +86,7 @@ impl std::fmt::Display for RawASTNode {
 
 				Ok(())
 			},
-			RawASTNode::FunctionDefinition { name: None, args, .. } => {
+			ASTNode::FunctionDefinition { name: None, args, .. } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -103,7 +103,7 @@ impl std::fmt::Display for RawASTNode {
 	}
 }
 
-impl RawASTNode {
+impl ASTNode {
 	pub fn format_human_readable(&self, f: &mut String, for_statement: bool, tab_level: usize) -> std::fmt::Result {
 		let tab_level_syms: String = std::iter::repeat_n(' ', 4 * tab_level).collect();
 
@@ -112,12 +112,12 @@ impl RawASTNode {
 		}
 
 		match self {
-			RawASTNode::None => write!(f, "()"),
-			RawASTNode::Boolean(value) => write!(f, "{value}"),
-			RawASTNode::Float(value) => write!(f, "{value}"),
-			RawASTNode::String(text) => write!(f, "\"{text}\""),
-			RawASTNode::Variable(name) => write!(f, "{name}"),
-			RawASTNode::List(values) => {
+			ASTNode::None => write!(f, "()"),
+			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Float(value) => write!(f, "{value}"),
+			ASTNode::String(text) => write!(f, "\"{text}\""),
+			ASTNode::Variable(name) => write!(f, "{name}"),
+			ASTNode::List(values) => {
 				write!(f, "[")?;
 
 				for (i, value) in values.iter().enumerate() {
@@ -130,7 +130,7 @@ impl RawASTNode {
 
 				write!(f, "]")
 			},
-			RawASTNode::Block(values) => {
+			ASTNode::Block(values) => {
 				writeln!(f, "{{")?;
 
 				for value in values {
@@ -141,7 +141,7 @@ impl RawASTNode {
 
 				write!(f, "{tab_level_syms}}}")
 			},
-			RawASTNode::If { condition, body, else_body: Some(else_body) } => {
+			ASTNode::If { condition, body, else_body: Some(else_body) } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -158,7 +158,7 @@ impl RawASTNode {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			RawASTNode::If { condition, body, else_body: None } => {
+			ASTNode::If { condition, body, else_body: None } => {
 				write!(f, "if ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -167,13 +167,13 @@ impl RawASTNode {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			RawASTNode::Break(value) => {
+			ASTNode::Break(value) => {
 				write!(f, "break {value}")
 			},
-			RawASTNode::Return(value) => {
+			ASTNode::Return(value) => {
 				write!(f, "return {value}")
 			},
-			RawASTNode::While { condition, body, else_body: Some(else_body) } => {
+			ASTNode::While { condition, body, else_body: Some(else_body) } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -190,7 +190,7 @@ impl RawASTNode {
 
 				else_body.format_human_readable(f, true, tab_level + 1)
 			},
-			RawASTNode::While { condition, body, else_body: None } => {
+			ASTNode::While { condition, body, else_body: None } => {
 				write!(f, "while ")?;
 
 				condition.format_human_readable(f, false, 0)?;
@@ -199,11 +199,11 @@ impl RawASTNode {
 
 				body.format_human_readable(f, true, tab_level)
 			},
-			RawASTNode::Binary { left, op, right } =>
+			ASTNode::Binary { left, op, right } =>
 				write!(f, "({left} {op} {right})"),
-			RawASTNode::Unary {op, value} =>
+			ASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			RawASTNode::Function {name, args} => {
+			ASTNode::Function {name, args} => {
 				write!(f, "{name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -216,7 +216,7 @@ impl RawASTNode {
 
 				write!(f, ")")
 			},
-			RawASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
 				write!(f, "def {name}(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -233,7 +233,7 @@ impl RawASTNode {
 
 				Ok(())
 			},
-			RawASTNode::FunctionDefinition { name: None, args, body } => {
+			ASTNode::FunctionDefinition { name: None, args, body } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
