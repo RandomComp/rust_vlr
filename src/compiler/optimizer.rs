@@ -2,6 +2,7 @@ use std::{collections::HashMap, mem};
 
 use crate::compiler::parser::{BinaryOp, ASTNode, UnaryOp};
 use crate::uni_type::{UniResult, UniResultError};
+use crate::wmatch;
 use crate::wrapper::Spanned;
 
 #[derive(thiserror::Error, Clone, PartialEq, Debug)]
@@ -31,15 +32,17 @@ impl Optimizer {
 			ASTNode::FunctionDefinition { name: Some(_), .. } |
 			ASTNode::Binary {
 				left: _,
-				op: BinaryOp::Assignment |
+				op: wmatch!(
+					BinaryOp::Assignment |
 					BinaryOp::PlusAssignment |
 					BinaryOp::MinusAssignment |
 					BinaryOp::MultiplyAssignment |
 					BinaryOp::PowAssignment |
-					BinaryOp::DivideAssignment,
+					BinaryOp::DivideAssignment
+				),
 				right: _
 			} => false,
-			ASTNode::Binary { left, op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::LogicalAnd | BinaryOp::LogicalOr), right } => {
 				Self::have_no_effects(left) && Self::have_no_effects(right)
 			},
 			_ => true,
@@ -52,35 +55,35 @@ impl Optimizer {
 		match &mut ast.val {
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Multiply,
+				op: wmatch!(BinaryOp::Multiply),
 				right
 			} if left.val == ASTNode::Float(0.0) || right.val == ASTNode::Float(0.0) => {
 				ast.val = ASTNode::Float(0.0);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Multiply,
+				op: wmatch!(BinaryOp::Multiply),
 				right
 			} if right.val == ASTNode::Float(1.0) => {
 				 *ast = mem::take(left);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Multiply,
+				op: wmatch!(BinaryOp::Multiply),
 				right
 			} if left.val == ASTNode::Float(1.0) => {
 				 *ast = mem::take(right);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Plus,
+				op: wmatch!(BinaryOp::Plus),
 				right
 			} if let ASTNode::Float(0.0) = left.val => {
 				 *ast = mem::take(right);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Minus,
+				op: wmatch!(BinaryOp::Minus),
 				right
 			} if let ASTNode::Float(0.0) = left.val => {
 				ast.val = ASTNode::Unary {
@@ -89,19 +92,19 @@ impl Optimizer {
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Plus | BinaryOp::Minus,
+				op: wmatch!(BinaryOp::Plus | BinaryOp::Minus),
 				right
 			} if let ASTNode::Float(0.0) = right.val => {
 				 *ast = mem::take(left);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Plus,
+				op: op_token @ wmatch!(BinaryOp::Plus),
 				right
 			} if left == right => {
 				ast.val = ASTNode::Binary {
 					left: mem::take(left),
-					op: BinaryOp::Multiply,
+					op: Spanned::from_with_span(BinaryOp::Multiply, op_token.span),
 					right: Box::new(
 						Spanned::from_with_span(ASTNode::Float(2.0), right.span)
 					),
@@ -109,28 +112,28 @@ impl Optimizer {
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Minus,
+				op: wmatch!(BinaryOp::Minus),
 				right
 			} if left == right => {
 				ast.val = ASTNode::Float(0.0);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Equals | BinaryOp::LessOrEquals | BinaryOp::GreatOrEquals,
+				op: wmatch!(BinaryOp::Equals | BinaryOp::LessOrEquals | BinaryOp::GreatOrEquals),
 				right
 			} if left == right => {
 				ast.val = ASTNode::Boolean(true);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::Neq | BinaryOp::Less | BinaryOp::Great,
+				op: wmatch!(BinaryOp::Neq | BinaryOp::Less | BinaryOp::Great),
 				right
 			} if left == right => {
 				ast.val = ASTNode::Boolean(false);
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::LogicalAnd,
+				op: wmatch!(BinaryOp::LogicalAnd),
 				right
 			} => {
 				match (&left.val, &right.val) {
@@ -151,7 +154,7 @@ impl Optimizer {
 			},
 			ASTNode::Binary {
 				left,
-				op: BinaryOp::LogicalOr,
+				op: wmatch!(BinaryOp::LogicalOr),
 				right
 			} => {
 				match (&left.val, &right.val) {
@@ -188,7 +191,7 @@ impl Optimizer {
 				// let constant_value = self.constants.get(name).ok_or(OptimizerError::NotKnownAtThisScope(name.to_owned()))?;
 				// ast.value = constant_value.clone().try_into()?;
 			},
-			ASTNode::Binary { left, op:BinaryOp::Assignment, right } if let ASTNode::Variable(name) = &left.val => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::Assignment), right } if let ASTNode::Variable(name) = &left.val => {
 				self.fold(right)?;
 
 				self.unused_vars.push(name.to_owned());
@@ -202,11 +205,14 @@ impl Optimizer {
 				// ast.value = ASTNodeEnum::None;
 			},
 			ASTNode::Binary {
-				left: _, op:BinaryOp::PlusAssignment |
-							BinaryOp::MinusAssignment |
-							BinaryOp::MultiplyAssignment |
-							BinaryOp::PowAssignment |
-							BinaryOp::DivideAssignment,
+				left: _,
+				op: wmatch!(
+					BinaryOp::PlusAssignment |
+					BinaryOp::MinusAssignment |
+					BinaryOp::MultiplyAssignment |
+					BinaryOp::PowAssignment |
+					BinaryOp::DivideAssignment
+				),
 				right } => {
 				self.fold(right)?;
 			},

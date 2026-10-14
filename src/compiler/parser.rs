@@ -249,7 +249,7 @@ pub enum ASTNode {
 	},
 	Binary {
 		left: Box<Spanned<ASTNode>>,
-		op: BinaryOp,
+		op: Spanned<BinaryOp>,
 		right: Box<Spanned<ASTNode>>,
 	},
 	Unary {
@@ -261,8 +261,8 @@ pub enum ASTNode {
 		args: Vec<Spanned<ASTNode>>,
 	},
 	FunctionDefinition {
-		name: Option<String>,
-		args: Vec<String>,
+		name: Option<Spanned<String>>,
+		args: Vec<Spanned<String>>,
 		body: Box<Spanned<ASTNode>>,
 	},
 }
@@ -533,8 +533,11 @@ impl Parser {
 				}
 			}
 
-			(wmatch!(Token::Def), Some(wmatch!(Token::Word(name)))) => {
-				let name = name.clone();
+			(wmatch!(Token::Def), Some(name_token @ wmatch!(Token::Word(name)))) => {
+				let name = Spanned::from_with_span(
+					name.clone(),
+					name_token.span
+				);
 
 				self.consume_next();
 				self.consume_next();
@@ -545,7 +548,12 @@ impl Parser {
 				while let Some(kind) = self.peek(0) {
 					match &kind.val {
 						Token::Word(arg) => {
-							args.push(arg.clone());
+							args.push(
+								Spanned::from_with_span(
+									arg.clone(),
+									kind.span
+								)
+							);
 
 							self.consume_next();
 						}
@@ -576,7 +584,12 @@ impl Parser {
 				while let Some(kind) = self.peek(0) {
 					match &**kind {
 						Token::Word(arg) => {
-							args.push(arg.clone());
+							args.push(
+								Spanned::from_with_span(
+									arg.clone(),
+									kind.span
+								)
+							);
 
 							self.consume_next();
 						}
@@ -751,6 +764,8 @@ impl Parser {
 			op.precedence() == precedence {
 			let right_precedence = if op.assoc() == OpAssoc::Right {precedence} else {precedence - 1};
 
+			let op_span = x.span;
+
 			self.consume_next();
 
 			let left = mem::take(cur);
@@ -759,7 +774,10 @@ impl Parser {
 			*cur = Spanned::from_with_span(
 				ASTNode::Binary {
 					left: Box::new(left),
-					op,
+					op: Spanned::from_with_span(
+						op,
+						op_span
+					),
 					right: Box::new(right)
 				},
 				span

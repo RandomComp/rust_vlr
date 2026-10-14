@@ -2,7 +2,7 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::{native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wrapper::Spanned};
+use crate::{native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
 
 use std::{collections::HashMap};
 
@@ -185,7 +185,7 @@ impl Compiler {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
-				context.insert_function(name.to_owned(), Self::pc(result));
+				context.insert_function(name.val.to_owned(), Self::pc(result));
 
 				result.push(Bytecode::Subprogram);
 
@@ -194,7 +194,7 @@ impl Compiler {
 				for (i, arg) in args.iter().enumerate().rev() {
 					self.stack += 1;
 
-					body_context.insert_var(arg, i as u32);
+					body_context.insert_var(&arg.val, i as u32);
 				}
 
 				self.compile(body, result, &mut body_context)?;
@@ -244,13 +244,13 @@ impl Compiler {
 					values.iter(), result, context
 				)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::Range, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::Range), right } => {
 				self.call_func(
 					&Spanned::from_with_span("range", left.span),
 					[&**left, &**right].into_iter(), result, context
 				)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::Assignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::Assignment), right } => {
 				let ASTNode::Variable(name) = &left.val else {
 					return Err(
 						Spanned::from_with_span(
@@ -272,19 +272,19 @@ impl Compiler {
 					context.insert_var(name.to_owned(), stack_pos);
 				}
 			},
-			ASTNode::Binary { left, op: BinaryOp::PlusAssignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::PlusAssignment), right } => {
 				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::MinusAssignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::MinusAssignment), right } => {
 				self.compile_assignment(left, right, Bytecode::Sub, result, context)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::MultiplyAssignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::MultiplyAssignment), right } => {
 				self.compile_assignment(left, right, Bytecode::Mul, result, context)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::PowAssignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::PowAssignment), right } => {
 				self.compile_assignment(left, right, Bytecode::Pow, result, context)?;
 			},
-			ASTNode::Binary { left, op: BinaryOp::DivideAssignment, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::DivideAssignment), right } => {
 				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
 			},
 			ASTNode::Variable(name) => {
@@ -304,7 +304,7 @@ impl Compiler {
 
 				result.push(Bytecode::from_unary_op(op));
 			},
-			ASTNode::Binary { left, op: BinaryOp::LessOrEquals, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::LessOrEquals), right } => {
 				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
 
@@ -313,7 +313,7 @@ impl Compiler {
 				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 				result.push(Bytecode::from_unary_op(&UnaryOp::Not));
 			},
-			ASTNode::Binary { left, op: BinaryOp::Great, right } => {
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::Great), right } => {
 				self.compile(right, result, context)?;
 				self.compile(left, result, context)?;
 
@@ -327,7 +327,7 @@ impl Compiler {
 
 				self.stack -= 1;
 
-				result.extend(Bytecode::bytecodes_from_binary_op(op));
+				result.extend(Bytecode::bytecodes_from_binary_op(&op.val));
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(

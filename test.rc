@@ -1,9 +1,5 @@
-x = 123;
 
-if x > 100 {
-	print(x, "> 100")
-} else {
-	print(x, "<= 100")
-}
 
-print("Программа завершена.")
+x = print;
+
+print(x);

@@ -15,10 +15,6 @@ pub struct Spanned<T> {
 }
 
 impl<T: fmt::Display> Spanned<T> {
-	pub fn get_span(&self) -> Span {
-		self.span
-	}
-
 	pub fn from_with_span(val: T, span: Span) -> Self {
 		Self {val, span}
 	}

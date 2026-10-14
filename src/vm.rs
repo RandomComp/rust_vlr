@@ -181,7 +181,7 @@ impl VM {
 
 		let mut pc_changed = false;
 
-		println!("{inst}");
+		// println!("{inst}");
 
 		match inst {
 			Bytecode::Halt =>
@@ -334,7 +334,7 @@ impl VM {
 				break
 			}
 
-			self.dump_stack();
+			// self.dump_stack();
 
 			if !pc_changed {
 				self.pc += 1;
