@@ -432,7 +432,7 @@ gen_insts_impl!(
 			Self::Ret
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "ret")
 		}
 	},
 	NativeCall(NativeFunctionID) as 0x80 => {
@@ -454,10 +454,10 @@ gen_insts_impl!(
 		asm(result) => {
 		},
 		disasm(bytes) => {
-			Self::Halt
+			Self::Eq
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "eq")
 		}
 	},
 	(bin Less) Lt as 0x52 => {
