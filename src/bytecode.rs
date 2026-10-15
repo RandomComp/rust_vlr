@@ -72,7 +72,7 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 	Ok(result)
 }
 
-macro_rules! gen_asm_disasm {
+macro_rules! gen_insts_impl {
 	(
 		$(
 			$( ( bin $binary_op:ident ) )? $( ( un $unary_op:ident ) )?
@@ -219,7 +219,7 @@ macro_rules! gen_asm_disasm {
 	};
 }
 
-gen_asm_disasm!(
+gen_insts_impl!(
 	Halt as 0x00 | 0xFF => {
 		asm(result) => {
 		},
