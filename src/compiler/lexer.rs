@@ -4,10 +4,10 @@ use crate::{res_with_pos, wrapper::Spanned};
 
 macro_rules! gen_code_for_ops_and_for_display {
 	(
-		[ $($kind:tt => $text:expr),* ]
-		[ $($kind_word:tt => $text_word:expr),* ]
-		[ $($kind_other:tt($kind_parametrs:ty) => $text_other:expr),* ]
-		[ $($kind_virtual:tt => $text_virtual:expr),* ]
+		operators => { $($kind:tt => $text:expr),* }
+		keywords => { $($kind_word:tt => $text_word:expr),* }
+		literals => { $($kind_other:tt($kind_parametrs:ty) => $text_other:expr),* }
+		special => { $($kind_special:tt => $text_special:expr),* }
 	) => {
 		#[derive(Copy, Clone, Debug, PartialEq)]
 		pub enum TokenKind {
@@ -24,7 +24,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 			)*
 
 			$(
-				$kind_virtual,
+				$kind_special,
 			)*
 		}
 
@@ -43,7 +43,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 			)*
 
 			$(
-				$kind_virtual,
+				$kind_special,
 			)*
 		}
 
@@ -69,7 +69,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 					)*
 
 					$(
-						Self::$kind_virtual => concat!("virtual ", $text_virtual),
+						Self::$kind_special => concat!("virtual ", $text_special),
 					)*
 				}
 			}
@@ -107,7 +107,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 					)*
 
 					$(
-						Self::$kind_virtual => $text_virtual,
+						Self::$kind_special => $text_special,
 					)*
 				};
 
@@ -132,7 +132,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 }
 
 gen_code_for_ops_and_for_display!(
-	[ // Operators
+	operators => { // Operators
 		Equals => "==",
 		Neq => "!=",
 		GreatOrEquals => ">=",
@@ -151,45 +151,45 @@ gen_code_for_ops_and_for_display!(
 		RemainderAssignment => "%=",
 
 		Plus 			=> "+",
-		Minus 		=> "-",
+		Minus 			=> "-",
 		Exclamation 	=> "!",
 		Pow 			=> "**",
 		Multiply 		=> "*",
-		Divide 		=> "/",
-		Remainder 	=> "%",
+		Divide 			=> "/",
+		Remainder 		=> "%",
 
-		Comma 		=> ",",
-		Semicolon 	=> ";",
+		Comma 			=> ",",
+		Semicolon 		=> ";",
 		LPar 			=> "(",
 		RPar 			=> ")",
 		LBracket 		=> "[",
 		RBracket 		=> "]",
-		LBrace 		=> "{",
-		RBrace 		=> "}",
+		LBrace 			=> "{",
+		RBrace 			=> "}",
 
-		Everything 	=> "...",
-		Range 		=> ".."
-	]
-	[ // Keywords
+		Everything 		=> "...",
+		Range 			=> ".."
+	}
+	keywords => { // Keywords
 		True 			=> "true",
-		False 		=> "false",
-		If 			=> "if",
+		False 			=> "false",
+		If 				=> "if",
 		Else 			=> "else",
-		While 		=> "while",
+		While 			=> "while",
 		For 			=> "for",
-		Break 		=> "break",
-		Return 		=> "return",
-		Global 		=> "global",
+		Break 			=> "break",
+		Return 			=> "return",
+		Global 			=> "global",
 		Def 			=> "def"
-	]
-	[ // Other
+	}
+	literals => {
 		Float(f64) 		=> "float",
 		String(String) 	=> "string",
 		Word(String) 	=> "word"
-	]
-	[ // virtual
+	}
+	special => { // special
 		Eof 			=> "Eof"
-	]
+	}
 );
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
