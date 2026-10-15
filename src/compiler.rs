@@ -2,7 +2,7 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::{native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
+use crate::{bytecode::BytecodeRegister, native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
 
 use std::{collections::HashMap};
 
@@ -211,7 +211,17 @@ impl Compiler {
 					context.insert_function(name.val.clone(), Self::pc(result));
 				}
 
-				result.push(Bytecode::Subprogram);
+				result.push(
+					Bytecode::PushReg(
+						BytecodeRegister::BasePointer
+					)
+				);
+				result.push(
+					Bytecode::MovRegToReg(
+						BytecodeRegister::BasePointer,
+						BytecodeRegister::StackPointer,
+					)
+				);
 
 				let mut body_context = CompilerContext::new(Some(context));
 
@@ -222,6 +232,12 @@ impl Compiler {
 				}
 
 				self.compile(body, result, &mut body_context)?;
+
+				result.push(
+					Bytecode::PopReg(
+						BytecodeRegister::BasePointer
+					)
+				);
 
 				result.push(Bytecode::Ret);
 

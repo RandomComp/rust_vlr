@@ -7,7 +7,7 @@
 use std::fmt::{Write, Debug, Display};
 use std::io::Write as IoWrite;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fmt, io::self, process};
 

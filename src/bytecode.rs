@@ -1,6 +1,44 @@
-use std::{fmt::Display, string::FromUtf8Error};
+use std::{fmt, string::FromUtf8Error};
 
 use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum BytecodeRegister {
+	/// Subprogram result register
+	Accum,
+	Base,
+	BasePointer,
+	StackPointer,
+}
+
+impl fmt::Display for BytecodeRegister {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Accum => "acc",
+			Self::Base => "base",
+			Self::BasePointer => "bp",
+			Self::StackPointer => "sp",
+		}.fmt(f)
+	}
+}
+
+#[derive(thiserror::Error, Clone, Debug)]
+pub enum BytecodeError {
+	#[error("Byte {byte:02X} at {pos:02} unexpected")]
+	UnexpectedByte {
+		pos: u32, byte: u8
+	},
+	#[error("Unexpected EOF at {pos}")]
+	UnexpectedEof {
+		pos: u32,
+	},
+	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
+	StringTooLong,
+	#[error("String have invalid UTF-8 invalid sequence: ")]
+	StringHasInvalidUTF8Sequence(#[from] FromUtf8Error),
+	#[error("{0}")]
+	NativeFunctionID(#[from] NativeFunctionIDError),
+}
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Bytecode {
@@ -14,6 +52,17 @@ pub enum Bytecode {
 	PushString(String),
 	/// Pushes boolean to stack
 	PushBoolean(bool),
+
+	/// Pushes register value to stack
+	PushReg(BytecodeRegister),
+	/// Pop's value from stack to register
+	PopReg(BytecodeRegister),
+
+	/// Moves u32 to register
+	MovU32ToReg(BytecodeRegister, u32),
+	/// Moves register to register
+	MovRegToReg(BytecodeRegister, BytecodeRegister),
+
 	/// Copy value from stack, uses direct index
 	Look(u32),
 	/// Copy value to stack, uses direct index
@@ -26,8 +75,6 @@ pub enum Bytecode {
 	Jmp(u32),
 	/// Call subprogram (pushes current PC and jump's on subprogram)
 	Call(u32),
-	/// Starts subprogram (pushes stack value to interal ret stack)
-	Subprogram,
 	/// Returns from subprogram
 	Ret,
 	/// Equals
@@ -50,9 +97,9 @@ pub enum Bytecode {
 	Neg,
 	/// Logical not
 	Not,
-	/// Logical AND
+	/// Logical and
 	LogicalAnd,
-	/// Logical OR
+	/// Logical or
 	LogicalOr,
 }
 
@@ -66,7 +113,7 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 	Ok(result)
 }
 
-impl Display for Bytecode {
+impl fmt::Display for Bytecode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Bytecode::Halt =>
@@ -79,6 +126,17 @@ impl Display for Bytecode {
 				write!(f, "push {val}"),
 			Bytecode::PushString(text) =>
 				write!(f, "push \"{text}\""),
+
+			Bytecode::PushReg(reg) =>
+				write!(f, "push {reg}"),
+			Bytecode::PopReg(reg) =>
+				write!(f, "pop {reg}"),
+
+			Bytecode::MovRegToReg(reg1, reg2) =>
+				write!(f, "mov {reg1}, {reg2}"),
+			Bytecode::MovU32ToReg(reg, value) =>
+				write!(f, "mov {reg}, {value}"),
+
 			Bytecode::Look(stack_pos) =>
 				write!(f, "look {stack_pos}"),
 			Bytecode::Load(stack_pos) =>
@@ -113,8 +171,6 @@ impl Display for Bytecode {
 				write!(f, "jmp {pos:02}"),
 			Bytecode::Call(pos) =>
 				write!(f, "call {pos:02}"),
-			Bytecode::Subprogram =>
-				write!(f, "subprogram"),
 			Bytecode::Ret =>
 				write!(f, "ret"),
 			Bytecode::NativeCall(id) =>
@@ -123,55 +179,46 @@ impl Display for Bytecode {
 	}
 }
 
-#[derive(thiserror::Error, Clone, Debug)]
-pub enum BytecodeError {
-	#[error("Byte {byte:02X} at {pos:02} unexpected")]
-	UnexpectedByte {
-		pos: u32, byte: u8
-	},
-	#[error("Unexpected EOF at {pos}")]
-	UnexpectedEof {
-		pos: u32,
-	},
-	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
-	StringTooLong,
-	#[error("String have invalid UTF-8 invalid sequence: ")]
-	StringHasInvalidUTF8Sequence(#[from] FromUtf8Error),
-	#[error("{0}")]
-	NativeFunctionID(#[from] NativeFunctionIDError),
+macro_rules! gen_asm_disasm {
+	( $(  ),* ) => {
+
+	};
 }
 
 impl Bytecode {
-	pub const HLT: u8 = 0x00; pub const HLT_FF: u8 = 0xFF; // Halt VM
-	pub const PUSH_FLOAT: u8 = 0x01; // Pushes number
-	pub const PUSH_STRING: u8 = 0x02; // Pushes string to stack (needing len)
-	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
-	pub const PUSH_TRUE: u8 = 0x04; // Pushes true to stack
+	const HLT: u8 = 0x00; const HLT_FF: u8 = 0xFF; // Halt VM
+	const PUSH_NUMBER: u8 = 0x01; // Pushes number
+	const PUSH_FLOAT: u8 = 0x02; // Pushes number
+	const PUSH_STRING: u8 = 0x03; // Pushes string to stack (needing len)
+	const PUSH_FALSE: u8 = 0x04; // Pushes false to stack
+	const PUSH_TRUE: u8 = 0x05; // Pushes true to stack
+	const PUSH_REG: u8 = 0x07; // Pushes true to stack
+	const POP_REG: u8 = 0x08;
 
-	pub const LOOK: u8 = 0x05; // Copy value from N
-	pub const LOAD: u8 = 0x06; // Copy value to N
+	const MOV_REG_TO_REG: u8 = 0x09;
+	const MOV_U32_TO_REG: u8 = 0x0A;
 
-	pub const REMOVE: u8 = 0x09; // Remove value
-	pub const PUSH_NUMBER: u8 = 0x0A; // Pushes number
+	const LOOK: u8 = 0x0B; // Copy value from N
+	const LOAD: u8 = 0x0C; // Copy value to N
 
-	pub const JIT: u8 = 0x20; // Jump if condition
-	pub const JIF: u8 = 0x21; // Jump if not condition
-	pub const JMP: u8 = 0x28; // Jump without condition
-	pub const CALL: u8 = 0x2A; // Jump to pc from stack
-	pub const SUBPROGRAM: u8 = 0x2B;
-	pub const RET: u8 = 0x2C; // Jump to pc from stack
-	pub const EQ: u8 = 0x50; // Equals
-	pub const LT: u8 =  0x52; // Less than
-	pub const NATIVE_CALL: u8 =  0x80;
-	pub const ADD: u8 =  0xA0; // Additive
-	pub const SUB: u8 =  0xA3; // Subtraction
-	pub const MUL: u8 =  0xB0; // Multiplication
-	pub const DIV: u8 =  0xB3; // Division
-	pub const POW: u8 =  0xC0; // Power of
-	pub const NEG: u8 =  0xC3; // Negative value (-)
-	pub const NOT: u8 =  0xD0; // Logical not
-	pub const LOGICAL_AND: u8 =  0xD3; // Logical AND
-	pub const LOGICAL_OR: u8 =  0xE0; // Logical OR
+	const REMOVE: u8 = 0x0D; // Remove value
+
+	const JIF: u8 = 0x21; // Jump if not condition
+	const JMP: u8 = 0x28; // Jump without condition
+	const CALL: u8 = 0x2A; // Jump to pc from stack
+	const RET: u8 = 0x2C; // Jump to pc from stack
+	const EQ: u8 = 0x50; // Equals
+	const LT: u8 =  0x52; // Less than
+	const NATIVE_CALL: u8 =  0x80;
+	const ADD: u8 =  0xA0; // Additive
+	const SUB: u8 =  0xA3; // Subtraction
+	const MUL: u8 =  0xB0; // Multiplication
+	const DIV: u8 =  0xB3; // Division
+	const POW: u8 =  0xC0; // Power of
+	const NEG: u8 =  0xC3; // Negative value (-)
+	const NOT: u8 =  0xD0; // Logical not
+	const LOGICAL_AND: u8 =  0xD3; // Logical AND
+	const LOGICAL_OR: u8 =  0xE0; // Logical OR
 
 	pub fn to_binary_op(&self) -> Option<BinaryOp> {
 		let result = match self {
@@ -210,13 +257,19 @@ impl Bytecode {
 			Self::PushString(..) 		=> Self::PUSH_STRING,
 			Self::PushBoolean(false) 	=> Self::PUSH_FALSE,
 			Self::PushBoolean(true) 	=> Self::PUSH_TRUE,
+
+			Self::PushReg(..) 			=> Self::PUSH_REG,
+			Self::PopReg(..) 			=> Self::POP_REG,
+
+			Self::MovRegToReg(..) 		=> Self::MOV_REG_TO_REG,
+			Self::MovU32ToReg(..) 		=> Self::MOV_U32_TO_REG,
+
 			Self::Look(..) 				=> Self::LOOK,
 			Self::Load(..) 				=> Self::LOAD,
 			Self::Remove 				=> Self::REMOVE,
 			Self::Jif(..) 				=> Self::JIF,
 			Self::Jmp(..) 				=> Self::JMP,
 			Self::Call(..) 				=> Self::CALL,
-			Self::Subprogram 			=> Self::SUBPROGRAM,
 			Self::Ret 					=> Self::RET,
 			Self::Eq 					=> Self::EQ,
 			Self::Lt 					=> Self::LT,
@@ -335,7 +388,6 @@ impl Bytecode {
 
 				Self::Call(pos)
 			},
-			Self::SUBPROGRAM => Self::Subprogram,
 			Self::RET => Self::Ret, // Jump to pc from stack
 			Self::EQ => Self::Eq, // Equals
 			Self::LT => Self::Lt, // Less than

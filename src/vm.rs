@@ -3,7 +3,7 @@ use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::bytecode::Bytecode;
+use crate::bytecode::{Bytecode, BytecodeRegister};
 use crate::compiler::parser::BinaryOp;
 use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::uni_type::{UniResult, UniResultError};
@@ -43,16 +43,27 @@ impl fmt::Display for VMError {
 	}
 }
 
+type VMWord = u32;
+
 pub struct VM {
-	pc: u32,
 	pub bytecode: Option<Vec<Bytecode>>,
 	stack: Vec<UniResult>,
-	ret_stack: Vec<u32>,
+
+	pc: VMWord,
+	acc: VMWord, base: VMWord,
+	bp: VMWord, sp: VMWord,
 }
 
 impl VM {
 	pub fn new(bytecode: Option<Vec<Bytecode>>) -> Self {
-		Self {pc: 0, bytecode, stack: Vec::new(), ret_stack: Vec::new()}
+		Self {
+			bytecode,
+			stack: Vec::new(),
+
+			pc: 0,
+			acc: 0, base: 0,
+			bp: 0, sp: 0,
+		}
 	}
 
 	fn print(args: &[UniResult]) -> Result<UniResult, RawVMError> {
@@ -183,6 +194,31 @@ impl VM {
 		println!("]");
 	}
 
+	fn set_reg(&mut self, reg: BytecodeRegister, value: u32) {
+		match reg {
+			BytecodeRegister::Accum =>
+				self.acc = value,
+			BytecodeRegister::Base =>
+				self.base = value,
+			BytecodeRegister::BasePointer =>
+				self.bp = value,
+			BytecodeRegister::StackPointer =>
+				self.sp = value,
+		}
+	}
+	fn get_reg(&mut self, reg: BytecodeRegister) -> u32 {
+		match reg {
+			BytecodeRegister::Accum =>
+				self.acc,
+			BytecodeRegister::Base =>
+				self.base,
+			BytecodeRegister::BasePointer =>
+				self.bp,
+			BytecodeRegister::StackPointer =>
+				self.sp,
+		}
+	}
+
 	fn exec_inst(&mut self) -> Result<(bool, bool), RawVMError> {
 		let Some(bytecode) = &self.bytecode else {
 			return Ok((false, false))
@@ -194,7 +230,7 @@ impl VM {
 
 		let mut pc_changed = false;
 
-		// println!("{inst}");
+		println!("{inst}");
 
 		match inst {
 			Bytecode::Halt =>
@@ -211,6 +247,27 @@ impl VM {
 			Bytecode::PushString(val) => {
 				self.stack.push(val.clone().into());
 			},
+
+			&Bytecode::MovRegToReg(reg1, reg2) => {
+				let reg2 = self.get_reg(reg2);
+
+				self.set_reg(reg1, reg2);
+			},
+			&Bytecode::MovU32ToReg(reg, value) => {
+				self.set_reg(reg, value);
+			},
+
+			&Bytecode::PushReg(reg) => {
+				let value = self.get_reg(reg);
+
+				self.stack.push(value.into());
+			},
+			&Bytecode::PopReg(reg) => {
+				let value = u32::try_from(&self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)?;
+
+				self.set_reg(reg, value);
+			},
+
 			&Bytecode::Look(stack_pos) => {
 				let usize_stack_pos = stack_pos as usize;
 
@@ -251,17 +308,8 @@ impl VM {
 
 				pc_changed = true;
 			},
-			&Bytecode::Subprogram => {
-				let pc = i32::try_from(
-					&self.stack.pop()
-						.ok_or(RawVMError::StackEmptyButExpectedValue)?
-				)? as u32;
-
-				self.ret_stack.push(pc);
-			},
 			&Bytecode::Ret => {
-				self.pc = self.ret_stack.pop()
-							.ok_or(RawVMError::StackEmptyButExpectedValue)?;
+				self.pc = u32::try_from(&self.stack.pop().ok_or(RawVMError::StackEmptyButExpectedValue)?)?;
 
 				pc_changed = true;
 			},
@@ -351,7 +399,7 @@ impl VM {
 				break
 			}
 
-			// self.dump_stack();
+			self.dump_stack();
 
 			if !pc_changed {
 				self.pc += 1;

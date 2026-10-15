@@ -664,6 +664,12 @@ impl From<i32> for UniResult {
 	}
 }
 
+impl From<u32> for UniResult {
+	fn from(value: u32) -> Self {
+		Self::Number(value.cast_signed())
+	}
+}
+
 impl From<f32> for UniResult {
 	fn from(value: f32) -> Self {
 		Self::Float(value)
@@ -693,6 +699,20 @@ impl TryFrom<UniResult> for bool {
 		};
 
 		Ok(x)
+	}
+}
+
+impl TryFrom<&UniResult> for u32 {
+	type Error = UniResultError;
+
+	fn try_from(value: &UniResult) -> Result<u32, Self::Error> {
+		let &UniResult::Number(x) = value else {
+			return Err(
+				UniResultError::UsingIntoOnIncompatibleType(value.clone())
+			)
+		};
+
+		Ok(x.cast_unsigned())
 	}
 }
 
