@@ -266,7 +266,7 @@ impl Compiler {
 			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushBoolean(x));
+				result.push(Bytecode::PushNumber(x as u32));
 			},
 			&ASTNode::Number(x) => {
 				self.stack += 1;

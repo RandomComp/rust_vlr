@@ -235,9 +235,6 @@ impl VM {
 		match inst {
 			Bytecode::Halt =>
 				return Ok((false, false)),
-			&Bytecode::PushBoolean(val) => {
-				self.stack.push(val.into());
-			},
 			&Bytecode::PushNumber(val) => {
 				self.stack.push((val as i32).into());
 			},

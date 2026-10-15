@@ -40,69 +40,6 @@ pub enum BytecodeError {
 	NativeFunctionID(#[from] NativeFunctionIDError),
 }
 
-#[derive(PartialEq, Clone, Debug)]
-pub enum Bytecode {
-	/// Do nothing
-	Halt,
-	/// Pushes u32 number
-	PushNumber(u32),
-	/// Pushes float number
-	PushFloat(f32),
-	/// Pushes string to stack
-	PushString(String),
-	/// Pushes boolean to stack
-	PushBoolean(bool),
-
-	/// Pushes register value to stack
-	PushReg(BytecodeRegister),
-	/// Pop's value from stack to register
-	PopReg(BytecodeRegister),
-
-	/// Moves u32 to register
-	MovU32ToReg(BytecodeRegister, u32),
-	/// Moves register to register
-	MovRegToReg(BytecodeRegister, BytecodeRegister),
-
-	/// Copy value from stack, uses direct index
-	Look(u32),
-	/// Copy value to stack, uses direct index
-	Load(u32),
-	/// Copy value from stack, uses indirect index
-	Remove,
-	/// Jump if not condition
-	Jif(u32),
-	/// Jump without condition
-	Jmp(u32),
-	/// Call subprogram (pushes current PC and jump's on subprogram)
-	Call(u32),
-	/// Returns from subprogram
-	Ret,
-	/// Equals
-	Eq,
-	/// Less than
-	Lt,
-	/// Call vm builtin-in function (like print)
-	NativeCall(NativeFunctionID),
-	/// Additive
-	Add,
-	/// Subtraction
-	Sub,
-	/// Multiplication
-	Mul,
-	/// Division
-	Div,
-	/// Power of
-	Pow,
-	/// Negative value (-)
-	Neg,
-	/// Logical not
-	Not,
-	/// Logical and
-	LogicalAnd,
-	/// Logical or
-	LogicalOr,
-}
-
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
 
@@ -113,130 +50,424 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 	Ok(result)
 }
 
-impl fmt::Display for Bytecode {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Bytecode::Halt =>
-				write!(f, "hlt"),
-			Bytecode::PushBoolean(v) =>
-				write!(f, "push {v}"),
-			Bytecode::PushNumber(val) =>
-				write!(f, "push {val}"),
-			Bytecode::PushFloat(val) =>
-				write!(f, "push {val}"),
-			Bytecode::PushString(text) =>
-				write!(f, "push \"{text}\""),
-
-			Bytecode::PushReg(reg) =>
-				write!(f, "push {reg}"),
-			Bytecode::PopReg(reg) =>
-				write!(f, "pop {reg}"),
-
-			Bytecode::MovRegToReg(reg1, reg2) =>
-				write!(f, "mov {reg1}, {reg2}"),
-			Bytecode::MovU32ToReg(reg, value) =>
-				write!(f, "mov {reg}, {value}"),
-
-			Bytecode::Look(stack_pos) =>
-				write!(f, "look {stack_pos}"),
-			Bytecode::Load(stack_pos) =>
-				write!(f, "load {stack_pos}"),
-			Bytecode::Remove =>
-				write!(f, "remove"),
-			Bytecode::Add =>
-				write!(f, "add"),
-			Bytecode::Sub =>
-				write!(f, "sub"),
-			Bytecode::Mul =>
-				write!(f, "mul"),
-			Bytecode::Div =>
-				write!(f, "div"),
-			Bytecode::Pow =>
-				write!(f, "pow"),
-			Bytecode::Eq =>
-				write!(f, "eq"),
-			Bytecode::Lt =>
-				write!(f, "lt"),
-			Bytecode::LogicalAnd =>
-				write!(f, "log_and"),
-			Bytecode::LogicalOr =>
-				write!(f, "log_or"),
-			Bytecode::Neg =>
-				write!(f, "neg"),
-			Bytecode::Not =>
-				write!(f, "not"),
-			Bytecode::Jif(pos) =>
-				write!(f, "jif {pos:02}"),
-			Bytecode::Jmp(pos) =>
-				write!(f, "jmp {pos:02}"),
-			Bytecode::Call(pos) =>
-				write!(f, "call {pos:02}"),
-			Bytecode::Ret =>
-				write!(f, "ret"),
-			Bytecode::NativeCall(id) =>
-				write!(f, "native_call {id}")
-		}
-	}
-}
-
 macro_rules! gen_asm_disasm {
-	( $(  ),* ) => {
+	(
+		$(
+			$( ( $modif:ident $binary_op:ident ) )? $inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
+			=>
+			{
+				asm 	$( ( $($asm_arg:ident),* $(,)? ) )? => $inst_asm:block,
+				disasm ( $bytes:ident ) => $inst_disasm:block,
+				display ($formatter:ident $(, $($display_arg:ident),* $(,)? )? ) => $inst_display:block
+			}
+		),*
+		$(,)?
+	) => {
+		#[derive(PartialEq, Clone, Debug)]
+		pub enum Bytecode {
+			$(
+				$inst $( ( $( $arg, )* ) )?,
+			)*
+		}
 
+		impl fmt::Display for Bytecode {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				match self {
+					$(
+						Self::$inst $( ( $( $display_arg, )* ) )? => {
+							let $formatter = f;
+
+							$inst_display
+						}
+					)*
+				}
+			}
+		}
+
+		impl Bytecode {
+			fn get_opcode(&self) -> u8 {
+				match self {
+					$(
+						Self::$inst $( ( $( $asm_arg, )* ) )? => $main_opcode,
+					)*
+				}
+			}
+
+			fn asm_inst(value: Self) -> Result<Vec<u8>, BytecodeError> {
+				let mut result = Vec::new();
+
+				result.push(value.get_opcode());
+
+				match value {
+					$(
+						Self::$inst $( ( $( $asm_arg, )* ) )? => $inst_asm,
+					)*
+				}
+
+				Ok(result)
+			}
+
+			pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
+				let mut result = Vec::new();
+
+				for value in values {
+					let res: Vec<u8> = Self::asm_inst(value)?;
+
+					result.extend(res);
+				}
+
+				Ok(result)
+			}
+
+			pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError> where T: Iterator<Item = u8> {
+				let Some(opcode) = bytes.next() else {
+					return Ok(None)
+				};
+
+				let result = match opcode {
+					$(
+						$main_opcode $( | $( $opcode )|* )? => {
+							let mut $bytes = bytes;
+
+							$inst_disasm
+						},
+					)*
+					x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
+				};
+
+				Ok(Some(result))
+			}
+
+			pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> {
+				let mut result = Vec::new();
+
+				while let Some(val) = Self::disasm_inst(&mut bytes)? {
+					result.push(val);
+				}
+
+				Ok(result)
+			}
+			pub fn to_binary_op(&self) -> Option<BinaryOp> {
+				match self {
+					$(
+						$(
+							Self::$inst => Some(BinaryOp::$binary_op),
+						)?
+					)*
+					_ => None,
+				}
+			}
+		}
 	};
 }
 
+gen_asm_disasm!(
+	Halt as 0x00 | 0xFF => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "hlt")
+		}
+	},
+	PushNumber(u32) as 0x01 => {
+		asm(val) => {
+
+		},
+		disasm(bytes) => {
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::PushNumber(value)
+		},
+		display(f, val) => {
+			write!(f, "")
+		}
+	},
+	PushFloat(f32) as 0x02 => {
+		asm(val) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, val) => {
+			write!(f, "")
+		}
+	},
+	PushString(String) as 0x03 => {
+		asm(val) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, val) => {
+			write!(f, "")
+		}
+	},
+
+	PushReg(BytecodeRegister) as 0x04 => {
+		asm(reg) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, reg) => {
+			write!(f, "")
+		}
+	},
+	PopReg(BytecodeRegister) as 0x05 => {
+		asm(reg) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, reg) => {
+			write!(f, "")
+		}
+	},
+
+	Look(u32) as 0x06 => {
+		asm(stack) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, stack) => {
+			write!(f, "")
+		}
+	},
+	Load(u32) as 0x07 => {
+		asm(stack) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, stack) => {
+			write!(f, "")
+		}
+	},
+	Remove as 0x08 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Remove
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+
+	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
+		asm(reg, val) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, reg, val) => {
+			write!(f, "")
+		}
+	},
+	MovRegToReg(BytecodeRegister, BytecodeRegister) as 0x0B => {
+		asm(reg1, reg2) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, reg1, reg2) => {
+			write!(f, "")
+		}
+	},
+
+	Jif(u32) as 0x20 => {
+		asm(id) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, id) => {
+			write!(f, "")
+		}
+	},
+	Jmp(u32) as 0x28 => {
+		asm(id) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, id) => {
+			write!(f, "")
+		}
+	},
+	Call(u32) as 0x2A => {
+		asm(id) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, id) => {
+			write!(f, "")
+		}
+	},
+	Ret as 0x2C => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Eq as 0x50 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Lt as 0x52 => {
+		asm => {
+
+		},
+		disasm(_bytes) => {
+			Self::Lt
+		},
+		display(f) => {
+			write!(f, "lt")
+		}
+	},
+	NativeCall(NativeFunctionID) as 0x80 => {
+		asm(id) => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f, id) => {
+			write!(f, "")
+		}
+	},
+	(bin Plus) Add as 0xA0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Add
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Sub as 0xA3 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Sub
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Mul as 0xB0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Mul
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Div as 0xB3 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Div
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Pow as 0xC0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Pow
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Neg as 0xC3 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Neg
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	Not as 0xD0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Not
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	LogicalAnd as 0xD3 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	LogicalOr as 0xE0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+);
+
 impl Bytecode {
-	const HLT: u8 = 0x00; const HLT_FF: u8 = 0xFF; // Halt VM
-	const PUSH_NUMBER: u8 = 0x01; // Pushes number
-	const PUSH_FLOAT: u8 = 0x02; // Pushes number
-	const PUSH_STRING: u8 = 0x03; // Pushes string to stack (needing len)
-	const PUSH_FALSE: u8 = 0x04; // Pushes false to stack
-	const PUSH_TRUE: u8 = 0x05; // Pushes true to stack
-	const PUSH_REG: u8 = 0x07; // Pushes true to stack
-	const POP_REG: u8 = 0x08;
-
-	const MOV_REG_TO_REG: u8 = 0x09;
-	const MOV_U32_TO_REG: u8 = 0x0A;
-
-	const LOOK: u8 = 0x0B; // Copy value from N
-	const LOAD: u8 = 0x0C; // Copy value to N
-
-	const REMOVE: u8 = 0x0D; // Remove value
-
-	const JIF: u8 = 0x21; // Jump if not condition
-	const JMP: u8 = 0x28; // Jump without condition
-	const CALL: u8 = 0x2A; // Jump to pc from stack
-	const RET: u8 = 0x2C; // Jump to pc from stack
-	const EQ: u8 = 0x50; // Equals
-	const LT: u8 =  0x52; // Less than
-	const NATIVE_CALL: u8 =  0x80;
-	const ADD: u8 =  0xA0; // Additive
-	const SUB: u8 =  0xA3; // Subtraction
-	const MUL: u8 =  0xB0; // Multiplication
-	const DIV: u8 =  0xB3; // Division
-	const POW: u8 =  0xC0; // Power of
-	const NEG: u8 =  0xC3; // Negative value (-)
-	const NOT: u8 =  0xD0; // Logical not
-	const LOGICAL_AND: u8 =  0xD3; // Logical AND
-	const LOGICAL_OR: u8 =  0xE0; // Logical OR
-
-	pub fn to_binary_op(&self) -> Option<BinaryOp> {
-		let result = match self {
-			Bytecode::Eq 					=> BinaryOp::Equals, // Equals
-			Bytecode::Lt 					=> BinaryOp::Less, // Less than
-			Bytecode::Add 					=> BinaryOp::Plus, // Additive
-			Bytecode::Sub 					=> BinaryOp::Minus, // Subtraction
-			Bytecode::Mul 					=> BinaryOp::Multiply, // Multiplication
-			Bytecode::Div 					=> BinaryOp::Divide, // Division
-			Bytecode::Pow 					=> BinaryOp::Pow, // Power of
-			Bytecode::LogicalAnd 			=> BinaryOp::LogicalAnd, // Logical AND
-			Bytecode::LogicalOr 			=> BinaryOp::LogicalOr, // Logical OR
-			_ => return None,
-		};
-
-		Some(result)
-	}
-
 	pub fn to_unary_op(&self) -> Option<UnaryOp> {
 		let result = match self {
 			Self::Neg => UnaryOp::Minus, // Negative value (-)
@@ -249,179 +480,6 @@ impl Bytecode {
 
 	// TODO: use macro_rules! for automatically generate functions for assembling, disassembling and representation
 
-	fn get_opcode(&self) -> u8 {
-		match self {
-			Self::Halt 					=> Self::HLT,
-			Self::PushNumber(..) 		=> Self::PUSH_NUMBER,
-			Self::PushFloat(..) 		=> Self::PUSH_FLOAT,
-			Self::PushString(..) 		=> Self::PUSH_STRING,
-			Self::PushBoolean(false) 	=> Self::PUSH_FALSE,
-			Self::PushBoolean(true) 	=> Self::PUSH_TRUE,
-
-			Self::PushReg(..) 			=> Self::PUSH_REG,
-			Self::PopReg(..) 			=> Self::POP_REG,
-
-			Self::MovRegToReg(..) 		=> Self::MOV_REG_TO_REG,
-			Self::MovU32ToReg(..) 		=> Self::MOV_U32_TO_REG,
-
-			Self::Look(..) 				=> Self::LOOK,
-			Self::Load(..) 				=> Self::LOAD,
-			Self::Remove 				=> Self::REMOVE,
-			Self::Jif(..) 				=> Self::JIF,
-			Self::Jmp(..) 				=> Self::JMP,
-			Self::Call(..) 				=> Self::CALL,
-			Self::Ret 					=> Self::RET,
-			Self::Eq 					=> Self::EQ,
-			Self::Lt 					=> Self::LT,
-			Self::NativeCall(..) 		=> Self::NATIVE_CALL,
-			Self::Add 					=> Self::ADD,
-			Self::Sub 					=> Self::SUB,
-			Self::Mul 					=> Self::MUL,
-			Self::Div 					=> Self::DIV,
-			Self::Pow 					=> Self::POW,
-			Self::Neg 					=> Self::NEG,
-			Self::Not 					=> Self::NOT,
-			Self::LogicalAnd 			=> Self::LOGICAL_AND,
-			Self::LogicalOr 			=> Self::LOGICAL_OR,
-		}
-	}
-
-	fn asm_inst(value: Self) -> Result<Vec<u8>, BytecodeError> {
-		let mut result = Vec::new();
-
-		result.push(value.get_opcode());
-
-		match value {
-			Self::PushNumber(x) => {
-				result.extend(x.to_le_bytes());
-			}, // Pushes number
-			Self::PushFloat(x) => {
-				result.extend(x.to_le_bytes());
-			}, // Pushes number
-			Self::PushString(text) => {
-				let Ok(u32_len) = u32::try_from(text.len()) else {
-					return Err(BytecodeError::StringTooLong)
-				};
-
-				result.extend(u32_len.to_le_bytes());
-				result.extend(text.bytes());
-			}, // Pushes string to stack
-			Self::Look(pos) |
-			Self::Load(pos) |
-			Self::Jif(pos) |
-			Self::Jmp(pos) |
-			Self::Call(pos) => {
-				result.extend(pos.to_le_bytes());
-			}, // Jump to pc from stack
-			Self::NativeCall(id) => {
-				result.extend(id.to_le_bytes());
-			},
-			_ => {},
-		}
-
-		Ok(result)
-	}
-
-	pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
-		let mut result = Vec::new();
-
-		for value in values {
-			let res: Vec<u8> = Self::asm_inst(value)?;
-
-			result.extend(res);
-		}
-
-		Ok(result)
-	}
-
-	pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError> where T: Iterator<Item = u8> {
-		let Some(opcode) = bytes.next() else {
-			return Ok(None)
-		};
-
-		let result = match opcode {
-			Self::HLT | Self::HLT_FF => Self::Halt, // Do nothing
-			Self::PUSH_NUMBER => { // Pushes number
-				let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::PushNumber(value)
-			},
-			Self::PUSH_FLOAT => { // Pushes number
-				let value = f32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::PushFloat(value)
-			},
-			Self::PUSH_STRING => { // Pushes string to stack (needing len)
-				let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				let utf8 = bytes.take(u32_len as usize).collect();
-
-				let text = String::from_utf8(utf8)?;
-
-				Self::PushString(text)
-			},
-			Self::PUSH_FALSE => Self::PushBoolean(false), // Pushes false to stack
-			Self::PUSH_TRUE => Self::PushBoolean(true), // Pushes true to stack
-			Self::LOOK => { // Copy value from N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Look(stack_pos)
-			},
-			Self::LOAD => { // Copy value to N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Load(stack_pos)
-			},
-			Self::REMOVE => Self::Remove, // Remove value
-			Self::JIF => { // Jump if not condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Jif(pos)
-			},
-			Self::JMP => { // Jump without condition
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Jmp(pos)
-			},
-			Self::CALL => { // Call subprogram (like jmp, but before pushes pc)
-				let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::Call(pos)
-			},
-			Self::RET => Self::Ret, // Jump to pc from stack
-			Self::EQ => Self::Eq, // Equals
-			Self::LT => Self::Lt, // Less than
-			Self::NATIVE_CALL => {
-				let id = NativeFunctionID::try_from(
-					bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
-				)?;
-
-				Self::NativeCall(id)
-			},
-			Self::ADD 			=> Self::Add, // Additive
-			Self::SUB 			=> Self::Sub, // Subtraction
-			Self::MUL 			=> Self::Mul, // Multiplication
-			Self::DIV 			=> Self::Div, // Division
-			Self::POW 			=> Self::Pow, // Power of
-			Self::NEG 			=> Self::Neg, // Negative value (-)
-			Self::NOT 			=> Self::Not, // Logical not
-			Self::LOGICAL_AND 	=> Self::LogicalAnd, // Logical AND
-			Self::LOGICAL_OR 	=> Self::LogicalOr, // Logical OR
-			x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
-		};
-
-		Ok(Some(result))
-	}
-
-	pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> {
-		let mut result = Vec::new();
-
-		while let Some(val) = Self::disasm_inst(&mut bytes)? {
-			result.push(val);
-		}
-
-		Ok(result)
-	}
 
 	pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
 		match op {
@@ -436,7 +494,7 @@ impl Bytecode {
 			BinaryOp::Minus => Self::Sub,
 			BinaryOp::Multiply => Self::Mul,
 			BinaryOp::Divide => Self::Div,
-			// BinaryOp::Remainder => Self::Remainder,
+			// BinaryOp::Remainder => Self::Rem,
 			BinaryOp::Pow => Self::Pow,
 			BinaryOp::Equals => Self::Eq,
 			BinaryOp::Less => Self::Lt,
