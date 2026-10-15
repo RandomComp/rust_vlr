@@ -1,6 +1,6 @@
 use std::{fmt::{self, Display, Write}, iter::zip};
 
-use crate::{compiler::parser::{ASTNode, BinaryOp, UnaryOp}, res_with_pos, val_with_pos, wrapper::Spanned};
+use crate::{compiler::parser::{ASTNode, BinaryOp, UnaryOp}, res_with_pos, wrapper::Spanned};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum UniResultError {
@@ -26,7 +26,7 @@ pub enum UniResultError {
 pub enum UniResultType {
 	None,
 	Boolean,
-	NumberU32,
+	Number,
 	Float,
 	String,
 	List,
@@ -36,14 +36,15 @@ pub enum UniResultType {
 impl fmt::Display for UniResultType {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			UniResultType::None 		=> write!(f, "none"),
-			UniResultType::Boolean 	=> write!(f, "boolean"),
-			UniResultType::NumberU32	=> write!(f, "u32 number"),
-			UniResultType::Float 	=> write!(f, "float"),
-			UniResultType::String 	=> write!(f, "string"),
-			UniResultType::List 		=> write!(f, "list"),
-			UniResultType::Range 	=> write!(f, "range"),
+			UniResultType::None 	=> "none",
+			UniResultType::Boolean 	=> "boolean",
+			UniResultType::Number	=> "u32 number",
+			UniResultType::Float 	=> "float",
+			UniResultType::String 	=> "string",
+			UniResultType::List 	=> "list",
+			UniResultType::Range 	=> "range",
 		}
+		.fmt(f)
 	}
 }
 
@@ -51,11 +52,11 @@ impl fmt::Display for UniResultType {
 pub enum UniResult {
 	None,
 	Boolean(bool),
-	NumberU32(u32),
-	Float(f64),
+	Number(u32),
+	Float(f32),
 	String(String),
 	List(Vec<Spanned<UniResult>>),
-	Range { start: f64, end: f64, step: f64 },
+	Range { start: f32, end: f32, step: f32 },
 }
 
 impl TryFrom<Spanned<UniResult>> for Spanned<ASTNode> {
@@ -132,7 +133,7 @@ impl Display for UniResult {
 		match self {
 			Self::None => write!(f, "None"),
 			Self::Boolean(x) => write!(f, "{x}"),
-			Self::NumberU32(x) => write!(f, "{x}"),
+			Self::Number(x) => write!(f, "{x}"),
 			Self::Float(x) => write!(f, "{x}"),
 			Self::String(x) => write!(f, "\"{x}\""),
 			Self::List(values) => {
@@ -162,8 +163,8 @@ impl UniResult {
 		match self {
 			UniResult::None 			=>	UniResultType::None,
 			UniResult::Boolean(..) 		=>	UniResultType::Boolean,
+			UniResult::Number(..) 		=>	UniResultType::Number,
 			UniResult::Float(..) 		=>	UniResultType::Float,
-			UniResult::NumberU32(..) 	=>	UniResultType::NumberU32,
 			UniResult::String(..) 		=>	UniResultType::String,
 			UniResult::List(..) 		=>	UniResultType::List,
 			UniResult::Range {..} 		=>	UniResultType::Range,
@@ -197,6 +198,7 @@ impl UniResult {
 			BinaryOp::Multiply 		=> Self::mul(left, right),
 			BinaryOp::Pow 			=> Self::pow(left, right),
 			BinaryOp::Divide 		=> Self::div(left, right),
+			BinaryOp::Remainder 	=> Self::rem(left, right),
 			BinaryOp::Equals 		=> Self::eq(left, right),
 			BinaryOp::Great 		=> Self::gt(left, right),
 			BinaryOp::Less 			=> Self::lt(left, right),
@@ -340,7 +342,7 @@ impl UniResult {
 	}
 	fn mul(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
-			(Self::Float(a), &Self::Float(b))
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a * b)),
 			(Self::List(values), Self::Float(..)) => {
 				let mut result = Vec::new();
@@ -464,12 +466,12 @@ impl UniResult {
 			(Self::None, Self::None)
 				=> Ok(Self::Boolean(true)),
 			(Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean((a - b).abs() < f64::EPSILON)),
+				=> Ok(Self::Boolean((a - b).abs() < f32::EPSILON)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a == b)),
 			(Self::Boolean(a), Self::Boolean(b))
 				=> Ok(Self::Boolean(a == b)),
-			(Self::NumberU32(a), Self::NumberU32(b))
+			(Self::Number(a), Self::Number(b))
 				=> Ok(Self::Boolean(a == b)),
 			(Self::List(values), Self::Float(..)) => {
 				let mut result = Vec::new();
@@ -681,12 +683,12 @@ impl From<bool> for UniResult {
 
 impl From<u32> for UniResult {
 	fn from(value: u32) -> Self {
-		Self::NumberU32(value)
+		Self::Number(value)
 	}
 }
 
-impl From<f64> for UniResult {
-	fn from(value: f64) -> Self {
+impl From<f32> for UniResult {
+	fn from(value: f32) -> Self {
 		Self::Float(value)
 	}
 }
@@ -717,13 +719,13 @@ impl TryFrom<UniResult> for bool {
 	}
 }
 
-impl TryFrom<UniResult> for u32 {
+impl TryFrom<&UniResult> for u32 {
 	type Error = UniResultError;
 
-	fn try_from(value: UniResult) -> Result<u32, Self::Error> {
-		let UniResult::NumberU32(x) = value else {
+	fn try_from(value: &UniResult) -> Result<u32, Self::Error> {
+		let &UniResult::Number(x) = value else {
 			return Err(
-				UniResultError::UsingIntoOnIncompatibleType(value)
+				UniResultError::UsingIntoOnIncompatibleType(value.clone())
 			)
 		};
 
@@ -731,13 +733,13 @@ impl TryFrom<UniResult> for u32 {
 	}
 }
 
-impl TryFrom<UniResult> for f64 {
+impl TryFrom<&UniResult> for f32 {
 	type Error = UniResultError;
 
-	fn try_from(value: UniResult) -> Result<f64, Self::Error> {
-		let UniResult::Float(x) = value else {
+	fn try_from(value: &UniResult) -> Result<f32, Self::Error> {
+		let &UniResult::Float(x) = value else {
 			return Err(
-				UniResultError::UsingIntoOnIncompatibleType(value)
+				UniResultError::UsingIntoOnIncompatibleType(value.clone())
 			)
 		};
 
@@ -780,7 +782,7 @@ impl TryFrom<Spanned<UniResult>> for u32 {
 	type Error = Spanned<UniResultError>;
 
 	fn try_from(value: Spanned<UniResult>) -> Result<u32, Self::Error> {
-		let UniResult::NumberU32(x) = value.val else {
+		let UniResult::Number(x) = value.val else {
 			return Err(
 				Spanned::from_with_span(
 					UniResultError::UsingIntoOnIncompatibleType(value.val),
@@ -793,10 +795,10 @@ impl TryFrom<Spanned<UniResult>> for u32 {
 	}
 }
 
-impl TryFrom<Spanned<UniResult>> for f64 {
+impl TryFrom<Spanned<UniResult>> for f32 {
 	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: Spanned<UniResult>) -> Result<f64, Self::Error> {
+	fn try_from(value: Spanned<UniResult>) -> Result<f32, Self::Error> {
 		let UniResult::Float(x) = value.val else {
 			return Err(
 				Spanned::from_with_span(

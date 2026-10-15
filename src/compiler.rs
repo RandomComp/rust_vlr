@@ -127,12 +127,20 @@ impl Compiler {
 					}
 				}
 
-				NativeFunctionArgsNumber::Dynamic => result.push(Bytecode::PushNumberU32(len)),
+				NativeFunctionArgsNumber::Dynamic => result.push(Bytecode::PushNumber(len)),
 			}
 
 			result.push(Bytecode::NativeCall(id));
 			self.stack -= len;
 			self.stack += 1;
+
+			return Ok(())
+		} else if let Some(&pos) = self.global_functions.get(name.val) {
+			for arg in args {
+				self.compile(arg, result, context)?;
+			}
+
+			result.push(Bytecode::Call(pos));
 
 			return Ok(())
 		} else if let Some(pos) = context.get_function(name.val) {
@@ -196,7 +204,11 @@ impl Compiler {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 
-				context.insert_function(name.val.clone(), Self::pc(result));
+				if *is_global {
+					self.global_functions.insert(name.val.clone(), Self::pc(result));
+				} else {
+					context.insert_function(name.val.clone(), Self::pc(result));
+				}
 
 				result.push(Bytecode::Subprogram);
 
@@ -238,6 +250,11 @@ impl Compiler {
 				self.stack += 1;
 
 				result.push(Bytecode::PushBoolean(x));
+			},
+			&ASTNode::Number(x) => {
+				self.stack += 1;
+
+				result.push(Bytecode::PushNumber(x));
 			},
 			&ASTNode::Float(x) => {
 				self.stack += 1;

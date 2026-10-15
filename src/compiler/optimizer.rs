@@ -182,7 +182,8 @@ impl Optimizer {
 
 		match &mut ast.val {
 			ASTNode::None | ASTNode::Boolean(..) |
-			ASTNode::Float(..) | ASTNode::String(..) => {},
+			ASTNode::Number(..) | ASTNode::Float(..) |
+			ASTNode::String(..) => {},
 			ASTNode::Variable(name) => {
 				if let Some(index) = self.unused_vars.iter().position(|v| v == name) {
 					self.unused_vars.remove(index);

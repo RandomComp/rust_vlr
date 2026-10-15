@@ -230,7 +230,8 @@ pub enum ASTNode {
 	None,
 
 	Boolean(bool),
-	Float(f64),
+	Number(u32),
+	Float(f32),
 	String(String),
 	List(Vec<Spanned<ASTNode>>),
 	Variable(String),
@@ -296,20 +297,18 @@ impl Parser {
 		result
 	}
 
-	fn expected(&mut self, expected: TokenKind) -> Result<(), Spanned<ParserError>> {
+	fn expected(&mut self, expected: TokenKind) -> Spanned<ParserError> {
 		match self.peek(0) {
 			Some(kind) if expected == (&kind.val).into() => {
 				unreachable!("Called expected on a expected token");
 			},
 			Some(kind) => {
-				Err(
-					Spanned::from_with_span(
-						ParserError::ExpectedToken {
-							kind: expected,
-							found: kind.val.clone()
-						},
-						kind.span
-					)
+				Spanned::from_with_span(
+					ParserError::ExpectedToken {
+						kind: expected,
+						found: kind.val.clone()
+					},
+					kind.span
 				)
 			},
 			None => unreachable!("EOF missing or logical error"),
@@ -323,7 +322,7 @@ impl Parser {
 
 				Ok(())
 			},
-			_ => self.expected(expected_token_type),
+			_ => Err(self.expected(expected_token_type)),
 		}
 	}
 
@@ -480,11 +479,8 @@ impl Parser {
 
 		self.consume(TokenKind::Def)?;
 
-		let (name_token, name) = match self.peek(0) {
-			Some(name_token @ wmatch!(Token::Word(name))) => (name_token, name),
-			_ => {
-				return self.expected(TokenKind::Word)
-			}
+		let Some(name_token @ wmatch!(Token::Word(name))) = self.peek(0) else {
+			return Err(self.expected(TokenKind::Word))
 		};
 
 		let span = name_token.span;
@@ -704,6 +700,11 @@ impl Parser {
 				self.consume_next();
 
 				ASTNode::Boolean(false)
+			}
+			(&wmatch!(Token::Number(value)), _) => {
+				self.consume_next();
+
+				ASTNode::Number(value)
 			}
 
 			(&wmatch!(Token::Float(value)), _) => {

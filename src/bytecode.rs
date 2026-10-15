@@ -7,9 +7,9 @@ pub enum Bytecode {
 	/// Do nothing
 	Halt,
 	/// Pushes u32 number
-	PushNumberU32(u32),
+	PushNumber(u32),
 	/// Pushes float number
-	PushFloat(f64),
+	PushFloat(f32),
 	/// Pushes string to stack
 	PushString(String),
 	/// Pushes boolean to stack
@@ -73,7 +73,7 @@ impl Display for Bytecode {
 				write!(f, "hlt"),
 			Bytecode::PushBoolean(v) =>
 				write!(f, "push {v}"),
-			Bytecode::PushNumberU32(val) =>
+			Bytecode::PushNumber(val) =>
 				write!(f, "push {val}"),
 			Bytecode::PushFloat(val) =>
 				write!(f, "push {val}"),
@@ -152,7 +152,7 @@ impl Bytecode {
 	pub const LOAD: u8 = 0x06; // Copy value to N
 
 	pub const REMOVE: u8 = 0x09; // Remove value
-	pub const PUSH_NUMBER_U32: u8 = 0x0A; // Pushes number
+	pub const PUSH_NUMBER: u8 = 0x0A; // Pushes number
 
 	pub const JIT: u8 = 0x20; // Jump if condition
 	pub const JIF: u8 = 0x21; // Jump if not condition
@@ -205,7 +205,7 @@ impl Bytecode {
 	fn get_opcode(&self) -> u8 {
 		match self {
 			Self::Halt 					=> Self::HLT,
-			Self::PushNumberU32(..) 	=> Self::PUSH_NUMBER_U32,
+			Self::PushNumber(..) 		=> Self::PUSH_NUMBER,
 			Self::PushFloat(..) 		=> Self::PUSH_FLOAT,
 			Self::PushString(..) 		=> Self::PUSH_STRING,
 			Self::PushBoolean(false) 	=> Self::PUSH_FALSE,
@@ -239,7 +239,7 @@ impl Bytecode {
 		result.push(value.get_opcode());
 
 		match value {
-			Self::PushNumberU32(x) => {
+			Self::PushNumber(x) => {
 				result.extend(x.to_le_bytes());
 			}, // Pushes number
 			Self::PushFloat(x) => {
@@ -288,13 +288,13 @@ impl Bytecode {
 
 		let result = match opcode {
 			Self::HLT | Self::HLT_FF => Self::Halt, // Do nothing
-			Self::PUSH_NUMBER_U32 => { // Pushes number
+			Self::PUSH_NUMBER => { // Pushes number
 				let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
-				Self::PushNumberU32(value)
+				Self::PushNumber(value)
 			},
 			Self::PUSH_FLOAT => { // Pushes number
-				let value = f64::from_le_bytes(consume_const_bytes_and_get::<T, 8>(&mut bytes)?);
+				let value = f32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 				Self::PushFloat(value)
 			},

@@ -1,4 +1,4 @@
-use std::{iter::Skip, num::ParseFloatError, str::Chars};
+use std::{iter::Skip, num::{IntErrorKind, ParseFloatError, ParseIntError}, str::Chars};
 
 use crate::{res_with_pos, wrapper::Spanned};
 
@@ -140,9 +140,9 @@ macro_rules! gen_code_for_ops_and_for_display {
 		impl std::fmt::Display for Token {
 			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 				match self {
-					Self::Float(x) => write!(f, "{x}"),
-					Self::Word(word) => write!(f, "{word}"),
-					Self::String(word) => write!(f, "\"{word}\""),
+					$(
+						Self::$kind_other(val) => write!(f, "{} \"{val}\"", $text_other),
+					)*
 
 					_ => f.write_str(
 						self.for_display()
@@ -205,7 +205,8 @@ gen_code_for_ops_and_for_display!(
 		Def 	=> "def"
 	}
 	literals => { // Literals
-		Float(f64) 		=> "float",
+		Number(u32) 	=> "number",
+		Float(f32) 		=> "float",
 		String(String) 	=> "string",
 		Word(String) 	=> "word"
 	}
@@ -218,8 +219,10 @@ gen_code_for_ops_and_for_display!(
 pub enum LexerError {
 	#[error("unknown operation")]
 	UnknownOperation,
-	#[error("invalid number")]
-	InvalidNumber(#[from] ParseFloatError),
+	#[error("{0}")]
+	InvalidNumber(#[from] ParseIntError),
+	#[error("{0}")]
+	InvalidFloat(#[from] ParseFloatError),
 	#[error("expected {c}")]
 	ExpectedSymbol {c: char},
 }
@@ -276,14 +279,14 @@ impl<'a> Lexer<'a> {
 	fn tokenize_number(&mut self) -> Result<Token, LexerError> {
 		let mut word_chr_cnt = 0;
 
-		let mut dots = 0;
+		let mut dots: usize = 0;
 
 		let mut number_str = String::new();
 
 		for c in self.get() {
 			if c == '.' && dots == 0 {
 				dots += 1;
-			} else if (c == '.' && !c.is_ascii_digit()) || !c.is_ascii_digit() {
+			} else if c == '.' || !c.is_ascii_digit() {
 				break;
 			}
 
@@ -292,17 +295,25 @@ impl<'a> Lexer<'a> {
 			word_chr_cnt += 1;
 		}
 
-		if let Some(x) = number_str.chars().last() && x == '.' {
+		if let Some('.') = number_str.chars().last() {
 			number_str.pop();
 
 			word_chr_cnt -= 1;
 		}
 
-		let result = number_str.parse::<f64>()?;
-
 		self.consume_next(word_chr_cnt);
 
-		Ok(Token::Float(result))
+		match number_str.parse::<u32>() {
+			Ok(result) => {
+				Ok(Token::Number(result))
+			}
+			Err(e) if *e.kind() == IntErrorKind::PosOverflow => {
+				let result = number_str.parse()?;
+
+				Ok(Token::Float(result))
+			},
+			Err(e) => Err(e.into()),
+		}
 	}
 
 	fn tokenize_word(&mut self) -> Token {

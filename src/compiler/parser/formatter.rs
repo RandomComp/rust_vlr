@@ -7,6 +7,7 @@ impl std::fmt::Display for ASTNode {
 		match self {
 			ASTNode::None => write!(f, "()"),
 			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Number(value) => write!(f, "{value}"),
 			ASTNode::Float(value) => write!(f, "{value}"),
 			ASTNode::String(text) => write!(f, "\"{text}\""),
 			ASTNode::Variable(name) => write!(f, "{name}"),
@@ -125,6 +126,7 @@ impl ASTNode {
 		match self {
 			ASTNode::None => write!(f, "()"),
 			ASTNode::Boolean(value) => write!(f, "{value}"),
+			ASTNode::Number(value) => write!(f, "{value}"),
 			ASTNode::Float(value) => write!(f, "{value}"),
 			ASTNode::String(text) => write!(f, "\"{text}\""),
 			ASTNode::Variable(name) => write!(f, "{name}"),

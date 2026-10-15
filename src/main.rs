@@ -26,7 +26,7 @@ use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::bytecode::{Bytecode, BytecodeError};
-use crate::vm::{VM, VMError};
+use crate::vm::{RawVMError, VM, VMError};
 use crate::wrapper::Spanned;
 
 #[derive(argh::FromArgs, Debug)]
@@ -398,6 +398,10 @@ fn app(args: Args) -> Result<(), AppError> {
 			repl(),
 	};
 
+	if let Err(AppError::VM(VMError {val: RawVMError::Exit(_), ..})) = &err {
+		return err
+	}
+
 	if let Err(e) = &err {
 		eprintln!("{e}");
 	}
@@ -409,6 +413,12 @@ fn main() -> ExitCode {
 	let args: Args = argh::from_env();
 
 	let res = app(args);
+
+	if let Err(AppError::VM(VMError {val: RawVMError::Exit(code), ..})) = &res {
+		return ExitCode::from(
+			(u32::try_from(code).unwrap() & 0xFF) as u8
+		)
+	}
 
 	if res.is_err() {
 		return ExitCode::FAILURE

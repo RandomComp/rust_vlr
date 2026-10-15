@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::fmt;
 
 use crate::compiler::optimizer::OptimizerError;
@@ -88,10 +87,8 @@ macro_rules! wmatch {
 	};
 }
 
-// map_err(|e| OptimizerError::from(RawOptimizerError::from(e.val))
-
 macro_rules! wrapper_connect {
-	( $( $from:ident => $to:ident ),* $(,)* ) => {
+	( $( $from:ident => $to:ident ),* $(,)? ) => {
   		$(
 	  		impl From<Spanned<$from>> for Spanned<$to> {
 				fn from(from: Spanned<$from>) -> Spanned<$to> {
@@ -103,16 +100,6 @@ macro_rules! wrapper_connect {
 					)
 				}
 			}
-// 	 		impl From<Spanned<$to>> for Spanned<$from> {
-// 				fn from(from: Spanned<$to>) -> Spanned<$from> {
-// 					let span = from.span;
-//
-// 					Spanned::from_with_span(
-// 						<$from>::from(from.val),
-// 						span
-// 					)
-// 				}
-// 			}
     	)*
     };
 }
