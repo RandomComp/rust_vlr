@@ -282,8 +282,8 @@ impl Parser {
 		self.tokens.get((self.index as isize + offset) as usize)
 	}
 
-	fn skip(&mut self, expected_token_type: &Token) {
-		while let Some(kind) = self.peek(0) && kind == expected_token_type {
+	fn skip(&mut self, expected_token_type: TokenKind) {
+		while let Some(kind) = self.peek(0) && expected_token_type == (&kind.val).into() {
 			self.index += 1;
 		}
 	}
@@ -296,18 +296,16 @@ impl Parser {
 		result
 	}
 
-	fn consume(&mut self, expected_token_type: TokenKind) -> Result<(), Spanned<ParserError>> {
+	fn expected(&mut self, expected: TokenKind) -> Result<(), Spanned<ParserError>> {
 		match self.peek(0) {
-			Some(kind) if expected_token_type == (&kind.val).into() => {
-				self.consume_next();
-
-				Ok(())
+			Some(kind) if expected == (&kind.val).into() => {
+				unreachable!("Called expected on a expected token");
 			},
 			Some(kind) => {
 				Err(
 					Spanned::from_with_span(
 						ParserError::ExpectedToken {
-							kind: expected_token_type,
+							kind: expected,
 							found: kind.val.clone()
 						},
 						kind.span
@@ -315,6 +313,17 @@ impl Parser {
 				)
 			},
 			None => unreachable!("EOF missing or logical error"),
+		}
+	}
+
+	fn consume(&mut self, expected_token_type: TokenKind) -> Result<(), Spanned<ParserError>> {
+		match self.peek(0) {
+			Some(kind) if expected_token_type == (&kind.val).into() => {
+				self.consume_next();
+
+				Ok(())
+			},
+			_ => self.expected(expected_token_type),
 		}
 	}
 
@@ -370,15 +379,15 @@ impl Parser {
 
 		loop {
 			if i > 0 {
-				if let Some(kind) = self.peek(-1) {
-					if *kind != Token::RBrace {
-						self.consume(TokenKind::Semicolon)?;
-					}
-				} else {
+				let Some(kind) = self.peek(-1) else {
+					unreachable!("peek error or EOF ignoring");
+				};
+
+				if *kind != Token::RBrace {
 					self.consume(TokenKind::Semicolon)?;
 				}
 
-				self.skip(&Token::Semicolon);
+				self.skip(TokenKind::Semicolon);
 			}
 
 			if let Some(kind) = self.peek(0) && (*kind == Token::Eof || *kind == Token::RBrace) {
@@ -457,31 +466,24 @@ impl Parser {
 	}
 
 	fn parse_function_def(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
-		self.consume(TokenKind::Def);
+		let is_global = match self.peek(0) {
+			Some(wmatch!(Token::Global)) => {
+				self.consume_next();
+
+				true
+			},
+			Some(_) => false,
+			None => return Ok(
+				Spanned::from_with_span(ASTNode::None, 0) // fix: span
+			)
+		};
+
+		self.consume(TokenKind::Def)?;
 
 		let (name_token, name) = match self.peek(0) {
 			Some(name_token @ wmatch!(Token::Word(name))) => (name_token, name),
-			Some(kind) => {
-				return Err(
-					Spanned::from_with_span(
-						ParserError::ExpectedToken {
-							kind: TokenKind::Word,
-							found: kind.val.clone()
-						},
-						kind.span
-					)
-				)
-			}
-			None => {
-				return Err(
-					Spanned::from_with_span(
-						ParserError::ExpectedToken {
-							kind: TokenKind::Word,
-							found: Token::Eof
-						},
-						0
-					)
-				)
+			_ => {
+				return self.expected(TokenKind::Word)
 			}
 		};
 
@@ -492,7 +494,6 @@ impl Parser {
 			name_token.span
 		);
 
-		self.consume_next();
 		self.consume_next();
 		self.consume(TokenKind::LPar)?;
 
@@ -527,7 +528,7 @@ impl Parser {
 					name: Some(name),
 					args,
 					body: Box::new(block),
-					is_global: false,
+					is_global,
 				},
 				span
 			)
@@ -612,7 +613,8 @@ impl Parser {
 				}
 			}
 
-			(wmatch!(Token::Def), Some(name_token @ wmatch!(Token::Word(name)))) => {
+			(wmatch!(Token::Global), Some(wmatch!(Token::Def))) |
+			(wmatch!(Token::Def), Some(wmatch!(Token::Word(_)))) => {
 				return self.parse_function_def()
 			}
 

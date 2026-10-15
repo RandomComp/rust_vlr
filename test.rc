@@ -1,7 +1,7 @@
 global def main() {
 	counter = 0;
 
-	while counter < 5 {
+	if counter < 5 {
 		x = 123;
 
 		print("Итерация цикла while, counter =", counter);
