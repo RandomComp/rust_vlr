@@ -1,6 +1,6 @@
 mod formatter;
 
-use crate::{wmatch, wrapper::Spanned};
+use crate::{compiler::lexer::TokenKind, wmatch, wrapper::Spanned};
 
 use std::{fmt::{self, Write}, mem};
 
@@ -10,14 +10,14 @@ use crate::{compiler::lexer::Token};
 pub enum ParserError {
 	// #[error("line {row} at {column}: invalid syntax")]
 	// InvalidSyntax {row: usize, column: usize},
-	#[error("expected '{kind}' token, found '{found}'")]
-	ExpectedToken {kind: Token, found: Token},
+	#[error("expected '{kind}' token, found {found}")]
+	ExpectedToken {kind: TokenKind, found: Token},
 
-	#[error("expected expression, found '{found}'")]
+	#[error("expected expression, found {found}")]
 	ExpectedExpression {found: Token},
 
-	#[error("expected {}, found '{found}'", Self::get_tokens_fmt(types)?)]
-	ExpectedTokens {types: &'static [Token], found: Token},
+	#[error("expected {}, found {found}", Self::get_tokens_fmt(types)?)]
+	ExpectedTokens {types: &'static [TokenKind], found: Token},
 
 	#[error("Cannot convert from {0:?} to BinaryOp")]
 	CannotConvertToBinaryOp(Token),
@@ -27,7 +27,7 @@ pub enum ParserError {
 }
 
 impl ParserError {
-	fn get_tokens_fmt(types: &[Token]) -> Result<String, fmt::Error> {
+	fn get_tokens_fmt(types: &[TokenKind]) -> Result<String, fmt::Error> {
 		let mut result = types.iter().take(types.len() - 1).map(ToString::to_string).collect::<Vec<String>>().join(", ");
 
 		if let Some(token) = types.iter().last() {
@@ -264,6 +264,7 @@ pub enum ASTNode {
 		name: Option<Spanned<String>>,
 		args: Vec<Spanned<String>>,
 		body: Box<Spanned<ASTNode>>,
+		is_global: bool,
 	},
 }
 
@@ -455,6 +456,86 @@ impl Parser {
 		Ok(ASTNode::List(result))
 	}
 
+	fn parse_function_def(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
+		self.consume(Token::Def);
+
+		let (name_token, name) = match self.peek(0) {
+			Some(name_token @ wmatch!(Token::Word(name))) => (name_token, name),
+			Some(kind) => {
+				return Err(
+					Spanned::from_with_span(
+						ParserError::ExpectedToken {
+							kind: Token::Word(None),
+							found: kind.val.clone()
+						},
+						kind.span
+					)
+				)
+			}
+			None => {
+				return Err(
+					Spanned::from_with_span(
+						ParserError::ExpectedToken {
+							kind: Token::Word(None),
+							found: Token::Eof
+						},
+						0
+					)
+				)
+			}
+		};
+
+		let span = name_token.span;
+
+		let name = name.map(|name|
+			Spanned::from_with_span(
+				name.clone(),
+				name_token.span
+			)
+		);
+
+		self.consume_next();
+		self.consume_next();
+		self.consume(Token::LPar)?;
+
+		let mut args = Vec::new();
+
+		while let Some(kind) = self.peek(0) {
+			match &kind.val {
+				Token::Word(arg) => {
+					args.push(
+						Spanned::from_with_span(
+							arg.clone(),
+							kind.span
+						)
+					);
+
+					self.consume_next();
+				}
+				Token::Comma => {
+					self.consume_next();
+				},
+				_ => break,
+			}
+		}
+
+		self.consume(Token::RPar)?;
+
+		let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
+
+		Ok(
+			Spanned::from_with_span(
+				ASTNode::FunctionDefinition {
+					name: Some(name),
+					args,
+					body: Box::new(block),
+					is_global: false,
+				},
+				span
+			)
+		)
+	}
+
 	fn parse_statement(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
 		let Some(cur) = self.peek(0) else {
 			return Ok(
@@ -534,45 +615,7 @@ impl Parser {
 			}
 
 			(wmatch!(Token::Def), Some(name_token @ wmatch!(Token::Word(name)))) => {
-				let name = Spanned::from_with_span(
-					name.clone(),
-					name_token.span
-				);
-
-				self.consume_next();
-				self.consume_next();
-				self.consume(Token::LPar)?;
-
-				let mut args = Vec::new();
-
-				while let Some(kind) = self.peek(0) {
-					match &kind.val {
-						Token::Word(arg) => {
-							args.push(
-								Spanned::from_with_span(
-									arg.clone(),
-									kind.span
-								)
-							);
-
-							self.consume_next();
-						}
-						Token::Comma => {
-							self.consume_next();
-						},
-						_ => break,
-					}
-				}
-
-				self.consume(Token::RPar)?;
-
-				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
-
-				ASTNode::FunctionDefinition {
-					name: Some(name),
-					args,
-					body: Box::new(block)
-				}
+				return self.parse_function_def()
 			}
 
 			(wmatch!(Token::Def), Some(wmatch!(Token::LPar))) => {
@@ -607,7 +650,8 @@ impl Parser {
 				ASTNode::FunctionDefinition {
 					name: None,
 					args,
-					body: Box::new(block)
+					body: Box::new(block),
+					is_global: false
 				}
 			}
 

@@ -1,10 +1,12 @@
-counter = 0;
+global def main() {
+	counter = 0;
 
-while counter < 5 {
-	x = 123;
+	while counter < 5 {
+		x = 123;
 
-    print("Итерация цикла while, counter =", counter);
-    counter += 1;
+		print("Итерация цикла while, counter =", counter);
+		counter += 1;
+	}
 }
 
 # # =====================================================================

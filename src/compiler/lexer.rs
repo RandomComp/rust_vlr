@@ -2,172 +2,195 @@ use std::{iter::Skip, num::ParseFloatError, str::Chars};
 
 use crate::{res_with_pos, wrapper::Spanned};
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Token {
-	Float(f64),
-	Word(String),
-	String(String),
-	Plus,
-	Minus,
-	Exclamation,
-	Pow,
-	Multiply,
-	Divide,
-	Remainder,
-
-	Assignment,
-	PlusAssignment,
-	MinusAssignment,
-	PowAssignment,
-	MultiplyAssignment,
-	DivideAssignment,
-	RemainderAssignment,
-
-	True, False,
-	If, Else,
-	While, For,
-	Break,
-	Return,
-	Def,
-	Everything,
-
-	Equals,
-	Neq,
-	Great,
-	Less,
-	GreatOrEquals,
-	LessOrEquals,
-	LogicalAnd,
-	LogicalOr,
-
-	Range,
-
-	Comma,
-	Semicolon,
-	LPar,
-	RPar,
-	LBracket,
-	RBracket,
-	LBrace,
-	RBrace,
-	Eof,
-}
-
-macro_rules! gen_code_for_ops_and_to_const_str {
-	([ $($kind:path => $text:expr),* ] [ $($kind_word:pat_param => $text_word:expr),* ] ) => {
-		const TOKEN_OPERATORS: &[(Self, &str)] = &[
+macro_rules! gen_code_for_ops_and_for_display {
+	(
+		[ $($kind:tt => $text:expr),* ]
+		[ $($kind_word:tt => $text_word:expr),* ]
+		[ $($kind_other:tt($kind_parametrs:ty) => $text_other:expr),* ]
+		[ $($kind_virtual:tt => $text_virtual:expr),* ]
+	) => {
+		#[derive(Copy, Clone, Debug, PartialEq)]
+		pub enum TokenKind {
 			$(
-				($kind, $text),
+				$kind,
 			)*
-		];
 
-		fn to_const_str(&self) -> &'static str {
-			match self {
-				$(
-					$kind => $text,
-				)*
+			$(
+				$kind_word,
+			)*
 
+			$(
+				$kind_other,
+			)*
+
+			$(
+				$kind_virtual,
+			)*
+		}
+
+		#[derive(Clone, Debug, PartialEq)]
+		pub enum Token {
+			$(
+				$kind,
+			)*
+
+			$(
+				$kind_word,
+			)*
+
+			$(
+				$kind_other ( $kind_parametrs ),
+			)*
+
+			$(
+				$kind_virtual,
+			)*
+		}
+
+		impl Token {
+			const TOKEN_OPERATORS: &[(Self, &str)] = &[
 				$(
-					$kind_word => $text_word,
+					(Self::$kind, $text),
 				)*
+			];
+
+			fn for_display(&self) -> &'static str {
+				match self {
+					$(
+						Self::$kind => concat!("op ", $text),
+					)*
+
+					$(
+						Self::$kind_word => concat!("keyword ", $text_word),
+					)*
+
+					$(
+						Self::$kind_other(..) => $text_other,
+					)*
+
+					$(
+						Self::$kind_virtual => concat!("virtual ", $text_virtual),
+					)*
+				}
+			}
+
+			fn get_keyword(word: &str) -> Option<Self> {
+				match word {
+					$(
+						$text_word => Some(Self::$kind_word),
+					)*
+					_ => None
+				}
+			}
+
+			fn from_op(expected_op: &str) -> Option<&(Self, &str)> {
+				Self::TOKEN_OPERATORS.iter()
+					.find(|(_, text)|
+						expected_op.starts_with(text)
+					)
+			}
+		}
+
+		impl std::fmt::Display for TokenKind {
+			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				let const_str = match self {
+					$(
+						Self::$kind => $text,
+					)*
+
+					$(
+						Self::$kind_word => $text_word,
+					)*
+
+					$(
+						Self::$kind_other => $text_other,
+					)*
+
+					$(
+						Self::$kind_virtual => $text_virtual,
+					)*
+				};
+
+				write!(f, "{const_str}")
+			}
+		}
+
+		impl std::fmt::Display for Token {
+			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				match self {
+					Self::Float(x) => write!(f, "{x}"),
+					Self::Word(word) => write!(f, "{word}"),
+					Self::String(word) => write!(f, "\"{word}\""),
+
+					_ => f.write_str(
+						self.for_display()
+					),
+				}
 			}
 		}
 	};
 }
 
-impl Token {
-	gen_code_for_ops_and_to_const_str!(
-		[
-			Self::Equals => "==",
-			Self::Neq => "!=",
-			Self::GreatOrEquals => ">=",
-			Self::LessOrEquals => "<=",
-			Self::Great => ">",
-			Self::Less => "<",
-			Self::LogicalAnd => "&&",
-			Self::LogicalOr => "||",
+gen_code_for_ops_and_for_display!(
+	[ // Operators
+		Equals => "==",
+		Neq => "!=",
+		GreatOrEquals => ">=",
+		LessOrEquals => "<=",
+		Great => ">",
+		Less => "<",
+		LogicalAnd => "&&",
+		LogicalOr => "||",
 
-			Self::Assignment => "=",
-			Self::PlusAssignment => "+=",
-			Self::MinusAssignment => "-=",
-			Self::PowAssignment => "**=",
-			Self::MultiplyAssignment => "*=",
-			Self::DivideAssignment => "/=",
-			Self::RemainderAssignment => "%=",
+		Assignment => "=",
+		PlusAssignment => "+=",
+		MinusAssignment => "-=",
+		PowAssignment => "**=",
+		MultiplyAssignment => "*=",
+		DivideAssignment => "/=",
+		RemainderAssignment => "%=",
 
-			Self::Plus => "+",
-			Self::Minus => "-",
-			Self::Exclamation => "!",
-			Self::Pow => "**",
-			Self::Multiply => "*",
-			Self::Divide => "/",
-			Self::Remainder => "%",
+		Plus 			=> "+",
+		Minus 		=> "-",
+		Exclamation 	=> "!",
+		Pow 			=> "**",
+		Multiply 		=> "*",
+		Divide 		=> "/",
+		Remainder 	=> "%",
 
-			Self::Comma => ",",
-			Self::Semicolon => ";",
-			Self::LPar => "(",
-			Self::RPar => ")",
-			Self::LBracket => "[",
-			Self::RBracket => "]",
-			Self::LBrace => "{",
-			Self::RBrace => "}",
+		Comma 		=> ",",
+		Semicolon 	=> ";",
+		LPar 			=> "(",
+		RPar 			=> ")",
+		LBracket 		=> "[",
+		RBracket 		=> "]",
+		LBrace 		=> "{",
+		RBrace 		=> "}",
 
-			Self::Everything => "...",
-			Self::Range => ".."
-		]
-		[
-			Self::True => "true",
-			Self::False => "false",
-			Self::Float(..) => "float",
-			Self::String(..) => "string",
-			Self::Word(..) => "word",
-			Self::If => "if",
-			Self::Else => "else",
-			Self::While => "while",
-			Self::For => "for",
-			Self::Break => "break",
-			Self::Return => "return",
-			Self::Def => "def",
-			Self::Eof => "Eof"
-		]
-	);
-
-	fn get_keyword(word: &str) -> Option<Self> {
-		match word {
-			"true" => Some(Self::True),
-			"false" => Some(Self::False),
-			"if" => Some(Self::If),
-			"else" => Some(Self::Else),
-			"while" => Some(Self::While),
-			"for" => Some(Self::For),
-			"def" => Some(Self::Def),
-			"break" => Some(Self::Break),
-			"return" => Some(Self::Return),
-			_ => None,
-		}
-	}
-
-	fn from_op(expected_op: &str) -> Option<&(Self, &str)> {
-		Self::TOKEN_OPERATORS.iter()
-			.find(|(_, text)|
-				expected_op.starts_with(text)
-			)
-	}
-}
-
-impl std::fmt::Display for Token {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		match self {
-			Self::Float(x) => write!(f, "{x}"),
-			Self::Word(word) => write!(f, "{word}"),
-			Self::String(word) => write!(f, "\"{word}\""),
-
-			_ => f.write_str(
-				self.to_const_str()
-			),
-		}
-	}
-}
+		Everything 	=> "...",
+		Range 		=> ".."
+	]
+	[ // Keywords
+		True 			=> "true",
+		False 		=> "false",
+		If 			=> "if",
+		Else 			=> "else",
+		While 		=> "while",
+		For 			=> "for",
+		Break 		=> "break",
+		Return 		=> "return",
+		Global 		=> "global",
+		Def 			=> "def"
+	]
+	[ // Other
+		Float(f64) 		=> "float",
+		String(String) 	=> "string",
+		Word(String) 	=> "word"
+	]
+	[ // virtual
+		Eof 			=> "Eof"
+	]
+);
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum LexerError {

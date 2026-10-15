@@ -55,6 +55,16 @@ impl<'a> CompilerContext<'a> {
 		}
 	}
 
+	fn get_child_function(&self, name: &str) -> Option<u32> {
+		if let Some(parent) = self.parent {
+			parent.get_function(name)
+		} else if let Some(&value) = self.functions.get(name) {
+			Some(value)
+		} else  {
+			None
+		}
+	}
+
 	fn insert_var<T>(&mut self, name: T, stack_pos: u32) where T: Into<String> {
 		self.vars.insert(name.into(), stack_pos);
 	}
@@ -66,11 +76,12 @@ impl<'a> CompilerContext<'a> {
 pub struct Compiler {
 	stack: u32,
 	break_pos: Vec<Option<u32>>,
+	global_functions: HashMap<String, u32>,
 }
 
 impl Compiler {
 	pub fn new() -> Self {
-		Self {stack: 0, break_pos: Vec::new()}
+		Self {stack: 0, break_pos: Vec::new(), global_functions: HashMap::new()}
 	}
 
 	fn pc(result: &[Bytecode]) -> u32 {
@@ -420,6 +431,17 @@ impl Compiler {
 	}
 
 	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>) -> Result<(), Spanned<CompilerError>> {
-		self.compile(ast, result, &mut CompilerContext::new(None))
+		let mut context = CompilerContext::new(None);
+
+		self.compile(ast, result, &mut context)?;
+
+		self.call_func(
+			&Spanned::from_with_span("main", 0),
+			[].iter(),
+			result,
+			&mut context
+		)?;
+
+		Ok(())
 	}
 }
