@@ -15,14 +15,10 @@ pub enum Bytecode {
 	/// Pushes boolean to stack
 	PushBoolean(bool),
 	/// Copy value from stack, uses direct index
-	DirectLook(u32),
+	Look(u32),
 	/// Copy value to stack, uses direct index
-	DirectLoad(u32),
+	Load(u32),
 	/// Copy value from stack, uses indirect index
-	IndirectLook(u32),
-	/// Copy value to stack, uses indirect index
-	IndirectLoad(u32),
-	/// Remove value from stack upper
 	Remove,
 	/// Jump if not condition
 	Jif(u32),
@@ -83,14 +79,10 @@ impl Display for Bytecode {
 				write!(f, "push {val}"),
 			Bytecode::PushString(text) =>
 				write!(f, "push \"{text}\""),
-			Bytecode::DirectLook(stack_pos) =>
+			Bytecode::Look(stack_pos) =>
 				write!(f, "look {stack_pos}"),
-			Bytecode::DirectLoad(stack_pos) =>
+			Bytecode::Load(stack_pos) =>
 				write!(f, "load {stack_pos}"),
-			Bytecode::IndirectLook(stack_pos) =>
-				write!(f, "look -{stack_pos}"),
-			Bytecode::IndirectLoad(stack_pos) =>
-				write!(f, "load -{stack_pos}"),
 			Bytecode::Remove =>
 				write!(f, "remove"),
 			Bytecode::Add =>
@@ -156,10 +148,8 @@ impl Bytecode {
 	pub const PUSH_FALSE: u8 = 0x03; // Pushes false to stack
 	pub const PUSH_TRUE: u8 = 0x04; // Pushes true to stack
 
-	pub const DIRECT_LOOK: u8 = 0x05; // Copy value from N
-	pub const DIRECT_LOAD: u8 = 0x06; // Copy value to N
-	pub const INDIRECT_LOOK: u8 = 0x07; // Copy value from N
-	pub const INDIRECT_LOAD: u8 = 0x08; // Copy value to N
+	pub const LOOK: u8 = 0x05; // Copy value from N
+	pub const LOAD: u8 = 0x06; // Copy value to N
 
 	pub const REMOVE: u8 = 0x09; // Remove value
 	pub const PUSH_NUMBER_U32: u8 = 0x0A; // Pushes number
@@ -220,10 +210,8 @@ impl Bytecode {
 			Self::PushString(..) 		=> Self::PUSH_STRING,
 			Self::PushBoolean(false) 	=> Self::PUSH_FALSE,
 			Self::PushBoolean(true) 	=> Self::PUSH_TRUE,
-			Self::DirectLook(..) 		=> Self::DIRECT_LOOK,
-			Self::DirectLoad(..) 		=> Self::DIRECT_LOAD,
-			Self::IndirectLook(..) 		=> Self::INDIRECT_LOOK,
-			Self::IndirectLoad(..) 		=> Self::INDIRECT_LOAD,
+			Self::Look(..) 				=> Self::LOOK,
+			Self::Load(..) 				=> Self::LOAD,
 			Self::Remove 				=> Self::REMOVE,
 			Self::Jif(..) 				=> Self::JIF,
 			Self::Jmp(..) 				=> Self::JMP,
@@ -265,10 +253,8 @@ impl Bytecode {
 				result.extend(u32_len.to_le_bytes());
 				result.extend(text.bytes());
 			}, // Pushes string to stack
-			Self::DirectLook(pos) |
-			Self::DirectLoad(pos) |
-			Self::IndirectLook(pos) |
-			Self::IndirectLoad(pos) |
+			Self::Look(pos) |
+			Self::Load(pos) |
 			Self::Jif(pos) |
 			Self::Jmp(pos) |
 			Self::Call(pos) => {
@@ -323,25 +309,15 @@ impl Bytecode {
 			},
 			Self::PUSH_FALSE => Self::PushBoolean(false), // Pushes false to stack
 			Self::PUSH_TRUE => Self::PushBoolean(true), // Pushes true to stack
-			Self::DIRECT_LOOK => { // Copy value from N
+			Self::LOOK => { // Copy value from N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
-				Self::DirectLook(stack_pos)
+				Self::Look(stack_pos)
 			},
-			Self::DIRECT_LOAD => { // Copy value to N
+			Self::LOAD => { // Copy value to N
 				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
-				Self::DirectLoad(stack_pos)
-			},
-			Self::INDIRECT_LOOK => { // Copy value from N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::IndirectLook(stack_pos)
-			},
-			Self::INDIRECT_LOAD => { // Copy value to N
-				let stack_pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-				Self::IndirectLoad(stack_pos)
+				Self::Load(stack_pos)
 			},
 			Self::REMOVE => Self::Remove, // Remove value
 			Self::JIF => { // Jump if not condition

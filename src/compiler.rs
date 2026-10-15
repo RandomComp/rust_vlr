@@ -77,26 +77,14 @@ impl Compiler {
 		result.len() as u32
 	}
 
-	fn direct_look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::DirectLook(stack_pos));
+	fn look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
+		result.push(Bytecode::Look(stack_pos));
 
 		self.stack += 1;
 	}
 
-	fn direct_load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::DirectLoad(stack_pos));
-
-		self.stack -= 1;
-	}
-
-	fn indirect_look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::IndirectLook(stack_pos));
-
-		self.stack += 1;
-	}
-
-	fn indirect_load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::IndirectLoad(stack_pos));
+	fn load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
+		result.push(Bytecode::Load(stack_pos));
 
 		self.stack -= 1;
 	}
@@ -173,14 +161,14 @@ impl Compiler {
 			);
 		};
 
-		self.direct_look(stack_pos, result);
+		self.look(stack_pos, result);
 		self.compile(right, result, context)?;
 
 		self.stack -= 1;
 
 		result.push(op);
 
-		self.direct_load(stack_pos, result);
+		self.load(stack_pos, result);
 
 		Ok(())
 	}
@@ -275,7 +263,7 @@ impl Compiler {
 				if let Some(stack_pos) = context.get_var(name) {
 					self.compile(right, result, context)?;
 
-					self.direct_load(stack_pos, result);
+					self.load(stack_pos, result);
 				} else {
 					let stack_pos = self.stack;
 
@@ -309,7 +297,7 @@ impl Compiler {
 					);
 				};
 
-				self.direct_look(stack_pos, result);
+				self.look(stack_pos, result);
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;
