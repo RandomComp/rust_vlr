@@ -180,6 +180,10 @@ impl VM {
 		}
 	}
 
+	fn dump_regs(&self) {
+		println!("acc = {}; base = {}; bp = {}; sp = {}", self.acc, self.base, self.bp, self.sp);
+	}
+
 	fn dump_stack(&self) {
 		print!("stack = [");
 
@@ -397,6 +401,7 @@ impl VM {
 			}
 
 			self.dump_stack();
+			self.dump_regs();
 
 			if !pc_changed {
 				self.pc += 1;
