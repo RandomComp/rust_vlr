@@ -38,7 +38,7 @@ impl fmt::Display for UniResultType {
 		match self {
 			UniResultType::None 	=> "none",
 			UniResultType::Boolean 	=> "boolean",
-			UniResultType::Number	=> "u32 number",
+			UniResultType::Number	=> "i32 number",
 			UniResultType::Float 	=> "float",
 			UniResultType::String 	=> "string",
 			UniResultType::List 	=> "list",
@@ -52,7 +52,7 @@ impl fmt::Display for UniResultType {
 pub enum UniResult {
 	None,
 	Boolean(bool),
-	Number(u32),
+	Number(i32),
 	Float(f32),
 	String(String),
 	List(Vec<Spanned<UniResult>>),
@@ -222,9 +222,20 @@ impl UniResult {
 
 	fn add(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
-			(Self::Float(a), &Self::Float(b))
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a + b)),
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a + b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::add(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -233,20 +244,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::add(value, left)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::add(a, b)?);
 				}
 
 				Ok(result.into())
@@ -262,9 +264,20 @@ impl UniResult {
 	}
 	fn sub(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
-			(Self::Float(a), &Self::Float(b))
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a - b)),
+			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a - b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::add(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -273,20 +286,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::sub(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::add(a, b)?);
 				}
 
 				Ok(result.into())
@@ -302,9 +306,20 @@ impl UniResult {
 	}
 	fn pow(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a.pow(b.cast_unsigned()))),
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a.powf(b))),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::pow(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -313,20 +328,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::pow(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::pow(a, b)?);
 				}
 
 				Ok(result.into())
@@ -342,9 +348,20 @@ impl UniResult {
 	}
 	fn mul(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a * b)),
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a * b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::mul(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -353,20 +370,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::mul(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::mul(a, b)?);
 				}
 
 				Ok(result.into())
@@ -382,9 +390,20 @@ impl UniResult {
 	}
 	fn div(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a / b)),
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a / b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::div(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -393,20 +412,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::div(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::div(a, b)?);
 				}
 
 				Ok(result.into())
@@ -422,9 +432,20 @@ impl UniResult {
 	}
 	fn rem(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Number(a % b)),
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a % b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::rem(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -433,20 +454,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::rem(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::rem(a, b)?);
 				}
 
 				Ok(result.into())
@@ -465,15 +477,24 @@ impl UniResult {
 		let result = match (&left.val, &right.val) {
 			(Self::None, Self::None)
 				=> Ok(Self::Boolean(true)),
+			(Self::Number(a), Self::Number(b))
+				=> Ok(Self::Boolean(a == b)),
 			(Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean((a - b).abs() < f32::EPSILON)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a == b)),
 			(Self::Boolean(a), Self::Boolean(b))
 				=> Ok(Self::Boolean(a == b)),
-			(Self::Number(a), Self::Number(b))
-				=> Ok(Self::Boolean(a == b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::eq(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -482,20 +503,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::eq(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::eq(a, b)?);
 				}
 
 				Ok(result.into())
@@ -511,11 +523,22 @@ impl UniResult {
 	}
 	pub fn lt(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
 		let result = match (&left.val, &right.val) {
+			(&Self::Number(a), &Self::Number(b))
+				=> Ok(Self::Boolean(a < b)),
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Boolean(a < b)),
 			(Self::String(a), Self::String(b))
 				=> Ok(Self::Boolean(a < b)),
-			(Self::List(values), Self::Float(..)) => {
+			(Self::List(values_a), Self::List(values_b)) => {
+				let mut result = Vec::new();
+
+				for (a, b) in zip(values_a, values_b) {
+					result.push(Self::lt(a, b)?);
+				}
+
+				Ok(result.into())
+			},
+			(Self::List(values), _) => {
 				let mut result = Vec::new();
 
 				for value in values {
@@ -524,20 +547,11 @@ impl UniResult {
 
 				Ok(result.into())
 			},
-			(Self::Float(..), Self::List(values)) => {
+			(_, Self::List(values)) => {
 				let mut result = Vec::new();
 
 				for value in values {
 					result.push(Self::lt(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::lt(a, b)?);
 				}
 
 				Ok(result.into())
@@ -553,46 +567,7 @@ impl UniResult {
 	}
 
 	pub fn gt(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
-		let result = match (&left.val, &right.val) {
-			(&Self::Float(a), &Self::Float(b))
-				=> Ok(Self::Boolean(a > b)),
-			(Self::String(a), Self::String(b))
-				=> Ok(Self::Boolean(a < b)),
-			(Self::List(values), Self::Float(..)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(Self::gt(value, right)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::Float(..), Self::List(values)) => {
-				let mut result = Vec::new();
-
-				for value in values {
-					result.push(Self::gt(left, value)?);
-				}
-
-				Ok(result.into())
-			},
-			(Self::List(values_a), Self::List(values_b)) => {
-				let mut result = Vec::new();
-
-				for (a, b) in zip(values_a, values_b) {
-					result.push(Self::gt(a, b)?);
-				}
-
-				Ok(result.into())
-			},
-			(left, right) => Err(
-				UniResultError::IncompatibleOperationType {
-					left: left.result_type(), op: BinaryOp::Great, right: right.result_type()
-				}
-			),
-		};
-
-		res_with_pos!(result, left.span)
+		Self::lt(right, left)
 	}
 
 	pub fn log_and(left: &Spanned<UniResult>, right: &Spanned<UniResult>) -> OpResult {
@@ -631,6 +606,8 @@ impl UniResult {
 
 	pub fn neg(value: &Spanned<UniResult>) -> OpResult {
 		let result = match &value.val {
+			&Self::Number(b)
+				=> Ok(Self::Number(-b)),
 			&Self::Float(b)
 				=> Ok(Self::Float(-b)),
 			Self::List(values) => {
@@ -681,8 +658,8 @@ impl From<bool> for UniResult {
 	}
 }
 
-impl From<u32> for UniResult {
-	fn from(value: u32) -> Self {
+impl From<i32> for UniResult {
+	fn from(value: i32) -> Self {
 		Self::Number(value)
 	}
 }
@@ -719,10 +696,10 @@ impl TryFrom<UniResult> for bool {
 	}
 }
 
-impl TryFrom<&UniResult> for u32 {
+impl TryFrom<&UniResult> for i32 {
 	type Error = UniResultError;
 
-	fn try_from(value: &UniResult) -> Result<u32, Self::Error> {
+	fn try_from(value: &UniResult) -> Result<i32, Self::Error> {
 		let &UniResult::Number(x) = value else {
 			return Err(
 				UniResultError::UsingIntoOnIncompatibleType(value.clone())
@@ -778,10 +755,10 @@ impl TryFrom<Spanned<UniResult>> for bool {
 	}
 }
 
-impl TryFrom<Spanned<UniResult>> for u32 {
+impl TryFrom<Spanned<UniResult>> for i32 {
 	type Error = Spanned<UniResultError>;
 
-	fn try_from(value: Spanned<UniResult>) -> Result<u32, Self::Error> {
+	fn try_from(value: Spanned<UniResult>) -> Result<i32, Self::Error> {
 		let UniResult::Number(x) = value.val else {
 			return Err(
 				Spanned::from_with_span(

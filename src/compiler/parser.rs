@@ -47,9 +47,9 @@ pub enum OpAssoc {
 impl fmt::Display for OpAssoc {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Left => write!(f, "left"),
-			Self::Right => write!(f, "right")
-		}
+			Self::Left => "left",
+			Self::Right => "right"
+		}.fmt(f)
 	}
 }
 
@@ -126,33 +126,33 @@ impl BinaryOp {
 impl fmt::Display for BinaryOp {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Self::Assignment => write!(f, "="),
-			Self::PlusAssignment => write!(f, "+="),
-			Self::MinusAssignment => write!(f, "-="),
-			Self::PowAssignment => write!(f, "**="),
-			Self::MultiplyAssignment => write!(f, "*="),
-			Self::DivideAssignment => write!(f, "/="),
-			Self::RemainderAssignment => write!(f, "%="),
+			Self::Assignment => "=",
+			Self::PlusAssignment => "+=",
+			Self::MinusAssignment => "-=",
+			Self::PowAssignment => "**=",
+			Self::MultiplyAssignment => "*=",
+			Self::DivideAssignment => "/=",
+			Self::RemainderAssignment => "%=",
 
-			Self::Plus => write!(f, "+"),
-			Self::Minus => write!(f, "-"),
-			Self::Multiply => write!(f, "*"),
-			Self::Pow => write!(f, "**"),
-			Self::Divide => write!(f, "/"),
-			Self::Remainder => write!(f, "%"),
+			Self::Plus => "+",
+			Self::Minus => "-",
+			Self::Multiply => "*",
+			Self::Pow => "**",
+			Self::Divide => "/",
+			Self::Remainder => "%",
 
-			Self::Equals => write!(f, "=="),
-			Self::Neq => write!(f, "!="),
-			Self::GreatOrEquals => write!(f, ">="),
-			Self::LessOrEquals => write!(f, "<="),
-			Self::Great => write!(f, ">"),
-			Self::Less => write!(f, "<"),
+			Self::Equals => "==",
+			Self::Neq => "!=",
+			Self::GreatOrEquals => ">=",
+			Self::LessOrEquals => "<=",
+			Self::Great => ">",
+			Self::Less => "<",
 
-			Self::LogicalAnd => write!(f, "&&"),
-			Self::LogicalOr => write!(f, "||"),
+			Self::LogicalAnd => "&&",
+			Self::LogicalOr => "||",
 
-			Self::Range => write!(f, ".."),
-		}
+			Self::Range => "..",
+		}.fmt(f)
 	}
 }
 
@@ -230,7 +230,7 @@ pub enum ASTNode {
 	None,
 
 	Boolean(bool),
-	Number(u32),
+	Number(i32),
 	Float(f32),
 	String(String),
 	List(Vec<Spanned<ASTNode>>),

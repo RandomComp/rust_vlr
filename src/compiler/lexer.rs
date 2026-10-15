@@ -205,7 +205,7 @@ gen_code_for_ops_and_for_display!(
 		Def 	=> "def"
 	}
 	literals => { // Literals
-		Number(u32) 	=> "number",
+		Number(i32) 	=> "number",
 		Float(f32) 		=> "float",
 		String(String) 	=> "string",
 		Word(String) 	=> "word"
@@ -303,7 +303,7 @@ impl<'a> Lexer<'a> {
 
 		self.consume_next(word_chr_cnt);
 
-		match number_str.parse::<u32>() {
+		match number_str.parse::<i32>() {
 			Ok(result) => {
 				Ok(Token::Number(result))
 			}

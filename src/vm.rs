@@ -18,7 +18,7 @@ pub enum RawVMError {
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
 	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
-	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
+	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: i32, expected: i32 },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 	#[error("Invalid stack position {0}")]
@@ -114,6 +114,8 @@ impl VM {
 
 		match expected {
 			NativeFunctionArgsNumber::Fixed(fixed) => {
+				let fixed = fixed as i32;
+
 				while i < fixed  {
 					let Some(value) = self.stack.pop() else {
 						return Err(
@@ -131,7 +133,7 @@ impl VM {
 				}
 			}
 			NativeFunctionArgsNumber::Dynamic => {
-				if let Some(fixed) = self.stack.pop().map(|v| u32::try_from(&v)) {
+				if let Some(fixed) = self.stack.pop().map(|v| i32::try_from(&v)) {
 					let fixed = fixed?;
 
 					while i < fixed  {
@@ -201,7 +203,7 @@ impl VM {
 				self.stack.push(val.into());
 			},
 			&Bytecode::PushNumber(val) => {
-				self.stack.push(val.into());
+				self.stack.push((val as i32).into());
 			},
 			&Bytecode::PushFloat(val) => {
 				self.stack.push(val.into());
@@ -243,17 +245,17 @@ impl VM {
 				pc_changed = true;
 			},
 			&Bytecode::Call(dest_pc) => {
-				self.stack.push((self.pc + 1).into());
+				self.stack.push(((self.pc + 1) as i32).into());
 
 				self.pc = dest_pc;
 
 				pc_changed = true;
 			},
 			&Bytecode::Subprogram => {
-				let pc = u32::try_from(
+				let pc = i32::try_from(
 					&self.stack.pop()
 						.ok_or(RawVMError::StackEmptyButExpectedValue)?
-				)?;
+				)? as u32;
 
 				self.ret_stack.push(pc);
 			},

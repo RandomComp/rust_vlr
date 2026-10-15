@@ -416,7 +416,7 @@ fn main() -> ExitCode {
 
 	if let Err(AppError::VM(VMError {val: RawVMError::Exit(code), ..})) = &res {
 		return ExitCode::from(
-			(u32::try_from(code).unwrap() & 0xFF) as u8
+			(i32::try_from(code).unwrap() & 0xFF) as u8
 		)
 	}
 

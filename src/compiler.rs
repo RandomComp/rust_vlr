@@ -127,7 +127,8 @@ impl Compiler {
 					}
 				}
 
-				NativeFunctionArgsNumber::Dynamic => result.push(Bytecode::PushNumber(len)),
+				NativeFunctionArgsNumber::Dynamic =>
+					result.push(Bytecode::PushNumber(len)),
 			}
 
 			result.push(Bytecode::NativeCall(id));
@@ -254,7 +255,7 @@ impl Compiler {
 			&ASTNode::Number(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushNumber(x));
+				result.push(Bytecode::PushNumber(x as u32));
 			},
 			&ASTNode::Float(x) => {
 				self.stack += 1;
@@ -452,12 +453,12 @@ impl Compiler {
 
 		self.compile(ast, result, &mut context)?;
 
-		self.call_func(
-			&Spanned::from_with_span("main", 0),
-			[].iter(),
-			result,
-			&mut context
-		)?;
+		// self.call_func(
+		// 	&Spanned::from_with_span("main", 0),
+		// 	[].iter(),
+		// 	result,
+		// 	&mut context
+		// )?;
 
 		Ok(())
 	}
