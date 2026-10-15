@@ -2,26 +2,6 @@ use std::{fmt, string::FromUtf8Error};
 
 use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
 
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub enum BytecodeRegister {
-	/// Subprogram result register
-	Accum,
-	Base,
-	BasePointer,
-	StackPointer,
-}
-
-impl fmt::Display for BytecodeRegister {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			Self::Accum => "acc",
-			Self::Base => "base",
-			Self::BasePointer => "bp",
-			Self::StackPointer => "sp",
-		}.fmt(f)
-	}
-}
-
 #[derive(thiserror::Error, Clone, Debug)]
 pub enum BytecodeError {
 	#[error("Byte {byte:02X} at {pos:02} unexpected")]
@@ -36,8 +16,50 @@ pub enum BytecodeError {
 	StringTooLong,
 	#[error("String have invalid UTF-8 invalid sequence: ")]
 	StringHasInvalidUTF8Sequence(#[from] FromUtf8Error),
+	#[error("Invalid register 0x{0:02X}")]
+	InvalidRegisterByte(u8),
 	#[error("{0}")]
 	NativeFunctionID(#[from] NativeFunctionIDError),
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum BytecodeRegister {
+	/// Subprogram result register
+	Accum,
+	Base,
+	BasePointer,
+	StackPointer,
+}
+
+impl BytecodeRegister {
+	fn to_le_bytes(self) -> [u8; 1] {
+		(self as u8).to_le_bytes()
+	}
+}
+
+impl TryFrom<u8> for BytecodeRegister {
+	type Error = BytecodeError;
+
+	fn try_from(value: u8) -> Result<Self, Self::Error> {
+		match value {
+			0 => Ok(Self::Accum),
+			1 => Ok(Self::Base),
+			2 => Ok(Self::BasePointer),
+			3 => Ok(Self::StackPointer),
+			_ => Err(BytecodeError::InvalidRegisterByte(value))
+		}
+	}
+}
+
+impl fmt::Display for BytecodeRegister {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Accum => "acc",
+			Self::Base => "base",
+			Self::BasePointer => "bp",
+			Self::StackPointer => "sp",
+		}.fmt(f)
+	}
 }
 
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
@@ -57,9 +79,9 @@ macro_rules! gen_asm_disasm {
 			$inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{
-				asm 	$( ( $($asm_arg:ident),* $(,)? ) )? => $inst_asm:block,
+				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
 				disasm ( $bytes:ident ) => $inst_disasm:block,
-				display ($formatter:ident $(, $($display_arg:ident),* $(,)? )? ) => $inst_display:block
+				display ( $formatter:ident $(, $($display_arg:ident),* $(,)? )? ) => $inst_display:block
 			}
 		),*
 		$(,)?
@@ -101,11 +123,15 @@ macro_rules! gen_asm_disasm {
 
 				match value {
 					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? => $inst_asm,
+						Self::$inst $( ( $( $asm_arg, )* ) )? => {
+							let mut $result = result;
+
+							$inst_asm;
+
+							Ok($result)
+						},
 					)*
 				}
-
-				Ok(result)
 			}
 
 			pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
@@ -195,8 +221,7 @@ macro_rules! gen_asm_disasm {
 
 gen_asm_disasm!(
 	Halt as 0x00 | 0xFF => {
-		asm => {
-
+		asm(result) => {
 		},
 		disasm(bytes) => {
 			Self::Halt
@@ -206,8 +231,8 @@ gen_asm_disasm!(
 		}
 	},
 	PushNumber(u32) as 0x01 => {
-		asm(val) => {
-
+		asm(result, val) => {
+			result.extend(val.to_le_bytes());
 		},
 		disasm(bytes) => {
 			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
@@ -215,159 +240,218 @@ gen_asm_disasm!(
 			Self::PushNumber(value)
 		},
 		display(f, val) => {
-			write!(f, "")
+			write!(f, "push {val}")
 		}
 	},
 	PushFloat(f32) as 0x02 => {
-		asm(val) => {
-
+		asm(result, val) => {
+			result.extend(val.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let value = f32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::PushFloat(value)
 		},
 		display(f, val) => {
-			write!(f, "")
+			write!(f, "push {val}")
 		}
 	},
 	PushString(String) as 0x03 => {
-		asm(val) => {
+		asm(result, text) => {
+			let Ok(u32_len) = u32::try_from(text.len()) else {
+				return Err(BytecodeError::StringTooLong)
+			};
 
+			result.extend(u32_len.to_le_bytes());
+			result.extend(text.bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			let utf8 = bytes.take(u32_len as usize).collect();
+
+			let text = String::from_utf8(utf8)?;
+
+			Self::PushString(text)
 		},
 		display(f, val) => {
-			write!(f, "")
+			write!(f, "push \"{val}\"")
 		}
 	},
 
 	PushReg(BytecodeRegister) as 0x04 => {
-		asm(reg) => {
-
+		asm(result, reg) => {
+			result.extend(reg.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::PushReg(reg)
 		},
 		display(f, reg) => {
-			write!(f, "")
+			write!(f, "push {reg}")
 		}
 	},
 	PopReg(BytecodeRegister) as 0x05 => {
-		asm(reg) => {
-
+		asm(result, reg) => {
+			result.extend(reg.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::PopReg(reg)
 		},
 		display(f, reg) => {
-			write!(f, "")
+			write!(f, "pop {reg}")
 		}
 	},
 
 	Look(u32) as 0x06 => {
-		asm(stack) => {
-
+		asm(result, stack) => {
+			result.extend(stack.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::Look(value)
 		},
 		display(f, stack) => {
-			write!(f, "")
+			write!(f, "look {stack}")
 		}
 	},
 	Load(u32) as 0x07 => {
-		asm(stack) => {
-
+		asm(result, stack) => {
+			result.extend(stack.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::Load(value)
 		},
 		display(f, stack) => {
-			write!(f, "")
+			write!(f, "load {stack}")
 		}
 	},
 	Remove as 0x08 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Remove
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "remove")
 		}
 	},
 
 	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
-		asm(reg, val) => {
-
+		asm(result, reg, val) => {
+			result.extend(reg.to_le_bytes());
+			result.extend(val.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let val = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::MovU32ToReg(reg, val)
 		},
 		display(f, reg, val) => {
-			write!(f, "")
+			write!(f, "mov {reg}, {val}")
 		}
 	},
 	MovRegToReg(BytecodeRegister, BytecodeRegister) as 0x0B => {
-		asm(reg1, reg2) => {
-
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::MovRegToReg(reg1, reg2)
 		},
 		display(f, reg1, reg2) => {
-			write!(f, "")
+			write!(f, "mov {reg1}, {reg2}")
 		}
 	},
 
 	Jif(u32) as 0x20 => {
-		asm(id) => {
-
+		asm(result, pos) => {
+			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::Jif(pos)
 		},
-		display(f, id) => {
-			write!(f, "")
+		display(f, pos) => {
+			write!(f, "jif {pos}")
 		}
 	},
 	Jmp(u32) as 0x28 => {
-		asm(id) => {
-
+		asm(result, pos) => {
+			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::Jmp(pos)
 		},
-		display(f, id) => {
-			write!(f, "")
+		display(f, pos) => {
+			write!(f, "jmp {pos}")
 		}
 	},
 	Call(u32) as 0x2A => {
-		asm(id) => {
-
+		asm(result, pos) => {
+			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			Self::Halt
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+
+			Self::Call(pos)
 		},
-		display(f, id) => {
-			write!(f, "")
+		display(f, pos) => {
+			write!(f, "call {pos}")
 		}
 	},
 	Ret as 0x2C => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
-			Self::Halt
+		disasm(_bytes) => {
+			Self::Ret
 		},
 		display(f) => {
 			write!(f, "")
 		}
 	},
-	(bin Equals) Eq as 0x50 => {
-		asm => {
+	NativeCall(NativeFunctionID) as 0x80 => {
+		asm(result, id) => {
+			result.extend(id.to_le_bytes());
+		},
+		disasm(bytes) => {
+			let id = NativeFunctionID::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
+			Self::NativeCall(id)
+		},
+		display(f, id) => {
+			write!(f, "native_call {id}")
+		}
+	},
+	(bin Equals) Eq as 0x50 => {
+		asm(result) => {
 		},
 		disasm(bytes) => {
 			Self::Halt
@@ -377,8 +461,7 @@ gen_asm_disasm!(
 		}
 	},
 	(bin Less) Lt as 0x52 => {
-		asm => {
-
+		asm(result) => {
 		},
 		disasm(_bytes) => {
 			Self::Lt
@@ -387,114 +470,94 @@ gen_asm_disasm!(
 			write!(f, "lt")
 		}
 	},
-	NativeCall(NativeFunctionID) as 0x80 => {
-		asm(id) => {
-
-		},
-		disasm(bytes) => {
-			Self::Halt
-		},
-		display(f, id) => {
-			write!(f, "")
-		}
-	},
 	(bin Plus) Add as 0xA0 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Add
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "add")
 		}
 	},
 	(bin Minus) Sub as 0xA3 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Sub
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "sub")
 		}
 	},
 	(bin Multiply) Mul as 0xB0 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Mul
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "mul")
 		}
 	},
 	(bin Divide) Div as 0xB3 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Div
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "div")
 		}
 	},
 	(bin Pow) Pow as 0xC0 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Pow
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "pow")
 		}
 	},
 	(bin LogicalAnd) LogicalAnd as 0xD3 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
-			Self::Halt
+		disasm(_bytes) => {
+			Self::LogicalAnd
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "land")
 		}
 	},
 	(bin LogicalOr) LogicalOr as 0xE0 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
-			Self::Halt
+		disasm(_bytes) => {
+			Self::LogicalOr
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "lor")
 		}
 	},
 	(un Minus) Neg as 0xC3 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Neg
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "neg")
 		}
 	},
 	(un Not) Not as 0xD0 => {
-		asm => {
-
+		asm(_result) => {
 		},
-		disasm(bytes) => {
+		disasm(_bytes) => {
 			Self::Not
 		},
 		display(f) => {
-			write!(f, "")
+			write!(f, "not")
 		}
 	},
 );
