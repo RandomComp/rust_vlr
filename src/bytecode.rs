@@ -53,7 +53,8 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 macro_rules! gen_asm_disasm {
 	(
 		$(
-			$( ( $modif:ident $binary_op:ident ) )? $inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
+			$( ( bin $binary_op:ident ) )? $( ( un $unary_op:ident ) )?
+			$inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{
 				asm 	$( ( $($asm_arg:ident),* $(,)? ) )? => $inst_asm:block,
@@ -155,6 +156,37 @@ macro_rules! gen_asm_disasm {
 						)?
 					)*
 					_ => None,
+				}
+			}
+
+			pub fn to_unary_op(&self) -> Option<UnaryOp> {
+				match self {
+					$(
+						$(
+							Self::$inst => Some(UnaryOp::$unary_op),
+						)?
+					)*
+					_ => None,
+				}
+			}
+			pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
+				match op {
+					$(
+						$(
+							UnaryOp::$unary_op => Self::$inst,
+						)?
+					)*
+				}
+			}
+
+			pub fn from_binary_op(op: &BinaryOp) -> Bytecode {
+				match op {
+					$(
+						$(
+							BinaryOp::$binary_op => Self::$inst,
+						)?
+					)*
+					_ => unreachable!("'{op}' not handled in from_binary_op"),
 				}
 			}
 		}
@@ -333,7 +365,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Eq as 0x50 => {
+	(bin Equals) Eq as 0x50 => {
 		asm => {
 
 		},
@@ -344,7 +376,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Lt as 0x52 => {
+	(bin Less) Lt as 0x52 => {
 		asm => {
 
 		},
@@ -377,7 +409,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Sub as 0xA3 => {
+	(bin Minus) Sub as 0xA3 => {
 		asm => {
 
 		},
@@ -388,7 +420,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Mul as 0xB0 => {
+	(bin Multiply) Mul as 0xB0 => {
 		asm => {
 
 		},
@@ -399,7 +431,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Div as 0xB3 => {
+	(bin Divide) Div as 0xB3 => {
 		asm => {
 
 		},
@@ -410,7 +442,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Pow as 0xC0 => {
+	(bin Pow) Pow as 0xC0 => {
 		asm => {
 
 		},
@@ -421,7 +453,29 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Neg as 0xC3 => {
+	(bin LogicalAnd) LogicalAnd as 0xD3 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	(bin LogicalOr) LogicalOr as 0xE0 => {
+		asm => {
+
+		},
+		disasm(bytes) => {
+			Self::Halt
+		},
+		display(f) => {
+			write!(f, "")
+		}
+	},
+	(un Minus) Neg as 0xC3 => {
 		asm => {
 
 		},
@@ -432,7 +486,7 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	Not as 0xD0 => {
+	(un Not) Not as 0xD0 => {
 		asm => {
 
 		},
@@ -443,86 +497,4 @@ gen_asm_disasm!(
 			write!(f, "")
 		}
 	},
-	LogicalAnd as 0xD3 => {
-		asm => {
-
-		},
-		disasm(bytes) => {
-			Self::Halt
-		},
-		display(f) => {
-			write!(f, "")
-		}
-	},
-	LogicalOr as 0xE0 => {
-		asm => {
-
-		},
-		disasm(bytes) => {
-			Self::Halt
-		},
-		display(f) => {
-			write!(f, "")
-		}
-	},
 );
-
-impl Bytecode {
-	pub fn to_unary_op(&self) -> Option<UnaryOp> {
-		let result = match self {
-			Self::Neg => UnaryOp::Minus, // Negative value (-)
-			Self::Not => UnaryOp::Not, // Logical not
-			_ => return None,
-		};
-
-		Some(result)
-	}
-
-	// TODO: use macro_rules! for automatically generate functions for assembling, disassembling and representation
-
-
-	pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
-		match op {
-			UnaryOp::Minus => Self::Neg,
-			UnaryOp::Not => Self::Not,
-		}
-	}
-
-	pub fn from_binary_op(op: &BinaryOp) -> Bytecode {
-		match op {
-			BinaryOp::Plus => Self::Add,
-			BinaryOp::Minus => Self::Sub,
-			BinaryOp::Multiply => Self::Mul,
-			BinaryOp::Divide => Self::Div,
-			// BinaryOp::Remainder => Self::Rem,
-			BinaryOp::Pow => Self::Pow,
-			BinaryOp::Equals => Self::Eq,
-			BinaryOp::Less => Self::Lt,
-			BinaryOp::LogicalAnd => Self::LogicalAnd,
-			BinaryOp::LogicalOr => Self::LogicalOr,
-			_ => unreachable!("'{op}' not handled in from_binary_op"),
-		}
-	}
-
-	pub fn bytecodes_from_binary_op(op: &BinaryOp) -> Vec<Bytecode> {
-		let mut result = Vec::new();
-
-		match op {
-			BinaryOp::Neq => {
-				result.push(Self::Eq);
-				result.push(Self::Not);
-			}
-			BinaryOp::GreatOrEquals => {
-				result.push(Self::Lt);
-				result.push(Self::Not);
-			}
-			_ => {
-				let val = Self::from_binary_op(op);
-
-				result.push(val);
-			},
-		}
-
-		result
-	}
-}

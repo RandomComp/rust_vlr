@@ -372,7 +372,7 @@ impl Compiler {
 
 				self.stack -= 1;
 
-				result.extend(Bytecode::bytecodes_from_binary_op(&op.val));
+				result.push(Bytecode::from_binary_op(&op.val));
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(

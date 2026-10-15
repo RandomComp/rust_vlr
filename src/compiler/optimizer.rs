@@ -251,7 +251,7 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = match UniResult::calc_binary_by_op(&left, &right, op).map(|v| SpannedASTNode::try_from(v)).flatten() {
+				*ast = match UniResult::calc_binary_by_op(&left, &right, op).and_then(SpannedASTNode::try_from) {
 					Ok(x) => x,
 					Err(
 						Spanned { val: UniResultError::UnsupportedOperation(..), .. }
