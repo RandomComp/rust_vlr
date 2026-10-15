@@ -47,6 +47,28 @@ macro_rules! gen_code_for_ops_and_for_display {
 			)*
 		}
 
+		impl From<&Token> for TokenKind {
+			fn from(from: &Token) -> Self {
+				match from {
+					$(
+						Token::$kind => Self::$kind,
+					)*
+
+					$(
+						Token::$kind_word => Self::$kind_word,
+					)*
+
+					$(
+						Token::$kind_other(..) => Self::$kind_other,
+					)*
+
+					$(
+						Token::$kind_special => Self::$kind_special,
+					)*
+				}
+			}
+		}
+
 		impl Token {
 			const TOKEN_OPERATORS: &[(Self, &str)] = &[
 				$(
@@ -69,7 +91,7 @@ macro_rules! gen_code_for_ops_and_for_display {
 					)*
 
 					$(
-						Self::$kind_special => concat!("virtual ", $text_special),
+						Self::$kind_special => concat!("special ", $text_special),
 					)*
 				}
 			}
@@ -133,62 +155,62 @@ macro_rules! gen_code_for_ops_and_for_display {
 
 gen_code_for_ops_and_for_display!(
 	operators => { // Operators
-		Equals => "==",
-		Neq => "!=",
-		GreatOrEquals => ">=",
-		LessOrEquals => "<=",
-		Great => ">",
-		Less => "<",
-		LogicalAnd => "&&",
-		LogicalOr => "||",
+		Equals 					=> "==",
+		Neq 					=> "!=",
+		GreatOrEquals 			=> ">=",
+		LessOrEquals 			=> "<=",
+		Great 					=> ">",
+		Less 					=> "<",
+		LogicalAnd 				=> "&&",
+		LogicalOr 				=> "||",
 
-		Assignment => "=",
-		PlusAssignment => "+=",
-		MinusAssignment => "-=",
-		PowAssignment => "**=",
-		MultiplyAssignment => "*=",
-		DivideAssignment => "/=",
-		RemainderAssignment => "%=",
+		Assignment 				=> "=",
+		PlusAssignment 			=> "+=",
+		MinusAssignment 		=> "-=",
+		PowAssignment 			=> "**=",
+		MultiplyAssignment 		=> "*=",
+		DivideAssignment 		=> "/=",
+		RemainderAssignment 	=> "%=",
 
-		Plus 			=> "+",
-		Minus 			=> "-",
-		Exclamation 	=> "!",
-		Pow 			=> "**",
-		Multiply 		=> "*",
-		Divide 			=> "/",
-		Remainder 		=> "%",
+		Plus 					=> "+",
+		Minus 					=> "-",
+		Exclamation 			=> "!",
+		Pow 					=> "**",
+		Multiply 				=> "*",
+		Divide 					=> "/",
+		Remainder 				=> "%",
 
-		Comma 			=> ",",
-		Semicolon 		=> ";",
-		LPar 			=> "(",
-		RPar 			=> ")",
-		LBracket 		=> "[",
-		RBracket 		=> "]",
-		LBrace 			=> "{",
-		RBrace 			=> "}",
+		Comma 					=> ",",
+		Semicolon 				=> ";",
+		LPar 					=> "(",
+		RPar 					=> ")",
+		LBracket 				=> "[",
+		RBracket 				=> "]",
+		LBrace 					=> "{",
+		RBrace 					=> "}",
 
-		Everything 		=> "...",
-		Range 			=> ".."
+		Everything 				=> "...",
+		Range 					=> ".."
 	}
 	keywords => { // Keywords
-		True 			=> "true",
-		False 			=> "false",
-		If 				=> "if",
-		Else 			=> "else",
-		While 			=> "while",
-		For 			=> "for",
-		Break 			=> "break",
-		Return 			=> "return",
-		Global 			=> "global",
-		Def 			=> "def"
+		True 	=> "true",
+		False 	=> "false",
+		If 		=> "if",
+		Else 	=> "else",
+		While 	=> "while",
+		For 	=> "for",
+		Break 	=> "break",
+		Return 	=> "return",
+		Global 	=> "global",
+		Def 	=> "def"
 	}
-	literals => {
+	literals => { // Literals
 		Float(f64) 		=> "float",
 		String(String) 	=> "string",
 		Word(String) 	=> "word"
 	}
 	special => { // special
-		Eof 			=> "Eof"
+		Eof => "Eof"
 	}
 );
 

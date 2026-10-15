@@ -268,7 +268,7 @@ impl Optimizer {
 					self.fold(arg)?;
 				}
 			},
-			ASTNode::FunctionDefinition { name: _, args: _, body } => {
+			ASTNode::FunctionDefinition { name: _, args: _, body, is_global } => {
 				self.fold(body)?;
 			},
 			ASTNode::If { condition, body, else_body: None } => {

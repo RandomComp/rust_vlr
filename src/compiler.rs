@@ -192,7 +192,7 @@ impl Compiler {
 		let span = ast.span;
 
 		match &ast.val {
-			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
+			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
 				let jmp = Self::pc(result);
 				result.push(Bytecode::Jmp(0));
 

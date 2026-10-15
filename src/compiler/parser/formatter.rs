@@ -75,8 +75,12 @@ impl std::fmt::Display for ASTNode {
 				write!(f, "({left} {op} {right})"),
 			ASTNode::Unary {op, value} =>
 				write!(f, "{op}({value})"),
-			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
-				write!(f, "def {name}(")?;
+			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
+				if *is_global {
+					write!(f, "global def {name}(")?;
+				} else {
+					write!(f, "def {name}(")?;
+				}
 
 				for (i, arg) in args.iter().enumerate() {
 					if i > 0 {
@@ -90,7 +94,7 @@ impl std::fmt::Display for ASTNode {
 
 				Ok(())
 			},
-			ASTNode::FunctionDefinition { name: None, args, .. } => {
+			ASTNode::FunctionDefinition { name: None, args, body: _, is_global: false } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -102,6 +106,9 @@ impl std::fmt::Display for ASTNode {
 				}
 
 				Ok(())
+			},
+			ASTNode::FunctionDefinition { name: None, args: _, body: _, is_global: true } => {
+				unreachable!("invalid combination of is_global for anonymous function")
 			},
 		}
 	}
@@ -218,8 +225,12 @@ impl ASTNode {
 
 				write!(f, ")")
 			},
-			ASTNode::FunctionDefinition { name: Some(name), args, body } => {
-				write!(f, "def {name}(")?;
+			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
+				if *is_global {
+					write!(f, "global def {name}(")?;
+				} else {
+					write!(f, "def {name}(")?;
+				}
 
 				for (i, arg) in args.iter().enumerate() {
 					if i > 0 {
@@ -229,13 +240,13 @@ impl ASTNode {
 					write!(f, "{arg}")?;
 				}
 
-				write!(f, ") ")?;
+				write!(f, ")")?;
 
 				body.format_human_readable(f, true, tab_level)?;
 
 				Ok(())
 			},
-			ASTNode::FunctionDefinition { name: None, args, body } => {
+			ASTNode::FunctionDefinition { name: None, args, body: _, is_global: false } => {
 				write!(f, "anonymous def(")?;
 
 				for (i, arg) in args.iter().enumerate() {
@@ -246,9 +257,10 @@ impl ASTNode {
 					write!(f, "{arg}")?;
 				}
 
-				write!(f, ") ")?;
-
-				body.format_human_readable(f, true, tab_level)
+				Ok(())
+			},
+			ASTNode::FunctionDefinition { name: None, args: _, body: _, is_global: true } => {
+				unreachable!("invalid combination of is_global for anonymous function")
 			},
 		}
 	}

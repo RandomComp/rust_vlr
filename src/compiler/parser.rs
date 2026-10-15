@@ -296,9 +296,9 @@ impl Parser {
 		result
 	}
 
-	fn consume(&mut self, expected_token_type: Token) -> Result<(), Spanned<ParserError>> {
+	fn consume(&mut self, expected_token_type: TokenKind) -> Result<(), Spanned<ParserError>> {
 		match self.peek(0) {
-			Some(kind) if *kind == expected_token_type => {
+			Some(kind) if expected_token_type == (&kind.val).into() => {
 				self.consume_next();
 
 				Ok(())
@@ -318,9 +318,9 @@ impl Parser {
 		}
 	}
 
-	fn consumes(&mut self, expected: &'static [Token]) -> Result<(), ParserError> {
+	fn consumes(&mut self, expected: &'static [TokenKind]) -> Result<(), ParserError> {
 		match self.peek(0) {
-			Some(kind) if expected.contains(kind) => {
+			Some(kind) if expected.contains(&(&kind.val).into()) => {
 				self.consume_next();
 
 				Ok(())
@@ -346,11 +346,11 @@ impl Parser {
 	}
 
 	fn parse_block(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
-		self.consume(Token::LBrace)?;
+		self.consume(TokenKind::LBrace)?;
 
 		let result = self.parse_instructions()?;
 
-		self.consume(Token::RBrace)?;
+		self.consume(TokenKind::RBrace)?;
 
 		Ok(result)
 	}
@@ -372,10 +372,10 @@ impl Parser {
 			if i > 0 {
 				if let Some(kind) = self.peek(-1) {
 					if *kind != Token::RBrace {
-						self.consume(Token::Semicolon)?;
+						self.consume(TokenKind::Semicolon)?;
 					}
 				} else {
-					self.consume(Token::Semicolon)?;
+					self.consume(TokenKind::Semicolon)?;
 				}
 
 				self.skip(&Token::Semicolon);
@@ -417,7 +417,7 @@ impl Parser {
 
 		while let Some(kind) = self.peek(0) && kind != end_sym {
 			if i > 0 {
-				self.consume(Token::Comma)?;
+				self.consume(TokenKind::Comma)?;
 			}
 
 			let value = self.parse(BinaryOp::MAX_PRECEDENCE)?;
@@ -431,21 +431,21 @@ impl Parser {
 	}
 
 	fn parse_tuple_elements(&mut self) -> Result<Vec<Spanned<ASTNode>>, Spanned<ParserError>> {
-		self.consume(Token::LPar)?;
+		self.consume(TokenKind::LPar)?;
 
 		let result = self.parse_elements(&Token::RPar)?;
 
-		self.consume(Token::RPar)?;
+		self.consume(TokenKind::RPar)?;
 
 		Ok(result)
 	}
 
 	fn parse_list_elements(&mut self) -> Result<Vec<Spanned<ASTNode>>, Spanned<ParserError>> {
-		self.consume(Token::LBracket)?;
+		self.consume(TokenKind::LBracket)?;
 
 		let result = self.parse_elements(&Token::RBracket)?;
 
-		self.consume(Token::RBracket)?;
+		self.consume(TokenKind::RBracket)?;
 
 		Ok(result)
 	}
@@ -457,7 +457,7 @@ impl Parser {
 	}
 
 	fn parse_function_def(&mut self) -> Result<Spanned<ASTNode>, Spanned<ParserError>> {
-		self.consume(Token::Def);
+		self.consume(TokenKind::Def);
 
 		let (name_token, name) = match self.peek(0) {
 			Some(name_token @ wmatch!(Token::Word(name))) => (name_token, name),
@@ -465,7 +465,7 @@ impl Parser {
 				return Err(
 					Spanned::from_with_span(
 						ParserError::ExpectedToken {
-							kind: Token::Word(None),
+							kind: TokenKind::Word,
 							found: kind.val.clone()
 						},
 						kind.span
@@ -476,7 +476,7 @@ impl Parser {
 				return Err(
 					Spanned::from_with_span(
 						ParserError::ExpectedToken {
-							kind: Token::Word(None),
+							kind: TokenKind::Word,
 							found: Token::Eof
 						},
 						0
@@ -487,16 +487,14 @@ impl Parser {
 
 		let span = name_token.span;
 
-		let name = name.map(|name|
-			Spanned::from_with_span(
-				name.clone(),
-				name_token.span
-			)
+		let name = Spanned::from_with_span(
+			name.clone(),
+			name_token.span
 		);
 
 		self.consume_next();
 		self.consume_next();
-		self.consume(Token::LPar)?;
+		self.consume(TokenKind::LPar)?;
 
 		let mut args = Vec::new();
 
@@ -519,7 +517,7 @@ impl Parser {
 			}
 		}
 
-		self.consume(Token::RPar)?;
+		self.consume(TokenKind::RPar)?;
 
 		let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
@@ -620,7 +618,7 @@ impl Parser {
 
 			(wmatch!(Token::Def), Some(wmatch!(Token::LPar))) => {
 				self.consume_next();
-				self.consume(Token::LPar)?;
+				self.consume(TokenKind::LPar)?;
 
 				let mut args = Vec::new();
 
@@ -643,7 +641,7 @@ impl Parser {
 					}
 				}
 
-				self.consume(Token::RPar)?;
+				self.consume(TokenKind::RPar)?;
 
 				let block = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
@@ -755,7 +753,7 @@ impl Parser {
 
 				let result = self.parse(BinaryOp::MAX_PRECEDENCE)?;
 
-				self.consume(Token::RPar)?;
+				self.consume(TokenKind::RPar)?;
 
 				result.val
 			}
