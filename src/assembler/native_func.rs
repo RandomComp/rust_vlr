@@ -113,7 +113,5 @@ macro_rules! gen_native_functions {
 
 gen_native_functions!(
 	"print" => Print(NativeFunctionArgsNumber::Dynamic) 	= 0,
-	"list" => List(NativeFunctionArgsNumber::Dynamic) 		= 1,
-	"range" => Range(NativeFunctionArgsNumber::Fixed(3)) 	= 2,
-	"exit" => Exit(NativeFunctionArgsNumber::Fixed(1)) 		= 3,
+	"exit" => Exit(NativeFunctionArgsNumber::Fixed(1)) 		= 1,
 );

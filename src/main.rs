@@ -20,6 +20,7 @@ mod compiler;
 mod vm;
 
 use crate::assembler::defs::BytecodeError;
+use crate::assembler::optimizer::AssemblerOptimizer;
 use crate::compiler::CompilerError;
 use crate::compiler::lexer::LexerError;
 use crate::compiler::optimizer::OptimizerError;
@@ -317,6 +318,18 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 		return Err((e.into(), spans))
 	}
 
+	println!("Bytecode before optimizer:");
+
+	for (i, byte) in bytes.iter().enumerate() {
+		println!("{i:02}: {byte}");
+	}
+
+	let mut asm_optimizer = AssemblerOptimizer::new(&bytes);
+
+	asm_optimizer.optimize();
+
+	println!("Bytecode after optimizer:");
+
 	for (i, byte) in bytes.iter().enumerate() {
 		println!("{i:02}: {byte}");
 	}
@@ -416,7 +429,7 @@ fn main() -> ExitCode {
 
 	if let Err(AppError::VM(VMError {val: RawVMError::Exit(code), ..})) = &res {
 		return ExitCode::from(
-			(u32::try_from(code).unwrap() & 0xFF) as u8
+			(*code & 0xFF) as u8
 		)
 	}
 

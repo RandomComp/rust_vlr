@@ -280,7 +280,12 @@ impl Parser {
 	}
 
 	fn peek(&self, offset: isize) -> Option<&Spanned<Token>> {
-		self.tokens.get((self.index as isize + offset) as usize)
+		self.tokens.get(
+			self.index.checked_add_signed(offset)
+				.unwrap_or_else(||
+					unreachable!("offset < self.index")
+				)
+		)
 	}
 
 	fn skip(&mut self, expected_token_type: TokenKind) {

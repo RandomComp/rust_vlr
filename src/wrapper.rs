@@ -106,7 +106,6 @@ macro_rules! wrapper_connect {
 
 wrapper_connect!(
 	UniResultError => OptimizerError,
-	UniResultError => RawVMError,
 );
 
 impl Default for Spanned<ASTNode> {

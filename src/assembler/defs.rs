@@ -29,7 +29,7 @@ macro_rules! gen_regs_code {
     ) => {
     	type VMWord = u32;
 
-	    #[derive(PartialEq, Copy, Clone, Debug)]
+    	#[derive(PartialEq, Copy, Clone, Debug)]
 	    pub enum BytecodeRegister {
 			$(
 				$enum_name,
@@ -229,7 +229,7 @@ macro_rules! gen_insts_impl {
 
 				match self {
 					$(
-						Self::$inst $( ( $( $exec_arg, )* ) )? => {
+						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
 							let mut $mem = mem;
 
 							$inst_exec;
@@ -237,6 +237,8 @@ macro_rules! gen_insts_impl {
 							$mem.regs.pc = pc;
 
 							Ok(())
+
+							// result
 						},
 					)*
 				}

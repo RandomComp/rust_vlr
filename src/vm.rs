@@ -1,18 +1,13 @@
-use std::{fmt};
+use std::fmt;
 use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
 use crate::assembler::{Bytecode, VMRegs};
-use crate::compiler::parser::BinaryOp;
 use crate::assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
-use crate::uni_type::{UniResult, UniResultError};
-use crate::wrapper::Spanned;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
-	#[error("{0}")]
-	UniResult(#[from] UniResultError),
 	#[error("{0}")]
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
@@ -30,7 +25,7 @@ pub enum RawVMError {
 	#[error("Invalid stack position {0}")]
 	InvalidStackPosition(usize),
 	#[error("exit code: {0}")]
-	Exit(UniResult),
+	Exit(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -49,27 +44,29 @@ impl fmt::Display for VMError {
 	}
 }
 
+type VMWord = u32;
+
 #[derive(Debug)]
 pub struct Memory {
-	mem: Vec<UniResult>,
+	mem: Vec<VMWord>,
 	pub regs: VMRegs,
 
-	heap_upper: u32,
+	heap_upper: VMWord,
 	/// Indexing from heap_upper
-	heap_pos: u32,
+	heap_pos: VMWord,
 }
 
 impl Memory {
 	pub fn new() -> Self {
-		let stack_size: u32 = 128;
-		let heap_size: u32 = 128;
+		let stack_size: VMWord = 128;
+		let heap_size: VMWord = 128;
 
 		let mut regs = VMRegs::default();
 
 		regs.bp = stack_size;
 		regs.sp = regs.bp;
 
-		let mem = vec![UniResult::default(); (stack_size + heap_size) as usize];
+		let mem = vec![0; (stack_size + heap_size) as usize];
 
 		Self {
 			mem,
@@ -79,7 +76,7 @@ impl Memory {
 		}
 	}
 
-	fn push(&mut self, value: UniResult) -> Result<(), RawVMError> {
+	pub fn push(&mut self, value: VMWord) -> Result<(), RawVMError> {
 		self.regs.sp = self.regs.sp.checked_sub(1).ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 		let result = self.mem.get_mut(self.regs.sp as usize).ok_or(RawVMError::StackOverflow)?;
@@ -89,7 +86,7 @@ impl Memory {
 		Ok(())
 	}
 
-	fn pop(&mut self) -> Result<UniResult, RawVMError> {
+	pub fn pop(&mut self) -> Result<VMWord, RawVMError> {
 		if self.regs.sp > self.regs.bp {
 			return Err(RawVMError::StackEmptyButExpectedValue)
 		}
@@ -98,30 +95,31 @@ impl Memory {
 
 		self.regs.sp += 1;
 
-		Ok(result.clone())
+		Ok(*result)
 	}
 
-	fn get_mem(&self, index: usize) -> Result<&UniResult, RawVMError> {
+	fn get_mem(&self, index: usize) -> Result<VMWord, RawVMError> {
 		self.mem.get(index)
 			.ok_or(RawVMError::StackOverflow)
+			.copied()
 	}
 
-	fn get_mem_mut(&mut self, index: usize) -> Result<&mut UniResult, RawVMError> {
+	fn get_mem_mut(&mut self, index: usize) -> Result<&mut VMWord, RawVMError> {
 		self.mem.get_mut(index)
 			.ok_or(RawVMError::StackOverflow)
 	}
 
-	fn stack_get(&self, index: usize) -> Result<&UniResult, RawVMError> {
+	fn stack_get(&self, index: usize) -> Result<&VMWord, RawVMError> {
 		self.mem.get(self.regs.bp as usize + index)
 			.ok_or(RawVMError::StackOverflow)
 	}
 
-	fn stack_get_mut(&mut self, index: usize) -> Result<&mut UniResult, RawVMError> {
+	fn stack_get_mut(&mut self, index: usize) -> Result<&mut VMWord, RawVMError> {
 		self.mem.get_mut(self.regs.bp as usize + index)
 			.ok_or(RawVMError::StackOverflow)
 	}
 
-	fn stack_iter(&self) -> impl Iterator<Item = &UniResult> {
+	fn stack_iter(&self) -> impl Iterator<Item = &VMWord> {
 		self.mem.iter()
 			.skip(self.regs.sp as usize)
 			.take((self.regs.bp - self.regs.sp) as usize)
@@ -146,49 +144,16 @@ impl VM {
 		}
 	}
 
-	fn print(args: &[UniResult]) -> Result<UniResult, RawVMError> {
-		let mut buf = String::new();
-
+	fn print(args: &[VMWord]) -> Result<VMWord, RawVMError> {
 		for arg in args {
-			arg.format_to_str(&mut buf)?;
-
-			buf.push(' ');
+			print!("{arg} ");
 		}
 
-		println!("{buf}");
+		println!();
 
-		Ok(UniResult::None)
+		Ok(0)
 	}
-	fn list(args: Vec<UniResult>) -> UniResult {
-		UniResult::List(
-			args.into_iter().map(|v| Spanned::from_with_span(v, 0)).collect()
-		)
-	}
-	fn range(args: &[UniResult]) -> Result<UniResult, RawVMError> {
-		if args.len() <= 2 {
-			unreachable!("invalid native function range call");
-		}
-
-		let start = &args[0];
-		let end = &args[1];
-
-		match (start, end) {
-			(&UniResult::Float(start), &UniResult::Float(end)) =>
-				Ok(UniResult::Range { start, end, step: 1.0 }),
-			(&UniResult::Range { start, end, step: _ }, &UniResult::Float(step)) =>
-				Ok(UniResult::Range { start, end, step }),
-			(left, right) => Err(
-				RawVMError::UniResult(
-					UniResultError::IncompatibleOperationType {
-						left: left.result_type(),
-						op: BinaryOp::Range,
-						right: right.result_type()
-					}
-				)
-			),
-		}
-	}
-	fn exit(args: &[UniResult]) -> Result<UniResult, RawVMError> {
+	fn exit(args: &[VMWord]) -> Result<VMWord, RawVMError> {
 		if args.len() != 1 {
 			unreachable!("invalid native function exit call");
 		}
@@ -196,7 +161,7 @@ impl VM {
 		Err(RawVMError::Exit(args[0].clone()))
 	}
 
-	fn call_native(&mut self, id: NativeFunctionID) -> Result<UniResult, RawVMError> {
+	fn call_native(&mut self, id: NativeFunctionID) -> Result<VMWord, RawVMError> {
 		let mut args = Vec::new();
 
 		let expected = id.args();
@@ -220,9 +185,7 @@ impl VM {
 				}
 			}
 			NativeFunctionArgsNumber::Dynamic => {
-				if let Ok(fixed) = self.mem.pop().map(|v| i32::try_from(&v)) {
-					let fixed = fixed?.cast_unsigned();
-
+				if let Ok(fixed) = self.mem.pop() {
 					while i < fixed  {
 						let Ok(value) = self.mem.pop() else {
 							return Err(
@@ -247,10 +210,6 @@ impl VM {
 		match id {
 			NativeFunctionID::Print =>
 				Ok(Self::print(&args)?),
-			NativeFunctionID::List =>
-				Ok(Self::list(args)),
-			NativeFunctionID::Range =>
-				Self::range(&args),
 			NativeFunctionID::Exit =>
 				Self::exit(&args),
 		}
@@ -294,7 +253,7 @@ impl VM {
 		Ok(true)
 	}
 
-	pub fn exec(&mut self) -> Result<&UniResult, VMError> {
+	pub fn exec(&mut self) -> Result<VMWord, VMError> {
 		self.mem.regs.pc = 0;
 
 		self.dump_regs();

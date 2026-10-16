@@ -2,6 +2,7 @@ use crate::{assembler::{defs::BytecodeError, native_func::NativeFunctionID}, gen
 
 pub mod native_func;
 pub mod defs;
+pub mod optimizer;
 
 use std::fmt;
 
@@ -163,51 +164,10 @@ gen_insts_impl!(
 			Self::PushNumber(value)
 		},
 		exec(mem, val) => {
-
+			mem.push(val)?;
 		},
 		display(f, val) => {
 			write!(f, "push {val}")
-		}
-	},
-	PushFloat(f32) as 0x02 => {
-		asm(result, val) => {
-			result.extend(val.to_le_bytes());
-		},
-		disasm(bytes) => {
-			let value = f32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-			Self::PushFloat(value)
-		},
-		exec(mem, val) => {
-
-		},
-		display(f, val) => {
-			write!(f, "push {val}")
-		}
-	},
-	PushString(String) as 0x03 => {
-		asm(result, text) => {
-			let Ok(u32_len) = u32::try_from(text.len()) else {
-				return Err(BytecodeError::StringTooLong)
-			};
-
-			result.extend(u32_len.to_le_bytes());
-			result.extend(text.bytes());
-		},
-		disasm(bytes) => {
-			let u32_len = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
-
-			let utf8 = bytes.take(u32_len as usize).collect();
-
-			let text = String::from_utf8(utf8)?;
-
-			Self::PushString(text)
-		},
-		exec(mem, val) => {
-
-		},
-		display(f, val) => {
-			write!(f, "push \"{val}\"")
 		}
 	},
 
@@ -223,7 +183,7 @@ gen_insts_impl!(
 			Self::PushReg(reg)
 		},
 		exec(mem, reg) => {
-
+			mem.push(mem.regs[reg])?;
 		},
 		display(f, reg) => {
 			write!(f, "push {reg}")
@@ -241,7 +201,7 @@ gen_insts_impl!(
 			Self::PopReg(reg)
 		},
 		exec(mem, reg) => {
-
+			mem.regs[reg] = mem.pop()?;
 		},
 		display(f, reg) => {
 			write!(f, "pop {reg}")
@@ -280,19 +240,6 @@ gen_insts_impl!(
 			write!(f, "load {stack}")
 		}
 	},
-	Remove as 0x08 => {
-		asm(_result) => {
-		},
-		disasm(_bytes) => {
-			Self::Remove
-		},
-		exec(mem) => {
-
-		},
-		display(f) => {
-			write!(f, "remove")
-		}
-	},
 
 	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
 		asm(result, reg, val) => {
@@ -309,7 +256,7 @@ gen_insts_impl!(
 			Self::MovU32ToReg(reg, val)
 		},
 		exec(mem, reg, val) => {
-
+			mem.regs[reg] = val;
 		},
 		display(f, reg, val) => {
 			write!(f, "mov {reg}, {val}")
@@ -332,7 +279,7 @@ gen_insts_impl!(
 			Self::MovRegToReg(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-
+			mem.regs[reg1] = mem.regs[reg2];
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "mov {reg1}, {reg2}")
@@ -349,7 +296,7 @@ gen_insts_impl!(
 			Self::Jif(pos)
 		},
 		exec(mem, pos) => {
-
+			todo!()
 		},
 		display(f, pos) => {
 			write!(f, "jif {pos}")
@@ -365,7 +312,7 @@ gen_insts_impl!(
 			Self::Jmp(pos)
 		},
 		exec(mem, pos) => {
-
+			mem.regs.pc = pos;
 		},
 		display(f, pos) => {
 			write!(f, "jmp {pos}")
@@ -381,7 +328,9 @@ gen_insts_impl!(
 			Self::Call(pos)
 		},
 		exec(mem, pos) => {
+			mem.push(mem.regs.pc)?;
 
+			mem.regs.pc = pos;
 		},
 		display(f, pos) => {
 			write!(f, "call {pos}")
@@ -394,7 +343,7 @@ gen_insts_impl!(
 			Self::Ret
 		},
 		exec(mem) => {
-
+			mem.regs.pc = mem.pop()?;
 		},
 		display(f) => {
 			write!(f, "ret")
@@ -425,7 +374,9 @@ gen_insts_impl!(
 			Self::Eq
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc = (mem.regs.acc == right).into();
 		},
 		display(f) => {
 			write!(f, "eq")
@@ -438,7 +389,9 @@ gen_insts_impl!(
 			Self::Lt
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc = (mem.regs.acc < right).into();
 		},
 		display(f) => {
 			write!(f, "lt")
@@ -451,7 +404,9 @@ gen_insts_impl!(
 			Self::Add
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc += right;
 		},
 		display(f) => {
 			write!(f, "add")
@@ -464,7 +419,9 @@ gen_insts_impl!(
 			Self::Sub
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc -= right;
 		},
 		display(f) => {
 			write!(f, "sub")
@@ -477,7 +434,9 @@ gen_insts_impl!(
 			Self::Mul
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc *= right;
 		},
 		display(f) => {
 			write!(f, "mul")
@@ -490,7 +449,9 @@ gen_insts_impl!(
 			Self::Div
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc /= right;
 		},
 		display(f) => {
 			write!(f, "div")
@@ -503,7 +464,9 @@ gen_insts_impl!(
 			Self::Pow
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc = mem.regs.acc.pow(right);
 		},
 		display(f) => {
 			write!(f, "pow")
@@ -516,7 +479,9 @@ gen_insts_impl!(
 			Self::LogicalAnd
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc = (mem.regs.acc != 0 && right != 0).into();
 		},
 		display(f) => {
 			write!(f, "land")
@@ -529,7 +494,9 @@ gen_insts_impl!(
 			Self::LogicalOr
 		},
 		exec(mem) => {
+			let right = mem.regs.base;
 
+			mem.regs.acc = (mem.regs.acc != 0 && right != 0).into();
 		},
 		display(f) => {
 			write!(f, "lor")
@@ -542,7 +509,7 @@ gen_insts_impl!(
 			Self::Neg
 		},
 		exec(mem) => {
-
+			mem.regs.acc = (mem.regs.acc | (1 << 31)) + 1;
 		},
 		display(f) => {
 			write!(f, "neg")
@@ -555,7 +522,7 @@ gen_insts_impl!(
 			Self::Not
 		},
 		exec(mem) => {
-
+			mem.regs.acc = (mem.regs.acc == 0).into();
 		},
 		display(f) => {
 			write!(f, "not")

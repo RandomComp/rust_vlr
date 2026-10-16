@@ -55,16 +55,6 @@ impl<'a> CompilerContext<'a> {
 		}
 	}
 
-	fn get_child_function(&self, name: &str) -> Option<u32> {
-		if let Some(parent) = self.parent {
-			parent.get_function(name)
-		} else if let Some(&value) = self.functions.get(name) {
-			Some(value)
-		} else  {
-			None
-		}
-	}
-
 	fn insert_var<T>(&mut self, name: T, stack_pos: u32) where T: Into<String> {
 		self.vars.insert(name.into(), stack_pos);
 	}
@@ -266,22 +256,26 @@ impl Compiler {
 			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushNumber(x as u32));
+				result.push(Bytecode::PushNumber(x.into()));
 			},
 			&ASTNode::Number(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushNumber(x as u32));
+				result.push(Bytecode::PushNumber(x.cast_unsigned()));
 			},
 			&ASTNode::Float(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushFloat(x));
+				todo!();
+
+				// result.push(Bytecode::PushFloat(x));
 			},
 			ASTNode::String(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushString(x.clone()));
+				todo!();
+
+				// result.push(Bytecode::PushString(x.clone()));
 			},
 			ASTNode::List(values) => if !values.is_empty() {
 				self.call_func(
@@ -346,39 +340,53 @@ impl Compiler {
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, result, context)?;
+				self.stack -= 1;
+
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				result.push(Bytecode::from_unary_op(op));
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::LessOrEquals), right } => {
 				self.compile(right, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
-				self.compile(left, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
-
 				self.stack -= 1;
+
+				self.compile(left, result, context)?;
+
+				self.stack -= 2;
+
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 				result.push(Bytecode::from_unary_op(&UnaryOp::Not));
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Great), right } => {
 				self.compile(right, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.stack -= 1;
+
 				self.compile(left, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				self.stack -= 1;
+
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 			},
 			ASTNode::Binary { left, op, right } => {
 				self.compile(left, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
-				self.compile(right, result, context)?;
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
-
 				self.stack -= 1;
 
+				self.compile(right, result, context)?;
+
+				println!("self.stack = {}", self.stack);
+
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
+
 				result.push(Bytecode::from_binary_op(&op.val));
+
+				result.push(Bytecode::PushReg(BytecodeRegister::Accum));
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(
