@@ -1,11 +1,35 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # print("Hello, world!");
 # print("2 + 2 * 2 =", 2 + 2 * 2);
-
-def my_function() {
-	print("Hello!")
-}
-
-my_function()
+#
+# def my_function() {
+# 	print("Hello!")
+# }
+#
+# my_function()
 
 
 

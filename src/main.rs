@@ -181,7 +181,7 @@ fn repl() -> Result<(), AppError> {
 
 		let result = vm.exec();
 
-		if let Ok(Some(result)) = result {
+		if let Ok(result) = result {
 			println!("{result}");
 		} else if let Err(e) = result {
 			eprintln!("VM error: {e}");
@@ -204,9 +204,9 @@ fn run_file(file: &str) -> Result<(), AppError> {
 
 	let mut interpreter = VM::new(Some(instructions));
 
-	if let Some(result) = interpreter.exec()? {
-		println!("result = {result}");
-	}
+	let result = interpreter.exec()?;
+
+	println!("result = {result}");
 
 	Ok(())
 }
@@ -416,7 +416,7 @@ fn main() -> ExitCode {
 
 	if let Err(AppError::VM(VMError {val: RawVMError::Exit(code), ..})) = &res {
 		return ExitCode::from(
-			(i32::try_from(code).unwrap() & 0xFF) as u8
+			(u32::try_from(code).unwrap() & 0xFF) as u8
 		)
 	}
 

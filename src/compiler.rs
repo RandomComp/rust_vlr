@@ -351,7 +351,9 @@ impl Compiler {
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::LessOrEquals), right } => {
 				self.compile(right, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
 				self.compile(left, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				self.stack -= 1;
 
@@ -360,7 +362,9 @@ impl Compiler {
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Great), right } => {
 				self.compile(right, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
 				self.compile(left, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				self.stack -= 1;
 
@@ -368,7 +372,9 @@ impl Compiler {
 			},
 			ASTNode::Binary { left, op, right } => {
 				self.compile(left, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Base));
 				self.compile(right, result, context)?;
+				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 
 				self.stack -= 1;
 
