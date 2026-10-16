@@ -411,9 +411,9 @@ fn app(args: Args) -> Result<(), AppError> {
 			repl(),
 	};
 
-	if let Err(AppError::VM(VMError {val: RawVMError::Exit(_), ..})) = &err {
-		return err
-	}
+	// if let Err(AppError::VM(VMError {val: RawVMError::Exit(_), ..})) = &err {
+	// 	return err
+	// }
 
 	if let Err(e) = &err {
 		eprintln!("{e}");
@@ -427,11 +427,11 @@ fn main() -> ExitCode {
 
 	let res = app(args);
 
-	if let Err(AppError::VM(VMError {val: RawVMError::Exit(code), ..})) = &res {
-		return ExitCode::from(
-			(*code & 0xFF) as u8
-		)
-	}
+	// if let Err(AppError::VM(VMError {val: RawVMError::(code), ..})) = &res {
+	// 	return ExitCode::from(
+	// 		(*code & 0xFF) as u8
+	// 	)
+	// }
 
 	if res.is_err() {
 		return ExitCode::FAILURE

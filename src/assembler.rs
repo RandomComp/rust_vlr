@@ -6,123 +6,6 @@ pub mod optimizer;
 
 use std::fmt;
 
-/*
-Bytecode::Halt =>
-						return Ok(false),
-					&Bytecode::PushNumber(val) => {
-						self.stack_push(val.into())?;
-					},
-					&Bytecode::PushFloat(val) => {
-						self.stack_push(val.into())?;
-					},
-					Bytecode::PushString(val) => {
-						self.stack_push(val.clone().into())?;
-					},
-
-					&Bytecode::MovRegToReg(reg1, reg2) => {
-						let reg2 = self.regs[reg2];
-
-						self.regs[reg1] = reg2;
-					},
-					&Bytecode::MovU32ToReg(reg, value) => {
-						self.regs[reg] = value;
-					},
-
-					&Bytecode::PushReg(reg) => {
-						let value = self.regs[reg];
-
-						self.stack_push(value.into())?;
-					},
-					&Bytecode::PopReg(reg) => {
-						let value = u32::try_from(&self.stack_pop()?)?;
-
-						self.regs[reg] = value;
-					},
-
-					&Bytecode::Look(stack_pos) => {
-						let usize_stack_pos = stack_pos as usize;
-
-						let val = self.stack_get(usize_stack_pos)?;
-
-						self.stack_push(val.clone())?;
-					},
-					&Bytecode::Load(stack_pos) => {
-						let usize_stack_pos = stack_pos as usize;
-
-						let value = self.stack_pop()?;
-
-						let val = self.stack_get_mut(usize_stack_pos)?;
-
-						*val = value;
-					},
-					Bytecode::Remove => {
-						self.stack_pop()?;
-					},
-					&Bytecode::Jif(dest_pc) => {
-						if !bool::try_from(self.stack_pop()?)? {
-							pc = dest_pc;
-						}
-					},
-					&Bytecode::Jmp(dest_pc) => {
-						pc = dest_pc;
-					},
-					&Bytecode::Call(dest_pc) => {
-						self.stack_push((self.regs.pc + 1).into())?;
-
-						pc = dest_pc;
-					},
-					&Bytecode::Ret => {
-						pc = u32::try_from(&self.stack_pop()?)?;
-					},
-					&Bytecode::NativeCall(id) => {
-						let result = self.call_native(id)?;
-
-						let mem = self.get_mem_mut(self.heap_pos as usize)?;
-
-						*mem = result;
-
-						self.regs.acc = self.heap_pos;
-
-						self.heap_pos += 1;
-					},
-					Bytecode::Eq |
-					Bytecode::Lt |
-				 	Bytecode::Add |
-					Bytecode::Sub |
-					Bytecode::Mul |
-					Bytecode::Pow |
-					Bytecode::Div |
-					Bytecode::LogicalAnd |
-					Bytecode::LogicalOr => {
-						let op = &inst.to_binary_op().unwrap_or_else(|| unreachable!("invalid binary operation {inst} in match"));
-
-						let right = self.get_mem(self.regs.base as usize)?.clone();
-						let left = self.get_mem_mut(self.regs.acc as usize)?;
-
-						let result = UniResult::calc_binary_by_op(
-							&Spanned::from_with_span(left.clone(), 0),
-							&Spanned::from_with_span(right.clone(), 0),
-							op
-						).map(|v| v.val).map_err(|e| e.val)?;
-
-						*left = result;
-					},
-					Bytecode::Neg |
-					Bytecode::Not => {
-						let op = &inst.to_unary_op().unwrap_or_else(|| unreachable!("invalid unary operation {inst} in match"));
-
-						let value = self.stack_pop()?;
-
-						let result = UniResult::calc_unary_by_op(
-							&Spanned::from_with_span(value, 0),
-							op
-						).map(|v| v.val).map_err(|e| e.val)?;
-
-						self.stack_push(result)?;
-					},
- */
-
-
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
 
@@ -361,7 +244,7 @@ gen_insts_impl!(
 			Self::NativeCall(id)
 		},
 		exec(mem, id) => {
-
+			id.call(mem)
 		},
 		display(f, id) => {
 			write!(f, "native_call {id}")

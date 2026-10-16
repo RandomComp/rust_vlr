@@ -1,11 +1,19 @@
 use std::{cmp::Ordering, fmt::Display};
 
+use crate::{assembler::VMWord, vm::Memory};
+
 #[derive(thiserror::Error, Clone, Debug)]
 pub enum NativeFunctionIDError {
 	#[error("Unknown native function with id {0}")]
 	UnknownNativeFunctionWithID(u8),
 	#[error("Unknown native function {0}")]
 	UnknownNativeFunctionWithName(String),
+
+	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
+	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
+
+	#[error("exit code: {0}")]
+	Exit(u32),
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +73,77 @@ macro_rules! gen_native_functions {
 					$(
 						Self::$name => $args_cnt,
 					)*
+				}
+			}
+
+			fn print(args: &[VMWord]) -> Result<VMWord, NativeFunctionIDError> {
+				for arg in args {
+					print!("{arg} ");
+				}
+
+				println!();
+
+				Ok(0)
+			}
+			fn exit(args: &[VMWord]) -> Result<VMWord, NativeFunctionIDError> {
+				if args.len() != 1 {
+					unreachable!("invalid native function exit call");
+				}
+
+				Err(NativeFunctionIDError::Exit(args[0].clone()))
+			}
+
+			pub fn call(self, mem: &mut Memory) -> Result<VMWord, NativeFunctionIDError> {
+				let mut args = Vec::new();
+
+				let expected = self.args();
+
+				let mut i = 0;
+
+				match expected {
+					NativeFunctionArgsNumber::Fixed(fixed) => {
+						while i < fixed  {
+							let value = mem.pop().map_err(|_|
+								NativeFunctionIDError::ArgumentsNativeFunctionCall {
+									id: self,
+									found: i,
+									expected: fixed
+								}
+							)?;
+
+							args.push(value);
+
+							i += 1;
+						}
+					}
+					NativeFunctionArgsNumber::Dynamic => {
+						if let Ok(fixed) = mem.pop() {
+							while i < fixed  {
+								let Ok(value) = mem.pop() else {
+									return Err(
+										NativeFunctionIDError::ArgumentsNativeFunctionCall {
+											id: self,
+											found: i,
+											expected: fixed
+										}
+									)
+								};
+
+								args.push(value);
+
+								i += 1;
+							}
+						}
+					}
+				}
+
+				args.reverse();
+
+				match self {
+					NativeFunctionID::Print =>
+						Ok(Self::print(&args)?),
+					NativeFunctionID::Exit =>
+						Self::exit(&args),
 				}
 			}
 		}

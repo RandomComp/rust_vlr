@@ -4,7 +4,6 @@ use std::string::FromUtf8Error;
 // use std::time::Duration;
 
 use crate::assembler::{Bytecode, VMRegs};
-use crate::assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
@@ -12,8 +11,6 @@ pub enum RawVMError {
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
-	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
-	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 
@@ -21,11 +18,6 @@ pub enum RawVMError {
 	StackOverflow,
 	#[error("Invalid memory address")]
 	InvalidMemoryAddress,
-
-	#[error("Invalid stack position {0}")]
-	InvalidStackPosition(usize),
-	#[error("exit code: {0}")]
-	Exit(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -141,77 +133,6 @@ impl VM {
 		Self {
 			bytecode,
 			mem: Memory::new(),
-		}
-	}
-
-	fn print(args: &[VMWord]) -> Result<VMWord, RawVMError> {
-		for arg in args {
-			print!("{arg} ");
-		}
-
-		println!();
-
-		Ok(0)
-	}
-	fn exit(args: &[VMWord]) -> Result<VMWord, RawVMError> {
-		if args.len() != 1 {
-			unreachable!("invalid native function exit call");
-		}
-
-		Err(RawVMError::Exit(args[0].clone()))
-	}
-
-	fn call_native(&mut self, id: NativeFunctionID) -> Result<VMWord, RawVMError> {
-		let mut args = Vec::new();
-
-		let expected = id.args();
-
-		let mut i = 0;
-
-		match expected {
-			NativeFunctionArgsNumber::Fixed(fixed) => {
-				while i < fixed  {
-					let value = self.mem.pop().map_err(|_|
-						RawVMError::ArgumentsNativeFunctionCall {
-							id,
-							found: i,
-							expected: fixed
-						}
-					)?;
-
-					args.push(value);
-
-					i += 1;
-				}
-			}
-			NativeFunctionArgsNumber::Dynamic => {
-				if let Ok(fixed) = self.mem.pop() {
-					while i < fixed  {
-						let Ok(value) = self.mem.pop() else {
-							return Err(
-								RawVMError::ArgumentsNativeFunctionCall {
-									id,
-									found: i,
-									expected: fixed
-								}
-							)
-						};
-
-						args.push(value);
-
-						i += 1;
-					}
-				}
-			}
-		}
-
-		args.reverse();
-
-		match id {
-			NativeFunctionID::Print =>
-				Ok(Self::print(&args)?),
-			NativeFunctionID::Exit =>
-				Self::exit(&args),
 		}
 	}
 
