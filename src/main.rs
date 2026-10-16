@@ -326,15 +326,15 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 
 	let mut asm_optimizer = AssemblerOptimizer::new(&bytes);
 
-	asm_optimizer.optimize();
+	let optimized = asm_optimizer.optimize();
 
 	println!("Bytecode after optimizer:");
 
-	for (i, byte) in bytes.iter().enumerate() {
+	for (i, byte) in optimized.iter().enumerate() {
 		println!("{i:02}: {byte}");
 	}
 
-	let bytes = match Bytecode::asm(bytes) {
+	let bytes = match Bytecode::asm(optimized) {
 		Ok(res) => res,
 		Err(e) => {
 			return Err((e.into(), spans))
