@@ -1,3 +1,5 @@
+use std::ops;
+
 use std::{fmt, string::FromUtf8Error};
 
 use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
@@ -22,45 +24,109 @@ pub enum BytecodeError {
 	NativeFunctionID(#[from] NativeFunctionIDError),
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub enum BytecodeRegister {
-	/// Subprogram result register
-	Accum,
-	Base,
-	BasePointer,
-	StackPointer,
-}
 
-impl BytecodeRegister {
-	fn to_le_bytes(self) -> [u8; 1] {
-		(self as u8).to_le_bytes()
-	}
-}
+type VMWord = u32;
 
-impl TryFrom<u8> for BytecodeRegister {
-	type Error = BytecodeError;
+macro_rules! gen_regs_code {
+    (
+    	$( $byte:literal | $enum_name:ident => $name:ident ),+ $(,)?
+    ) => {
+	    #[derive(PartialEq, Copy, Clone, Debug)]
+	    pub enum BytecodeRegister {
+			$(
+				$enum_name,
+			)+
+	    }
 
-	fn try_from(value: u8) -> Result<Self, Self::Error> {
-		match value {
-			0 => Ok(Self::Accum),
-			1 => Ok(Self::Base),
-			2 => Ok(Self::BasePointer),
-			3 => Ok(Self::StackPointer),
-			_ => Err(BytecodeError::InvalidRegisterByte(value))
+	    #[derive(Default, Debug)]
+	    pub struct VMRegs {
+			$(
+				pub $name: VMWord,
+			)+
 		}
-	}
+
+	    impl ops::Index<BytecodeRegister> for VMRegs {
+			type Output = VMWord;
+
+			fn index(&self, index: BytecodeRegister) -> &Self::Output {
+				match index {
+					$(
+						BytecodeRegister::$enum_name => &self.$name,
+					)+
+				}
+			}
+	    }
+
+	    impl ops::IndexMut<BytecodeRegister> for VMRegs {
+			fn index_mut(&mut self, index: BytecodeRegister) -> &mut Self::Output {
+				match index {
+					$(
+						BytecodeRegister::$enum_name => &mut self.$name,
+					)+
+				}
+			}
+	    }
+
+	    impl fmt::Display for VMRegs {
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				$(
+					write!(f, "{} = {}; ", BytecodeRegister::$enum_name, self.$name)?;
+				)+
+
+				Ok(())
+			}
+	    }
+
+		impl fmt::Display for BytecodeRegister {
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				match self {
+					$(
+						Self::$enum_name => stringify!($name),
+					)+
+				}.fmt(f)
+			}
+		}
+
+	    impl BytecodeRegister {
+			fn to_le_bytes(self) -> [u8; 1] {
+				(self as u8).to_le_bytes()
+			}
+	    }
+
+	    impl TryFrom<BytecodeRegister> for u8 {
+			type Error = BytecodeError;
+
+			fn try_from(value: BytecodeRegister) -> Result<Self, Self::Error> {
+				match value {
+					$(
+						BytecodeRegister::$enum_name => Ok($byte),
+					)+
+				}
+			}
+	    }
+
+	    impl TryFrom<u8> for BytecodeRegister {
+			type Error = BytecodeError;
+
+			fn try_from(value: u8) -> Result<Self, Self::Error> {
+				match value {
+					$(
+						$byte => Ok(Self::$enum_name),
+					)+
+					_ => Err(BytecodeError::InvalidRegisterByte(value))
+				}
+			}
+	    }
+    };
 }
 
-impl fmt::Display for BytecodeRegister {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			Self::Accum => "acc",
-			Self::Base => "base",
-			Self::BasePointer => "bp",
-			Self::StackPointer => "sp",
-		}.fmt(f)
-	}
-}
+gen_regs_code!(
+	0 | Accum 			=> acc,
+	1 | Base 			=> base,
+	2 | BasePointer 	=> bp,
+	3 | StackPointer 	=> sp,
+	4 | ProgramCounter 	=> pc,
+);
 
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];

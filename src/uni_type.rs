@@ -48,9 +48,11 @@ impl fmt::Display for UniResultType {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum UniResult {
+	#[default]
 	None,
+
 	Boolean(bool),
 	Number(i32),
 	Float(f32),
