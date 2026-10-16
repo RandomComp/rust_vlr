@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops};
 use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
@@ -44,14 +44,55 @@ impl fmt::Display for VMError {
 }
 
 type VMWord = u32;
+type Stack = Vec<UniResult>;
+
+#[derive(Default, Debug)]
+pub struct VMRegs {
+	regs: VMWord[],
+}
+
+impl ops::Index<BytecodeRegister> for VMRegs {
+	type Output = VMWord;
+
+	fn index(&self, index: BytecodeRegister) -> &Self::Output {
+		match index {
+			BytecodeRegister::Accum =>
+				&self.acc,
+			BytecodeRegister::Base =>
+				&self.base,
+			BytecodeRegister::BasePointer =>
+				&self.bp,
+			BytecodeRegister::StackPointer =>
+				&self.sp,
+		}
+	}
+}
+impl ops::IndexMut<BytecodeRegister> for VMRegs {
+	fn index_mut(&mut self, index: BytecodeRegister) -> &mut Self::Output {
+		match index {
+			BytecodeRegister::Accum =>
+				&mut self.acc,
+			BytecodeRegister::Base =>
+				&mut self.base,
+			BytecodeRegister::BasePointer =>
+				&mut self.bp,
+			BytecodeRegister::StackPointer =>
+				&mut self.sp,
+		}
+	}
+}
+
+impl fmt::Display for VMRegs {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "acc = {}; base = {}; bp = {}; sp = {}", self.acc, self.base, self.bp, self.sp)
+	}
+}
 
 pub struct VM {
 	pub bytecode: Option<Vec<Bytecode>>,
 	stack: Vec<UniResult>,
 
-	pc: VMWord,
-	acc: VMWord, base: VMWord,
-	bp: VMWord, sp: VMWord,
+	regs: VMRegs,
 }
 
 impl VM {
@@ -60,9 +101,7 @@ impl VM {
 			bytecode,
 			stack: Vec::new(),
 
-			pc: 0,
-			acc: 0, base: 0,
-			bp: 0, sp: 0,
+			regs: VMRegs::default(),
 		}
 	}
 
@@ -181,7 +220,7 @@ impl VM {
 	}
 
 	fn dump_regs(&self) {
-		println!("acc = {}; base = {}; bp = {}; sp = {}", self.acc, self.base, self.bp, self.sp);
+		println!("{}", self.regs);
 	}
 
 	fn dump_stack(&self) {
@@ -198,31 +237,6 @@ impl VM {
 		println!("]");
 	}
 
-	fn set_reg(&mut self, reg: BytecodeRegister, value: u32) {
-		match reg {
-			BytecodeRegister::Accum =>
-				self.acc = value,
-			BytecodeRegister::Base =>
-				self.base = value,
-			BytecodeRegister::BasePointer =>
-				self.bp = value,
-			BytecodeRegister::StackPointer =>
-				self.sp = value,
-		}
-	}
-	fn get_reg(&mut self, reg: BytecodeRegister) -> u32 {
-		match reg {
-			BytecodeRegister::Accum =>
-				self.acc,
-			BytecodeRegister::Base =>
-				self.base,
-			BytecodeRegister::BasePointer =>
-				self.bp,
-			BytecodeRegister::StackPointer =>
-				self.sp,
-		}
-	}
-
 	fn exec_inst(&mut self) -> Result<(bool, bool), RawVMError> {
 		let Some(bytecode) = &self.bytecode else {
 			return Ok((false, false))
@@ -235,6 +249,8 @@ impl VM {
 		let mut pc_changed = false;
 
 		println!("{inst}");
+
+		self.regs[BytecodeRegister::Accum];
 
 		match inst {
 			Bytecode::Halt =>

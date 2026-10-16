@@ -108,20 +108,17 @@ macro_rules! gen_insts_impl {
 		}
 
 		impl Bytecode {
-			fn get_opcode(&self) -> u8 {
-				match self {
-					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? => $main_opcode,
-					)*
-				}
-			}
-
-			fn asm_inst(value: Self) -> Result<Vec<u8>, BytecodeError> {
+			fn asm_inst(&self) -> Result<Vec<u8>, BytecodeError> {
 				let mut result = Vec::new();
 
-				result.push(value.get_opcode());
+				match self {
+					$(
+						Self::$inst $( ( $( $asm_arg, )* ) )? =>
+							result.push($main_opcode),
+					)*
+				}
 
-				match value {
+				match self {
 					$(
 						Self::$inst $( ( $( $asm_arg, )* ) )? => {
 							let mut $result = result;
@@ -138,7 +135,7 @@ macro_rules! gen_insts_impl {
 				let mut result = Vec::new();
 
 				for value in values {
-					let res: Vec<u8> = Self::asm_inst(value)?;
+					let res: Vec<u8> = value.asm_inst()?;
 
 					result.extend(res);
 				}
@@ -146,7 +143,8 @@ macro_rules! gen_insts_impl {
 				Ok(result)
 			}
 
-			pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError> where T: Iterator<Item = u8> {
+			pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError>
+				where T: Iterator<Item = u8> {
 				let Some(opcode) = bytes.next() else {
 					return Ok(None)
 				};
