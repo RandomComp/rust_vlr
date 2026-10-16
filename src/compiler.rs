@@ -2,11 +2,11 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::{bytecode::BytecodeRegister, native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
+use crate::{assembler::BytecodeRegister, assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
 
 use std::{collections::HashMap};
 
-use crate::{bytecode::Bytecode, compiler::parser::{BinaryOp::self, ASTNode, UnaryOp}};
+use crate::{assembler::Bytecode, compiler::parser::{BinaryOp::self, ASTNode, UnaryOp}};
 
 #[derive(thiserror::Error, PartialEq, Clone, Debug)]
 pub enum CompilerError {

@@ -3,9 +3,9 @@ use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::bytecode::{Bytecode, VMRegs};
+use crate::assembler::{Bytecode, VMRegs};
 use crate::compiler::parser::BinaryOp;
-use crate::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
+use crate::assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::uni_type::{UniResult, UniResultError};
 use crate::wrapper::Spanned;
 
@@ -49,25 +49,18 @@ impl fmt::Display for VMError {
 	}
 }
 
-type Memory = Vec<UniResult>;
-
-pub struct VM {
-	pub bytecode: Option<Vec<Bytecode>>,
-	mem: Memory,
+#[derive(Debug)]
+pub struct Memory {
+	mem: Vec<UniResult>,
+	pub regs: VMRegs,
 
 	heap_upper: u32,
 	/// Indexing from heap_upper
 	heap_pos: u32,
-
-	regs: VMRegs,
 }
 
-impl VM {
-	// pub fn reset(&mut self) {
-	//
-	// }
-
-	pub fn new(bytecode: Option<Vec<Bytecode>>) -> Self {
+impl Memory {
+	pub fn new() -> Self {
 		let stack_size: u32 = 128;
 		let heap_size: u32 = 128;
 
@@ -79,16 +72,14 @@ impl VM {
 		let mem = vec![UniResult::default(); (stack_size + heap_size) as usize];
 
 		Self {
-			bytecode,
 			mem,
 			heap_upper: stack_size,
 			heap_pos: stack_size,
-
-			regs,
+			regs
 		}
 	}
 
-	fn stack_push(&mut self, value: UniResult) -> Result<(), RawVMError> {
+	fn push(&mut self, value: UniResult) -> Result<(), RawVMError> {
 		self.regs.sp = self.regs.sp.checked_sub(1).ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 		let result = self.mem.get_mut(self.regs.sp as usize).ok_or(RawVMError::StackOverflow)?;
@@ -98,7 +89,7 @@ impl VM {
 		Ok(())
 	}
 
-	fn stack_pop(&mut self) -> Result<UniResult, RawVMError> {
+	fn pop(&mut self) -> Result<UniResult, RawVMError> {
 		if self.regs.sp > self.regs.bp {
 			return Err(RawVMError::StackEmptyButExpectedValue)
 		}
@@ -135,6 +126,24 @@ impl VM {
 			.skip(self.regs.sp as usize)
 			.take((self.regs.bp - self.regs.sp) as usize)
 			.rev()
+	}
+}
+
+pub struct VM {
+	pub bytecode: Option<Vec<Bytecode>>,
+	mem: Memory,
+}
+
+impl VM {
+	// pub fn reset(&mut self) {
+	//
+	// }
+
+	pub fn new(bytecode: Option<Vec<Bytecode>>) -> Self {
+		Self {
+			bytecode,
+			mem: Memory::new(),
+		}
 	}
 
 	fn print(args: &[UniResult]) -> Result<UniResult, RawVMError> {
@@ -197,7 +206,7 @@ impl VM {
 		match expected {
 			NativeFunctionArgsNumber::Fixed(fixed) => {
 				while i < fixed  {
-					let value = self.stack_pop().map_err(|_|
+					let value = self.mem.pop().map_err(|_|
 						RawVMError::ArgumentsNativeFunctionCall {
 							id,
 							found: i,
@@ -211,11 +220,11 @@ impl VM {
 				}
 			}
 			NativeFunctionArgsNumber::Dynamic => {
-				if let Ok(fixed) = self.stack_pop().map(|v| i32::try_from(&v)) {
+				if let Ok(fixed) = self.mem.pop().map(|v| i32::try_from(&v)) {
 					let fixed = fixed?.cast_unsigned();
 
 					while i < fixed  {
-						let Ok(value) = self.stack_pop() else {
+						let Ok(value) = self.mem.pop() else {
 							return Err(
 								RawVMError::ArgumentsNativeFunctionCall {
 									id,
@@ -248,13 +257,13 @@ impl VM {
 	}
 
 	fn dump_regs(&self) {
-		println!("{}", self.regs);
+		println!("{}", self.mem.regs);
 	}
 
 	fn dump_stack(&self) {
 		print!("stack = [");
 
-		for (i, value) in self.stack_iter().enumerate() {
+		for (i, value) in self.mem.stack_iter().enumerate() {
 			if i > 0 {
 				print!(", ");
 			}
@@ -270,137 +279,23 @@ impl VM {
 			return Ok(false)
 		};
 
-		let Some(inst) = bytecode.get(self.regs.pc as usize) else {
+		let Some(inst) = bytecode.get(self.mem.regs.pc as usize) else {
 			return Ok(false)
 		};
 
 		println!("{inst}");
 
-		let mut pc = self.regs.pc + 1;
-
-		match inst {
-			Bytecode::Halt =>
-				return Ok(false),
-			&Bytecode::PushNumber(val) => {
-				self.stack_push(val.into())?;
-			},
-			&Bytecode::PushFloat(val) => {
-				self.stack_push(val.into())?;
-			},
-			Bytecode::PushString(val) => {
-				self.stack_push(val.clone().into())?;
-			},
-
-			&Bytecode::MovRegToReg(reg1, reg2) => {
-				let reg2 = self.regs[reg2];
-
-				self.regs[reg1] = reg2;
-			},
-			&Bytecode::MovU32ToReg(reg, value) => {
-				self.regs[reg] = value;
-			},
-
-			&Bytecode::PushReg(reg) => {
-				let value = self.regs[reg];
-
-				self.stack_push(value.into())?;
-			},
-			&Bytecode::PopReg(reg) => {
-				let value = u32::try_from(&self.stack_pop()?)?;
-
-				self.regs[reg] = value;
-			},
-
-			&Bytecode::Look(stack_pos) => {
-				let usize_stack_pos = stack_pos as usize;
-
-				let val = self.stack_get(usize_stack_pos)?;
-
-				self.stack_push(val.clone())?;
-			},
-			&Bytecode::Load(stack_pos) => {
-				let usize_stack_pos = stack_pos as usize;
-
-				let value = self.stack_pop()?;
-
-				let val = self.stack_get_mut(usize_stack_pos)?;
-
-				*val = value;
-			},
-			Bytecode::Remove => {
-				self.stack_pop()?;
-			},
-			&Bytecode::Jif(dest_pc) => {
-				if !bool::try_from(self.stack_pop()?)? {
-					pc = dest_pc;
-				}
-			},
-			&Bytecode::Jmp(dest_pc) => {
-				pc = dest_pc;
-			},
-			&Bytecode::Call(dest_pc) => {
-				self.stack_push((self.regs.pc + 1).into())?;
-
-				pc = dest_pc;
-			},
-			&Bytecode::Ret => {
-				pc = u32::try_from(&self.stack_pop()?)?;
-			},
-			&Bytecode::NativeCall(id) => {
-				let result = self.call_native(id)?;
-
-				let mem = self.get_mem_mut(self.heap_pos as usize)?;
-
-				*mem = result;
-
-				self.regs.acc = self.heap_pos;
-
-				self.heap_pos += 1;
-			},
-			Bytecode::Eq |
-			Bytecode::Lt |
-		 	Bytecode::Add |
-			Bytecode::Sub |
-			Bytecode::Mul |
-			Bytecode::Pow |
-			Bytecode::Div |
-			Bytecode::LogicalAnd |
-			Bytecode::LogicalOr => {
-				let op = &inst.to_binary_op().unwrap_or_else(|| unreachable!("invalid binary operation {inst} in match"));
-
-				let right = self.get_mem(self.regs.base as usize)?.clone();
-				let left = self.get_mem_mut(self.regs.acc as usize)?;
-
-				let result = UniResult::calc_binary_by_op(
-					&Spanned::from_with_span(left.clone(), 0),
-					&Spanned::from_with_span(right.clone(), 0),
-					op
-				).map(|v| v.val).map_err(|e| e.val)?;
-
-				*left = result;
-			},
-			Bytecode::Neg |
-			Bytecode::Not => {
-				let op = &inst.to_unary_op().unwrap_or_else(|| unreachable!("invalid unary operation {inst} in match"));
-
-				let value = self.stack_pop()?;
-
-				let result = UniResult::calc_unary_by_op(
-					&Spanned::from_with_span(value, 0),
-					op
-				).map(|v| v.val).map_err(|e| e.val)?;
-
-				self.stack_push(result)?;
-			},
+		if let Bytecode::Halt = inst {
+			return Ok(false)
 		}
 
-		self.regs.pc = pc;
+		inst.exec_inst(&mut self.mem)?;
 
 		Ok(true)
 	}
 
 	pub fn exec(&mut self) -> Result<&UniResult, VMError> {
-		self.regs.pc = 0;
+		self.mem.regs.pc = 0;
 
 		self.dump_regs();
 
@@ -417,7 +312,7 @@ impl VM {
 						)
 					};
 
-					let Some(inst) = bytecode.get(self.regs.pc as usize) else {
+					let Some(inst) = bytecode.get(self.mem.regs.pc as usize) else {
 						return Err(
 							VMError {
 								val: e,
@@ -446,8 +341,8 @@ impl VM {
 		}
 
 		Ok(
-			self.mem.get(
-				self.regs.acc as usize
+			self.mem.get_mem(
+				self.mem.regs.acc as usize
 			).unwrap()
 		)
 	}

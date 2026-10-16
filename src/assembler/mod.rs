@@ -1,132 +1,126 @@
-use std::ops;
+use crate::{assembler::{defs::BytecodeError, native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
 
-use std::{fmt, string::FromUtf8Error};
+pub mod native_func;
+pub mod defs;
 
-use crate::{native_func::{NativeFunctionID, NativeFunctionIDError}, compiler::parser::{BinaryOp, UnaryOp}};
+use std::fmt;
 
-#[derive(thiserror::Error, Clone, Debug)]
-pub enum BytecodeError {
-	#[error("Byte {byte:02X} at {pos:02} unexpected")]
-	UnexpectedByte {
-		pos: u32, byte: u8
-	},
-	#[error("Unexpected EOF at {pos}")]
-	UnexpectedEof {
-		pos: u32,
-	},
-	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
-	StringTooLong,
-	#[error("String have invalid UTF-8 invalid sequence: ")]
-	StringHasInvalidUTF8Sequence(#[from] FromUtf8Error),
-	#[error("Invalid register 0x{0:02X}")]
-	InvalidRegisterByte(u8),
-	#[error("{0}")]
-	NativeFunctionID(#[from] NativeFunctionIDError),
-}
+/*
+Bytecode::Halt =>
+						return Ok(false),
+					&Bytecode::PushNumber(val) => {
+						self.stack_push(val.into())?;
+					},
+					&Bytecode::PushFloat(val) => {
+						self.stack_push(val.into())?;
+					},
+					Bytecode::PushString(val) => {
+						self.stack_push(val.clone().into())?;
+					},
 
+					&Bytecode::MovRegToReg(reg1, reg2) => {
+						let reg2 = self.regs[reg2];
 
-type VMWord = u32;
+						self.regs[reg1] = reg2;
+					},
+					&Bytecode::MovU32ToReg(reg, value) => {
+						self.regs[reg] = value;
+					},
 
-macro_rules! gen_regs_code {
-    (
-    	$( $byte:literal | $enum_name:ident => $name:ident ),+ $(,)?
-    ) => {
-	    #[derive(PartialEq, Copy, Clone, Debug)]
-	    pub enum BytecodeRegister {
-			$(
-				$enum_name,
-			)+
-	    }
+					&Bytecode::PushReg(reg) => {
+						let value = self.regs[reg];
 
-	    #[derive(Default, Debug)]
-	    pub struct VMRegs {
-			$(
-				pub $name: VMWord,
-			)+
-		}
+						self.stack_push(value.into())?;
+					},
+					&Bytecode::PopReg(reg) => {
+						let value = u32::try_from(&self.stack_pop()?)?;
 
-	    impl ops::Index<BytecodeRegister> for VMRegs {
-			type Output = VMWord;
+						self.regs[reg] = value;
+					},
 
-			fn index(&self, index: BytecodeRegister) -> &Self::Output {
-				match index {
-					$(
-						BytecodeRegister::$enum_name => &self.$name,
-					)+
-				}
-			}
-	    }
+					&Bytecode::Look(stack_pos) => {
+						let usize_stack_pos = stack_pos as usize;
 
-	    impl ops::IndexMut<BytecodeRegister> for VMRegs {
-			fn index_mut(&mut self, index: BytecodeRegister) -> &mut Self::Output {
-				match index {
-					$(
-						BytecodeRegister::$enum_name => &mut self.$name,
-					)+
-				}
-			}
-	    }
+						let val = self.stack_get(usize_stack_pos)?;
 
-	    impl fmt::Display for VMRegs {
-			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-				$(
-					write!(f, "{} = {}; ", BytecodeRegister::$enum_name, self.$name)?;
-				)+
+						self.stack_push(val.clone())?;
+					},
+					&Bytecode::Load(stack_pos) => {
+						let usize_stack_pos = stack_pos as usize;
 
-				Ok(())
-			}
-	    }
+						let value = self.stack_pop()?;
 
-		impl fmt::Display for BytecodeRegister {
-			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-				match self {
-					$(
-						Self::$enum_name => stringify!($name),
-					)+
-				}.fmt(f)
-			}
-		}
+						let val = self.stack_get_mut(usize_stack_pos)?;
 
-	    impl BytecodeRegister {
-			fn to_le_bytes(self) -> [u8; 1] {
-				(self as u8).to_le_bytes()
-			}
-	    }
+						*val = value;
+					},
+					Bytecode::Remove => {
+						self.stack_pop()?;
+					},
+					&Bytecode::Jif(dest_pc) => {
+						if !bool::try_from(self.stack_pop()?)? {
+							pc = dest_pc;
+						}
+					},
+					&Bytecode::Jmp(dest_pc) => {
+						pc = dest_pc;
+					},
+					&Bytecode::Call(dest_pc) => {
+						self.stack_push((self.regs.pc + 1).into())?;
 
-	    impl TryFrom<BytecodeRegister> for u8 {
-			type Error = BytecodeError;
+						pc = dest_pc;
+					},
+					&Bytecode::Ret => {
+						pc = u32::try_from(&self.stack_pop()?)?;
+					},
+					&Bytecode::NativeCall(id) => {
+						let result = self.call_native(id)?;
 
-			fn try_from(value: BytecodeRegister) -> Result<Self, Self::Error> {
-				match value {
-					$(
-						BytecodeRegister::$enum_name => Ok($byte),
-					)+
-				}
-			}
-	    }
+						let mem = self.get_mem_mut(self.heap_pos as usize)?;
 
-	    impl TryFrom<u8> for BytecodeRegister {
-			type Error = BytecodeError;
+						*mem = result;
 
-			fn try_from(value: u8) -> Result<Self, Self::Error> {
-				match value {
-					$(
-						$byte => Ok(Self::$enum_name),
-					)+
-					_ => Err(BytecodeError::InvalidRegisterByte(value))
-				}
-			}
-	    }
-    };
-}
+						self.regs.acc = self.heap_pos;
 
-gen_regs_code!(
-	0 | Accum 			=> acc,
-	1 | Base 			=> base,
-	2 | BasePointer 	=> bp,
-	3 | StackPointer 	=> sp,
-	4 | ProgramCounter 	=> pc,
-);
+						self.heap_pos += 1;
+					},
+					Bytecode::Eq |
+					Bytecode::Lt |
+				 	Bytecode::Add |
+					Bytecode::Sub |
+					Bytecode::Mul |
+					Bytecode::Pow |
+					Bytecode::Div |
+					Bytecode::LogicalAnd |
+					Bytecode::LogicalOr => {
+						let op = &inst.to_binary_op().unwrap_or_else(|| unreachable!("invalid binary operation {inst} in match"));
+
+						let right = self.get_mem(self.regs.base as usize)?.clone();
+						let left = self.get_mem_mut(self.regs.acc as usize)?;
+
+						let result = UniResult::calc_binary_by_op(
+							&Spanned::from_with_span(left.clone(), 0),
+							&Spanned::from_with_span(right.clone(), 0),
+							op
+						).map(|v| v.val).map_err(|e| e.val)?;
+
+						*left = result;
+					},
+					Bytecode::Neg |
+					Bytecode::Not => {
+						let op = &inst.to_unary_op().unwrap_or_else(|| unreachable!("invalid unary operation {inst} in match"));
+
+						let value = self.stack_pop()?;
+
+						let result = UniResult::calc_unary_by_op(
+							&Spanned::from_with_span(value, 0),
+							op
+						).map(|v| v.val).map_err(|e| e.val)?;
+
+						self.stack_push(result)?;
+					},
+ */
+
 
 fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
@@ -138,150 +132,13 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 	Ok(result)
 }
 
-macro_rules! gen_insts_impl {
-	(
-		$(
-			$( ( bin $binary_op:ident ) )? $( ( un $unary_op:ident ) )?
-			$inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
-			=>
-			{
-				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
-				disasm ( $bytes:ident ) => $inst_disasm:block,
-				display ( $formatter:ident $(, $($display_arg:ident),* $(,)? )? ) => $inst_display:block
-			}
-		),*
-		$(,)?
-	) => {
-		#[derive(PartialEq, Clone, Debug)]
-		pub enum Bytecode {
-			$(
-				$inst $( ( $( $arg, )* ) )?,
-			)*
-		}
-
-		impl fmt::Display for Bytecode {
-			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-				match self {
-					$(
-						Self::$inst $( ( $( $display_arg, )* ) )? => {
-							let $formatter = f;
-
-							$inst_display
-						}
-					)*
-				}
-			}
-		}
-
-		impl Bytecode {
-			fn asm_inst(&self) -> Result<Vec<u8>, BytecodeError> {
-				let mut result = Vec::new();
-
-				match self {
-					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? =>
-							result.push($main_opcode),
-					)*
-				}
-
-				match self {
-					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? => {
-							let mut $result = result;
-
-							$inst_asm;
-
-							Ok($result)
-						},
-					)*
-				}
-			}
-
-			pub fn asm(values: Vec<Self>) -> Result<Vec<u8>, BytecodeError> {
-				let mut result = Vec::new();
-
-				for value in values {
-					let res: Vec<u8> = value.asm_inst()?;
-
-					result.extend(res);
-				}
-
-				Ok(result)
-			}
-
-			pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError>
-				where T: Iterator<Item = u8> {
-				let Some(opcode) = bytes.next() else {
-					return Ok(None)
-				};
-
-				let result = match opcode {
-					$(
-						$main_opcode $( | $( $opcode )|* )? => {
-							let mut $bytes = bytes;
-
-							$inst_disasm
-						},
-					)*
-					x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
-				};
-
-				Ok(Some(result))
-			}
-
-			pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> {
-				let mut result = Vec::new();
-
-				while let Some(val) = Self::disasm_inst(&mut bytes)? {
-					result.push(val);
-				}
-
-				Ok(result)
-			}
-			pub fn to_binary_op(&self) -> Option<BinaryOp> {
-				match self {
-					$(
-						$(
-							Self::$inst => Some(BinaryOp::$binary_op),
-						)?
-					)*
-					_ => None,
-				}
-			}
-
-			pub fn to_unary_op(&self) -> Option<UnaryOp> {
-				match self {
-					$(
-						$(
-							Self::$inst => Some(UnaryOp::$unary_op),
-						)?
-					)*
-					_ => None,
-				}
-			}
-			pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
-				match op {
-					$(
-						$(
-							UnaryOp::$unary_op => Self::$inst,
-						)?
-					)*
-				}
-			}
-
-			pub fn from_binary_op(op: &BinaryOp) -> Bytecode {
-				match op {
-					$(
-						$(
-							BinaryOp::$binary_op => Self::$inst,
-						)?
-					)*
-					_ => unreachable!("'{op}' not handled in from_binary_op"),
-				}
-			}
-		}
-	};
-}
+gen_regs_code!(
+	0 | Accum 			=> acc,
+	1 | Base 			=> base,
+	2 | BasePointer 	=> bp,
+	3 | StackPointer 	=> sp,
+	4 | ProgramCounter 	=> pc,
+);
 
 gen_insts_impl!(
 	Halt as 0x00 | 0xFF => {
@@ -289,6 +146,8 @@ gen_insts_impl!(
 		},
 		disasm(bytes) => {
 			Self::Halt
+		},
+		exec(mem) => {
 		},
 		display(f) => {
 			write!(f, "hlt")
@@ -303,6 +162,9 @@ gen_insts_impl!(
 
 			Self::PushNumber(value)
 		},
+		exec(mem, val) => {
+
+		},
 		display(f, val) => {
 			write!(f, "push {val}")
 		}
@@ -315,6 +177,9 @@ gen_insts_impl!(
 			let value = f32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 			Self::PushFloat(value)
+		},
+		exec(mem, val) => {
+
 		},
 		display(f, val) => {
 			write!(f, "push {val}")
@@ -338,6 +203,9 @@ gen_insts_impl!(
 
 			Self::PushString(text)
 		},
+		exec(mem, val) => {
+
+		},
 		display(f, val) => {
 			write!(f, "push \"{val}\"")
 		}
@@ -354,6 +222,9 @@ gen_insts_impl!(
 
 			Self::PushReg(reg)
 		},
+		exec(mem, reg) => {
+
+		},
 		display(f, reg) => {
 			write!(f, "push {reg}")
 		}
@@ -369,6 +240,9 @@ gen_insts_impl!(
 
 			Self::PopReg(reg)
 		},
+		exec(mem, reg) => {
+
+		},
 		display(f, reg) => {
 			write!(f, "pop {reg}")
 		}
@@ -383,6 +257,9 @@ gen_insts_impl!(
 
 			Self::Look(value)
 		},
+		exec(mem, stack) => {
+
+		},
 		display(f, stack) => {
 			write!(f, "look {stack}")
 		}
@@ -396,6 +273,9 @@ gen_insts_impl!(
 
 			Self::Load(value)
 		},
+		exec(mem,stack) => {
+
+		},
 		display(f, stack) => {
 			write!(f, "load {stack}")
 		}
@@ -405,6 +285,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Remove
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "remove")
@@ -424,6 +307,9 @@ gen_insts_impl!(
 			let val = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 			Self::MovU32ToReg(reg, val)
+		},
+		exec(mem, reg, val) => {
+
 		},
 		display(f, reg, val) => {
 			write!(f, "mov {reg}, {val}")
@@ -445,6 +331,9 @@ gen_insts_impl!(
 
 			Self::MovRegToReg(reg1, reg2)
 		},
+		exec(mem, reg1, reg2) => {
+
+		},
 		display(f, reg1, reg2) => {
 			write!(f, "mov {reg1}, {reg2}")
 		}
@@ -459,6 +348,9 @@ gen_insts_impl!(
 
 			Self::Jif(pos)
 		},
+		exec(mem, pos) => {
+
+		},
 		display(f, pos) => {
 			write!(f, "jif {pos}")
 		}
@@ -471,6 +363,9 @@ gen_insts_impl!(
 			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
 
 			Self::Jmp(pos)
+		},
+		exec(mem, pos) => {
+
 		},
 		display(f, pos) => {
 			write!(f, "jmp {pos}")
@@ -485,6 +380,9 @@ gen_insts_impl!(
 
 			Self::Call(pos)
 		},
+		exec(mem, pos) => {
+
+		},
 		display(f, pos) => {
 			write!(f, "call {pos}")
 		}
@@ -494,6 +392,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Ret
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "ret")
@@ -510,6 +411,9 @@ gen_insts_impl!(
 
 			Self::NativeCall(id)
 		},
+		exec(mem, id) => {
+
+		},
 		display(f, id) => {
 			write!(f, "native_call {id}")
 		}
@@ -519,6 +423,9 @@ gen_insts_impl!(
 		},
 		disasm(bytes) => {
 			Self::Eq
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "eq")
@@ -530,6 +437,9 @@ gen_insts_impl!(
 		disasm(_bytes) => {
 			Self::Lt
 		},
+		exec(mem) => {
+
+		},
 		display(f) => {
 			write!(f, "lt")
 		}
@@ -539,6 +449,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Add
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "add")
@@ -550,6 +463,9 @@ gen_insts_impl!(
 		disasm(_bytes) => {
 			Self::Sub
 		},
+		exec(mem) => {
+
+		},
 		display(f) => {
 			write!(f, "sub")
 		}
@@ -559,6 +475,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Mul
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "mul")
@@ -570,6 +489,9 @@ gen_insts_impl!(
 		disasm(_bytes) => {
 			Self::Div
 		},
+		exec(mem) => {
+
+		},
 		display(f) => {
 			write!(f, "div")
 		}
@@ -579,6 +501,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Pow
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "pow")
@@ -590,6 +515,9 @@ gen_insts_impl!(
 		disasm(_bytes) => {
 			Self::LogicalAnd
 		},
+		exec(mem) => {
+
+		},
 		display(f) => {
 			write!(f, "land")
 		}
@@ -599,6 +527,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::LogicalOr
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "lor")
@@ -610,6 +541,9 @@ gen_insts_impl!(
 		disasm(_bytes) => {
 			Self::Neg
 		},
+		exec(mem) => {
+
+		},
 		display(f) => {
 			write!(f, "neg")
 		}
@@ -619,6 +553,9 @@ gen_insts_impl!(
 		},
 		disasm(_bytes) => {
 			Self::Not
+		},
+		exec(mem) => {
+
 		},
 		display(f) => {
 			write!(f, "not")

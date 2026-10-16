@@ -7,25 +7,25 @@
 use std::fmt::{Write, Debug, Display};
 use std::io::Write as IoWrite;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::{fmt, io::self, process};
 
 use rustyline::{DefaultEditor, error::ReadlineError::self};
 
-mod native_func;
 mod wrapper;
 mod uni_type;
-mod bytecode;
+mod assembler;
 mod compiler;
 mod vm;
 
+use crate::assembler::defs::BytecodeError;
 use crate::compiler::CompilerError;
 use crate::compiler::lexer::LexerError;
 use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
-use crate::bytecode::{Bytecode, BytecodeError};
+use crate::assembler::{Bytecode};
 use crate::vm::{RawVMError, VM, VMError};
 use crate::wrapper::Spanned;
 
