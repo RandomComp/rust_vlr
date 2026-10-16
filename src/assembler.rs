@@ -244,7 +244,7 @@ gen_insts_impl!(
 			Self::NativeCall(id)
 		},
 		exec(mem, id) => {
-			id.call(mem)
+			id.call(mem)?;
 		},
 		display(f, id) => {
 			write!(f, "native_call {id}")

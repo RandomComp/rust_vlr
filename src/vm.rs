@@ -3,7 +3,7 @@ use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::assembler::{Bytecode, VMRegs};
+use crate::assembler::{Bytecode, VMRegs, native_func::NativeFunctionIDError};
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
@@ -11,6 +11,8 @@ pub enum RawVMError {
 	InvalidUTF8(#[from] FromUtf8Error),
 	#[error("{0}")]
 	Fmt(#[from] std::fmt::Error),
+	#[error("{0}")]
+	NativeFunction(#[from] NativeFunctionIDError),
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 
@@ -169,7 +171,7 @@ impl VM {
 			return Ok(false)
 		}
 
-		inst.exec_inst(&mut self.mem)?;
+		inst.exec(&mut self.mem)?;
 
 		Ok(true)
 	}

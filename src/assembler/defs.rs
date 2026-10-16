@@ -224,7 +224,7 @@ macro_rules! gen_insts_impl {
 				Ok(result)
 			}
 
-			pub fn exec_inst(&self, mem: &mut Memory) -> Result<(), RawVMError> {
+			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
 				let pc = mem.regs.pc + 1;
 
 				match self {
