@@ -3,7 +3,6 @@ use std::fmt;
 use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ASTNode;
 use crate::uni_type::UniResultError;
-use crate::vm::RawVMError;
 
 type Span = usize;
 

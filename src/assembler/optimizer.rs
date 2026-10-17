@@ -2,7 +2,7 @@ use crate::assembler::{Bytecode, native_func::NativeFunctionArgsNumber};
 
 #[derive(Debug)]
 pub struct AssemblerOptimizer<'a> {
-	stack: Vec<u32>,
+	stack: Vec<(usize, &'a Bytecode)>,
 	bytes: Option<&'a [Bytecode]>,
 	index: usize,
 }
@@ -12,92 +12,87 @@ impl<'a> AssemblerOptimizer<'a> {
 		Self { stack: Vec::new(), bytes: Some(bytes), index: 0 }
 	}
 
-	fn peek(bytes: Option<&'a [Bytecode]>, index: usize) -> Option<&Bytecode> {
+	fn peek(bytes: Option<&'a [Bytecode]>, index: usize) -> Option<&'a Bytecode> {
 		bytes?.get(index)
 	}
 
-	fn consume_next(&mut self) {
+	fn consumed_inst(&mut self) {
 		self.index += 1;
 	}
 
-	fn optimize_inst(&mut self, result: &mut Vec<Bytecode>) -> bool {
-		let Some(cur) = Self::peek(self.bytes, self.index + 0) else {
-			return false
+	fn next_inst(&mut self, result: &mut Vec<Bytecode>) {
+		let Some(cur) = Self::peek(self.bytes, self.index) else {
+			return
 		};
 
-		let Some(next) = Self::peek(self.bytes, self.index + 1) else {
-			return false
-		};
+		result.push(cur.clone());
 
-		match (cur, next) {
-			(Bytecode::PushReg(reg1), Bytecode::PopReg(reg2)) if reg1 == reg2 => {
-				true
-			}
-			(&Bytecode::PushReg(reg1), &Bytecode::PopReg(reg2)) => {
-				result.push(Bytecode::MovRegToReg(reg2, reg1));
-
-				true
-			}
-			(&Bytecode::PushNumber(num), &Bytecode::PopReg(reg)) => {
-				result.push(Bytecode::MovU32ToReg(reg, num));
-
-				true
-			}
-// 			(&Bytecode::PushNumber(num), _) => {
-// 				self.stack.push(num);
-//
-// 				result.push(cur.clone());
-//
-// 				true
-// 			}
-// 			(&Bytecode::PopReg(reg), _) => {
-// 				let Some(val) = self.stack.pop() else {
-// 					return false
-// 				};
-//
-// 				result.push(Bytecode::MovU32ToReg(reg, val));
-//
-// 				true
-// 			}
-// 			(&Bytecode::NativeCall(id), _) => {
-// 				let expected = id.args();
-//
-// 				match expected {
-// 					NativeFunctionArgsNumber::Fixed(fixed) => {
-// 						for _ in 0..fixed {
-// 							self.stack.pop();
-// 						}
-// 					}
-// 					NativeFunctionArgsNumber::Dynamic => {
-// 						let Some(fixed) = self.stack.pop() else {
-// 							return false
-// 						};
-//
-// 						for _ in 0..fixed {
-// 							self.stack.pop();
-// 						}
-// 					}
-// 				}
-//
-// 				true
-// 			}
-			_ => false
-		}
+		self.consumed_inst();
 	}
 
 	pub fn optimize(&mut self) -> Vec<Bytecode> {
 		let mut result = Vec::new();
 
 		while let Some(cur) = Self::peek(self.bytes, self.index) {
-			let inst = self.optimize_inst(&mut result);
+			match *cur {
+				Bytecode::PushReg(_) |
+				Bytecode::PushNumber(_) => {
+					self.stack.push((result.len(), cur));
 
-			if inst {
-				self.consume_next();
-				self.consume_next();
-			} else {
-				result.push(cur.clone());
+					self.next_inst(&mut result);
+				}
+				Bytecode::PopReg(reg) => {
+					let Some((index, val)) = self.stack.pop() else {
+						self.next_inst(&mut result);
 
-				self.consume_next();
+						continue;
+					};
+
+					match *val {
+						Bytecode::PushNumber(val) => {
+							result.push(Bytecode::MovU32ToReg(reg, val));
+
+							self.consumed_inst();
+						},
+						Bytecode::PushReg(reg1) => {
+							result.push(Bytecode::MovRegToReg(reg, reg1));
+
+							self.consumed_inst();
+						}
+						_ => {
+							self.next_inst(&mut result);
+
+							continue
+						},
+					}
+
+					println!("-{}", result.remove(index));
+				}
+				Bytecode::NativeCall(id) => {
+					let expected = id.args();
+
+					match expected {
+						NativeFunctionArgsNumber::Fixed(fixed) => {
+							for _ in 0..fixed {
+								self.stack.pop();
+							}
+						}
+						NativeFunctionArgsNumber::Dynamic => {
+							let Some((_, &Bytecode::PushNumber(fixed))) = self.stack.pop() else {
+								self.next_inst(&mut result);
+
+								continue;
+							};
+
+							for _ in 0..fixed {
+								self.stack.pop();
+							}
+						}
+					}
+
+					self.next_inst(&mut result);
+				}
+				_ => self.next_inst(&mut result),
 			}
 		}
 

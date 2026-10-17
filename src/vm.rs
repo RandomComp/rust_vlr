@@ -46,7 +46,7 @@ pub struct Memory {
 	pub regs: VMRegs,
 
 	heap_upper: VMWord,
-	/// Indexing from heap_upper
+	/// Indexing from `heap_upper`
 	heap_pos: VMWord,
 }
 

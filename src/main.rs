@@ -27,7 +27,7 @@ use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::assembler::{Bytecode};
-use crate::vm::{RawVMError, VM, VMError};
+use crate::vm::{VM, VMError};
 use crate::wrapper::Spanned;
 
 #[derive(argh::FromArgs, Debug)]
