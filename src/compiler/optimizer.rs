@@ -257,13 +257,11 @@ impl Optimizer {
 					return Ok(())
 				};
 
-				*ast = match UniResult::calc_binary_by_op(&left, &right, op).and_then(SpannedASTNode::try_from) {
-					Ok(x) => x,
-					Err(
-						Spanned { val: UniResultError::UnsupportedOperation(..), .. }
-					) => return Ok(()),
-					Err(e) => return Err(e.into()),
-				};
+				let result = UniResult::calc_binary_by_op(&left, &right, op);
+
+				println!("result = {result:?}");
+
+				*ast = result.and_then(SpannedASTNode::try_from)?;
 			},
 			ASTNode::List(values) => {
 				for value in values {
@@ -275,7 +273,7 @@ impl Optimizer {
 					self.fold(arg)?;
 				}
 			},
-			ASTNode::FunctionDefinition { name: _, args: _, body, is_global } => {
+			ASTNode::FunctionDefinition { name: _, args: _, body, is_global: _ } => {
 				self.fold(body)?;
 			},
 			ASTNode::If { condition, body, else_body: None } => {

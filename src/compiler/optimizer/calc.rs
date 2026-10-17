@@ -57,11 +57,13 @@ impl TryFrom<Spanned<UniResult>> for Spanned<ASTNode> {
 		let result = match value.val {
 			UniResult::Boolean(val) =>
 				ASTNode::Boolean(val),
+			UniResult::Number(val) =>
+				ASTNode::Number(val),
 			UniResult::Float(val) =>
 				ASTNode::Float(val),
-			v => return Err(
+			UniResult::Range { .. } => return Err(
 				Spanned::from_with_span(
-					UniResultError::CannotConvertFromUniResult(v),
+					UniResultError::CannotConvertFromUniResult(value.val),
 					span
 				)
 			),
@@ -86,6 +88,7 @@ impl TryFrom<Spanned<ASTNode>> for Spanned<UniResult> {
 
 		let result = match value.val {
 			ASTNode::Boolean(val) => RawSelf::Boolean(val),
+			ASTNode::Number(val) => RawSelf::Number(val),
 			ASTNode::Float(val) => RawSelf::Float(val),
 			v => return Err(
 				Spanned::from_with_span(
@@ -206,11 +209,12 @@ impl UniResult {
 				=> Ok(Self::Number(a * b)),
 			(&Self::Float(a), &Self::Float(b))
 				=> Ok(Self::Float(a * b)),
-			(left, right) => Err(
-				UniResultError::IncompatibleOperationType {
-					left: left.result_type(), op: BinaryOp::Multiply, right: right.result_type()
-				}
-			),
+			(left, right) =>
+				Err(
+					UniResultError::IncompatibleOperationType {
+						left: left.result_type(), op: BinaryOp::Multiply, right: right.result_type()
+					}
+				),
 		};
 
 		res_with_pos!(result, left.span)
