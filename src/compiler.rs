@@ -2,7 +2,8 @@ pub mod lexer;
 pub mod parser;
 pub mod optimizer;
 
-use crate::{assembler::BytecodeRegister, assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}, wmatch, wrapper::Spanned};
+use crate::{assembler::BytecodeRegister, assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}};
+use crate::wrapper::{wmatch, Spanned};
 
 use std::{collections::HashMap};
 

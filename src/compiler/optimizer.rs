@@ -1,8 +1,10 @@
 use std::{collections::HashMap, mem};
 
-use crate::compiler::parser::{BinaryOp, ASTNode, UnaryOp};
-use crate::uni_type::{UniResult, UniResultError};
-use crate::wmatch;
+mod calc;
+
+use crate::{compiler::parser::{ASTNode, BinaryOp, UnaryOp}};
+use crate::{wrapper::{wmatch, wrapper_connect}};
+use self::calc::{UniResult, UniResultError};
 use crate::wrapper::Spanned;
 
 #[derive(thiserror::Error, Clone, PartialEq, Debug)]
@@ -17,6 +19,10 @@ pub struct Optimizer {
 	pub unused_vars: Vec<String>,
 	// constants: HashMap<String, UniResult>,
 }
+
+wrapper_connect!(
+	UniResultError => OptimizerError,
+);
 
 type SpannedASTNode = Spanned<ASTNode>;
 type SpannedUniResult = Spanned<UniResult>;

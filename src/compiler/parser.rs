@@ -1,6 +1,7 @@
 mod formatter;
 
-use crate::{compiler::lexer::TokenKind, wmatch, wrapper::Spanned};
+use crate::{compiler::lexer::TokenKind};
+use crate::{wrapper::{Spanned, wmatch}};
 
 use std::{fmt::{self, Write}, mem};
 

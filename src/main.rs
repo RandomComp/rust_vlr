@@ -14,7 +14,6 @@ use std::{fmt, io::self, process};
 use rustyline::{DefaultEditor, error::ReadlineError::self};
 
 mod wrapper;
-mod uni_type;
 mod assembler;
 mod compiler;
 mod vm;

@@ -1,8 +1,6 @@
 use std::fmt;
 
-use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ASTNode;
-use crate::uni_type::UniResultError;
 
 type Span = usize;
 
@@ -79,7 +77,6 @@ macro_rules! res_with_pos {
 	};
 }
 
-#[macro_export]
 macro_rules! wmatch {
 	($val:pat) => {
 		Spanned { span: _, val: $val }
@@ -103,9 +100,8 @@ macro_rules! wrapper_connect {
     };
 }
 
-wrapper_connect!(
-	UniResultError => OptimizerError,
-);
+pub(crate) use wmatch;
+pub(crate) use wrapper_connect;
 
 impl Default for Spanned<ASTNode> {
 	fn default() -> Self {
