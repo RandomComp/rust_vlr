@@ -18,7 +18,8 @@ mod assembler;
 mod compiler;
 mod vm;
 
-use crate::assembler::defs::BytecodeError;
+use crate::assembler::defs::BytecodeError::{self, NativeFunctionID};
+use crate::assembler::native_func::NativeFunctionIDError;
 use crate::assembler::optimizer::AssemblerOptimizer;
 use crate::compiler::CompilerError;
 use crate::compiler::lexer::LexerError;
@@ -26,7 +27,7 @@ use crate::compiler::optimizer::OptimizerError;
 use crate::compiler::parser::ParserError;
 use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::assembler::{Bytecode};
-use crate::vm::{VM, VMError};
+use crate::vm::{RawVMError, VM, VMError};
 use crate::wrapper::Spanned;
 
 #[derive(argh::FromArgs, Debug)]
@@ -410,9 +411,9 @@ fn app(args: Args) -> Result<(), AppError> {
 			repl(),
 	};
 
-	// if let Err(AppError::VM(VMError {val: RawVMError::Exit(_), ..})) = &err {
-	// 	return err
-	// }
+	if let Err(AppError::VM(VMError {val: RawVMError::NativeFunction( NativeFunctionIDError::Exit(_) ), ..})) = &err {
+		return err
+	}
 
 	if let Err(e) = &err {
 		eprintln!("{e}");
@@ -426,11 +427,11 @@ fn main() -> ExitCode {
 
 	let res = app(args);
 
-	// if let Err(AppError::VM(VMError {val: RawVMError::(code), ..})) = &res {
-	// 	return ExitCode::from(
-	// 		(*code & 0xFF) as u8
-	// 	)
-	// }
+	if let Err(AppError::VM(VMError {val: RawVMError::NativeFunction( NativeFunctionIDError::Exit(code) ), ..})) = &res {
+		return ExitCode::from(
+			(*code & 0xFF) as u8
+		)
+	}
 
 	if res.is_err() {
 		return ExitCode::FAILURE

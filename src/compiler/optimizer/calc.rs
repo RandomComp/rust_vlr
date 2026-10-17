@@ -61,12 +61,13 @@ impl TryFrom<Spanned<UniResult>> for Spanned<ASTNode> {
 				ASTNode::Number(val),
 			UniResult::Float(val) =>
 				ASTNode::Float(val),
-			UniResult::Range { .. } => return Err(
-				Spanned::from_with_span(
-					UniResultError::CannotConvertFromUniResult(value.val),
-					span
-				)
-			),
+			UniResult::Range { .. } =>
+				return Err(
+					Spanned::from_with_span(
+						UniResultError::CannotConvertFromUniResult(value.val),
+						span
+					)
+				),
 		};
 
 		Ok(

@@ -54,8 +54,38 @@ impl Display for NativeFunctionArgsNumber {
 	}
 }
 
+macro_rules! from_args_type {
+	( dynamic: $args:expr ) => {
+		NativeFunctionArgsNumber::Dynamic
+	};
+	( fixed: $args:expr ) => {
+		NativeFunctionArgsNumber::Fixed($args)
+	};
+}
+
+macro_rules! trash {
+	( $($_:tt )*  ) => {
+		0
+	};
+}
+
+macro_rules! args_cnt {
+	( $($arg:ident ),* ) => {
+		0 $( + 1 + trash!($arg))*
+	};
+}
+
+macro_rules! if_is_dynamic_else {
+	( dynamic: $( $arg:expr )?, $block:block, $block_else:block ) => {
+		$block
+	};
+	( fixed: $arg:expr, $block:block, $block_else:block ) => {
+		$block_else
+	};
+}
+
 macro_rules! gen_native_functions {
-	( $( $text:expr => $name:ident($args_cnt:expr) = $id:expr ),* $(,)? ) => {
+	( $( $name:ident( $args_type:ident: $( $arg:ident ),*  ) = $id:literal as $text:literal => $implementation:block ),* $(,)? ) => {
 		#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 		pub enum NativeFunctionID {
 			$(
@@ -71,26 +101,11 @@ macro_rules! gen_native_functions {
 			pub fn args(self) -> NativeFunctionArgsNumber {
 				match self {
 					$(
-						Self::$name => $args_cnt,
+						Self::$name => from_args_type!(
+							$args_type: args_cnt!( $( $arg ),* )
+						),
 					)*
 				}
-			}
-
-			fn print(args: &[VMWord]) -> Result<VMWord, NativeFunctionIDError> {
-				for arg in args {
-					print!("{arg} ");
-				}
-
-				println!();
-
-				Ok(0)
-			}
-			fn exit(args: &[VMWord]) -> Result<VMWord, NativeFunctionIDError> {
-				if args.len() != 1 {
-					unreachable!("invalid native function exit call");
-				}
-
-				Err(NativeFunctionIDError::Exit(args[0].clone()))
 			}
 
 			pub fn call(self, mem: &mut Memory) -> Result<VMWord, NativeFunctionIDError> {
@@ -140,10 +155,30 @@ macro_rules! gen_native_functions {
 				args.reverse();
 
 				match self {
-					NativeFunctionID::Print =>
-						Ok(Self::print(&args)?),
-					NativeFunctionID::Exit =>
-						Self::exit(&args),
+					$(
+						NativeFunctionID::$name => {
+							if_is_dynamic_else!($args_type: args_cnt!( $( $arg ),* ),
+								{
+									$(
+										let $arg = &args;
+									)?
+
+									$implementation
+								},
+								{
+									let mut index = 0;
+
+									$(
+										let $arg = args[index];
+
+										index += 1;
+									)*
+
+									$implementation
+								}
+							)
+						},
+					)*
 				}
 			}
 		}
@@ -191,6 +226,16 @@ macro_rules! gen_native_functions {
 }
 
 gen_native_functions!(
-	"print" => Print(NativeFunctionArgsNumber::Dynamic) 	= 0,
-	"exit" => Exit(NativeFunctionArgsNumber::Fixed(1)) 		= 1,
+	Print(dynamic: args) = 0 as "print" => {
+		for arg in args {
+			print!("{arg} ");
+		}
+
+		println!();
+
+		Ok(0)
+	},
+	Exit(fixed: code) = 1 as "exit" => {
+		Err(NativeFunctionIDError::Exit(code))
+	},
 );
