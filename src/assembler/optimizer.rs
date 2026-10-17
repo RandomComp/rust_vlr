@@ -1,4 +1,4 @@
-use crate::assembler::{Bytecode, native_func::NativeFunctionArgsNumber};
+use crate::{assembler::Bytecode, compiler::native_func::NativeFunctionArgsNumber};
 
 #[derive(Debug)]
 pub struct AssemblerOptimizer<'a> {

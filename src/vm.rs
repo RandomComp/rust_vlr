@@ -1,9 +1,12 @@
 use std::fmt;
+use std::slice::SliceIndex;
 use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::assembler::{Bytecode, VMRegs, native_func::NativeFunctionIDError};
+use crate::assembler::defs::BytecodeError;
+use crate::assembler::{Bytecode, VMRegs};
+use crate::compiler::{native_func::NativeFunctionIDError};
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum RawVMError {
@@ -13,6 +16,8 @@ pub enum RawVMError {
 	Fmt(#[from] std::fmt::Error),
 	#[error("{0}")]
 	NativeFunction(#[from] NativeFunctionIDError),
+	#[error("{0}")]
+	Bytecode(#[from] BytecodeError),
 	#[error("Stack empty, but expected value")]
 	StackEmptyButExpectedValue,
 
@@ -38,11 +43,11 @@ impl fmt::Display for VMError {
 	}
 }
 
-type VMWord = u32;
+pub type VMWord = u32;
 
 #[derive(Debug)]
 pub struct Memory {
-	mem: Vec<VMWord>,
+	mem: Vec<u8>,
 	pub regs: VMRegs,
 
 	heap_upper: VMWord,
@@ -53,7 +58,7 @@ pub struct Memory {
 impl Memory {
 	pub fn new() -> Self {
 		let stack_size: VMWord = 128;
-		let heap_size: VMWord = 128;
+		let heap_size: VMWord = 1024;
 
 		let mut regs = VMRegs::default();
 
@@ -70,12 +75,44 @@ impl Memory {
 		}
 	}
 
+	pub fn place_to_heap(&mut self, values: &[u8]) -> Result<u32, RawVMError> {
+		let pos = self.heap_pos;
+
+		for &v in values {
+			*(self.get_mem_mut(self.heap_pos as usize)?) = v;
+
+			self.heap_pos += 1;
+		}
+
+		Ok(pos)
+	}
+
+	pub fn get_word(&self, index: usize) -> Result<VMWord, RawVMError> {
+		let result = self.mem_iter(index)
+						.take(4)
+						.collect::<Vec<u8>>();
+
+		let result = u32::from_le_bytes(
+			result[0..4].try_into().map_err(|_| RawVMError::InvalidMemoryAddress)?
+		);
+
+		Ok(result)
+	}
+
+	pub fn set_word(&mut self, index: usize, val: VMWord) -> Result<(), RawVMError> {
+		for (i, &byte) in val.to_le_bytes().iter().enumerate() {
+			let result = self.mem.get_mut(index + i).ok_or(RawVMError::InvalidMemoryAddress)?;
+
+			*result = byte;
+		}
+
+		Ok(())
+	}
+
 	pub fn push(&mut self, value: VMWord) -> Result<(), RawVMError> {
 		self.regs.sp = self.regs.sp.checked_sub(1).ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
-		let result = self.mem.get_mut(self.regs.sp as usize).ok_or(RawVMError::StackOverflow)?;
-
-		*result = value;
+		self.set_word(self.regs.sp as usize, value);
 
 		Ok(())
 	}
@@ -85,45 +122,47 @@ impl Memory {
 			return Err(RawVMError::StackEmptyButExpectedValue)
 		}
 
-		let result = self.mem.get(self.regs.sp as usize).ok_or(RawVMError::StackOverflow)?;
+		let result = self.get_word(self.regs.sp as usize)?;
 
 		self.regs.sp += 1;
 
-		Ok(*result)
+		Ok(result)
 	}
 
-	fn get_mem(&self, index: usize) -> Result<VMWord, RawVMError> {
+	pub fn get_mem<I>(&self, index: I) -> Result<u8, RawVMError>
+		where I: SliceIndex<[u8], Output = u8> {
 		self.mem.get(index)
 			.ok_or(RawVMError::StackOverflow)
 			.copied()
 	}
 
-	fn get_mem_mut(&mut self, index: usize) -> Result<&mut VMWord, RawVMError> {
+	fn get_mem_mut<I>(&mut self, index: I) -> Result<&mut u8, RawVMError>
+		where I: SliceIndex<[u8], Output = u8> {
 		self.mem.get_mut(index)
 			.ok_or(RawVMError::StackOverflow)
 	}
 
-	fn stack_get(&self, index: usize) -> Result<&VMWord, RawVMError> {
-		self.mem.get(self.regs.bp as usize + index)
-			.ok_or(RawVMError::StackOverflow)
+	fn mem_iter(&self, offset: usize) -> impl Iterator<Item = u8> {
+		self.mem.iter().skip(offset).copied()
 	}
 
-	fn stack_get_mut(&mut self, index: usize) -> Result<&mut VMWord, RawVMError> {
-		self.mem.get_mut(self.regs.bp as usize + index)
-			.ok_or(RawVMError::StackOverflow)
+	fn stack_get(&self, index: usize) -> Result<VMWord, RawVMError> {
+		self.get_word(self.regs.bp as usize + index)
 	}
 
-	fn stack_iter(&self) -> impl Iterator<Item = &VMWord> {
-		self.mem.iter()
+	fn stack_iter(&self) -> impl Iterator<Item = VMWord> {
+		self.mem.chunks(4)
 			.skip(self.regs.sp as usize)
 			.take((self.regs.bp - self.regs.sp) as usize)
+			.map(|v| u32::from_le_bytes(
+				v[0..4].try_into().unwrap()
+			))
 			.rev()
 	}
 }
 
 pub struct VM {
-	pub bytecode: Option<Vec<Bytecode>>,
-	mem: Memory,
+	pub mem: Memory,
 }
 
 impl VM {
@@ -131,9 +170,8 @@ impl VM {
 	//
 	// }
 
-	pub fn new(bytecode: Option<Vec<Bytecode>>) -> Self {
+	pub fn new() -> Self {
 		Self {
-			bytecode,
 			mem: Memory::new(),
 		}
 	}
@@ -157,11 +195,7 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, RawVMError> {
-		let Some(bytecode) = &self.bytecode else {
-			return Ok(false)
-		};
-
-		let Some(inst) = bytecode.get(self.mem.regs.pc as usize) else {
+		let Some(inst) = Bytecode::disasm_inst(self.mem.mem_iter(self.mem.regs.pc as usize))? else {
 			return Ok(false)
 		};
 
@@ -171,30 +205,28 @@ impl VM {
 			return Ok(false)
 		}
 
+		let pc = self.mem.regs.pc + 1;
+		self.mem.regs.pc = pc;
+
 		inst.exec(&mut self.mem)?;
 
 		Ok(true)
 	}
 
 	pub fn exec(&mut self) -> Result<VMWord, VMError> {
-		self.mem.regs.pc = 0;
-
 		self.dump_regs();
 
 		loop {
 			let is_not_hlt = match self.exec_inst() {
 				Ok(value) => value,
 				Err(e) => {
-					let Some(bytecode) = &self.bytecode else {
-						return Err(
-							VMError {
-								val: e,
-								inst: None
-							}
-						)
-					};
+					let inst = Bytecode::disasm_inst(self.mem.mem_iter(self.mem.regs.pc as usize)).map_err(|e|
+					VMError {
+						val: e.into(),
+						inst: None
+					})?;
 
-					let Some(inst) = bytecode.get(self.mem.regs.pc as usize) else {
+					let Some(inst) = inst else {
 						return Err(
 							VMError {
 								val: e,
@@ -206,7 +238,7 @@ impl VM {
 					return Err(
 						VMError {
 							val: e,
-							inst: Some(inst.clone())
+							inst: Some(inst)
 						}
 					)
 				}
@@ -223,7 +255,7 @@ impl VM {
 		}
 
 		Ok(
-			self.mem.get_mem(
+			self.mem.get_word(
 				self.mem.regs.acc as usize
 			).unwrap()
 		)

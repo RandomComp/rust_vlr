@@ -1,6 +1,5 @@
-use crate::{assembler::{defs::BytecodeError, native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
+use crate::{{assembler::defs::BytecodeError}, {compiler::native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
 
-pub mod native_func;
 pub mod defs;
 pub mod optimizer;
 
@@ -17,10 +16,15 @@ fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; 
 }
 
 gen_regs_code!(
+	/// Accumulator register (use it for first operand and save it to)
 	0 | Accum 			=> acc,
+	/// Base register (use it for second operand)
 	1 | Base 			=> base,
+	/// Base stack pointer, points to stack frame begin
 	2 | BasePointer 	=> bp,
+	/// Stack pointer, points to current stack element
 	3 | StackPointer 	=> sp,
+	/// Program counter, points to current instruction
 	4 | ProgramCounter 	=> pc,
 );
 
@@ -379,7 +383,7 @@ gen_insts_impl!(
 		exec(mem) => {
 			let right = mem.regs.base;
 
-			mem.regs.acc = (mem.regs.acc != 0 && right != 0).into();
+			mem.regs.acc = (mem.regs.acc != 0 || right != 0).into();
 		},
 		display(f) => {
 			write!(f, "lor")
@@ -392,7 +396,7 @@ gen_insts_impl!(
 			Self::Neg
 		},
 		exec(mem) => {
-			mem.regs.acc = (mem.regs.acc | (1 << 31)) + 1;
+			mem.regs.acc = mem.regs.acc.strict_neg();
 		},
 		display(f) => {
 			write!(f, "neg")

@@ -1,6 +1,8 @@
-print(2 + 3 * 4);
+result = 2 + 3 * 4;
 
-exit(1);
+print(result);
+
+exit(result);
 
 
 

@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use super::native_func::{NativeFunctionIDError};
+use crate::compiler::native_func::{NativeFunctionIDError};
 
 #[derive(thiserror::Error, Clone, Debug)]
 pub enum BytecodeError {
@@ -24,26 +24,32 @@ pub enum BytecodeError {
 
 #[macro_export]
 macro_rules! gen_regs_code {
-    (
-    	$( $byte:literal | $enum_name:ident => $name:ident ),+ $(,)?
-    ) => {
-    	type VMWord = u32;
+	(
+		$(
+			$( #[$doc:meta] )*
+			$byte:literal | $enum_name:ident => $name:ident
+		),+
+		$(,)?
+	) => {
+		use $crate::vm::VMWord;
 
-    	#[derive(PartialEq, Copy, Clone, Debug)]
-	    pub enum BytecodeRegister {
+		#[derive(PartialEq, Copy, Clone, Debug)]
+		pub enum BytecodeRegister {
 			$(
+				$( #[$doc] )*
 				$enum_name,
 			)+
-	    }
+		}
 
-	    #[derive(Default, Debug)]
-	    pub struct VMRegs {
+		#[derive(Default, Debug)]
+		pub struct VMRegs {
 			$(
+				$( #[$doc] )*
 				pub $name: VMWord,
 			)+
 		}
 
-	    impl std::ops::Index<BytecodeRegister> for VMRegs {
+		impl std::ops::Index<BytecodeRegister> for VMRegs {
 			type Output = VMWord;
 
 			fn index(&self, index: BytecodeRegister) -> &Self::Output {
@@ -53,9 +59,9 @@ macro_rules! gen_regs_code {
 					)+
 				}
 			}
-	    }
+		}
 
-	    impl std::ops::IndexMut<BytecodeRegister> for VMRegs {
+		impl std::ops::IndexMut<BytecodeRegister> for VMRegs {
 			fn index_mut(&mut self, index: BytecodeRegister) -> &mut Self::Output {
 				match index {
 					$(
@@ -63,9 +69,9 @@ macro_rules! gen_regs_code {
 					)+
 				}
 			}
-	    }
+		}
 
-	    impl fmt::Display for VMRegs {
+		impl fmt::Display for VMRegs {
 			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 				$(
 					write!(f, "{} = {}; ", BytecodeRegister::$enum_name, self.$name)?;
@@ -73,7 +79,7 @@ macro_rules! gen_regs_code {
 
 				Ok(())
 			}
-	    }
+		}
 
 		impl fmt::Display for BytecodeRegister {
 			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -85,13 +91,13 @@ macro_rules! gen_regs_code {
 			}
 		}
 
-	    impl BytecodeRegister {
+		impl BytecodeRegister {
 			pub fn to_le_bytes(self) -> [u8; 1] {
 				(self as u8).to_le_bytes()
 			}
-	    }
+		}
 
-	    impl TryFrom<BytecodeRegister> for u8 {
+		impl TryFrom<BytecodeRegister> for u8 {
 			type Error = BytecodeError;
 
 			fn try_from(value: BytecodeRegister) -> Result<Self, Self::Error> {
@@ -101,9 +107,9 @@ macro_rules! gen_regs_code {
 					)+
 				}
 			}
-	    }
+		}
 
-	    impl TryFrom<u8> for BytecodeRegister {
+		impl TryFrom<u8> for BytecodeRegister {
 			type Error = BytecodeError;
 
 			fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -114,8 +120,8 @@ macro_rules! gen_regs_code {
 					_ => Err(BytecodeError::InvalidRegisterByte(value))
 				}
 			}
-	    }
-    };
+		}
+	};
 }
 
 #[macro_export]
@@ -164,14 +170,9 @@ macro_rules! gen_insts_impl {
 
 				match self {
 					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? =>
-							result.push($main_opcode),
-					)*
-				}
-
-				match self {
-					$(
 						Self::$inst $( ( $( $asm_arg, )* ) )? => {
+							result.push($main_opcode);
+
 							let mut $result = result;
 
 							$inst_asm;
@@ -225,16 +226,12 @@ macro_rules! gen_insts_impl {
 			}
 
 			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
-				let pc = mem.regs.pc + 1;
-
 				match self {
 					$(
 						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
 							let mut $mem = mem;
 
 							$inst_exec;
-
-							$mem.regs.pc = pc;
 
 							Ok(())
 

@@ -18,16 +18,18 @@ mod assembler;
 mod compiler;
 mod vm;
 
-use crate::assembler::defs::BytecodeError::{self, NativeFunctionID};
-use crate::assembler::native_func::NativeFunctionIDError;
-use crate::assembler::optimizer::AssemblerOptimizer;
-use crate::compiler::CompilerError;
-use crate::compiler::lexer::LexerError;
-use crate::compiler::optimizer::OptimizerError;
-use crate::compiler::parser::ParserError;
-use crate::compiler::{Compiler, lexer::Lexer, parser::Parser, optimizer::Optimizer};
 use crate::assembler::{Bytecode};
+use crate::assembler::optimizer::AssemblerOptimizer;
+use crate::assembler::defs::BytecodeError;
+
+use crate::compiler::{Compiler, CompilerError, optimizer::Optimizer};
+use crate::compiler::lexer::{Lexer, LexerError};
+use crate::compiler::parser::{Parser, ParserError};
+use crate::compiler::native_func::NativeFunctionIDError;
+use crate::compiler::optimizer::OptimizerError;
+
 use crate::vm::{RawVMError, VM, VMError};
+
 use crate::wrapper::Spanned;
 
 #[derive(argh::FromArgs, Debug)]
@@ -49,6 +51,7 @@ enum AppError {
 	Compiler(#[from] CompilerError),
 	Bytecode(#[from] BytecodeError),
 	VM(VMError),
+	RawVM(#[from] RawVMError),
 	IO(#[from] io::Error),
 	Fmt(#[from] fmt::Error),
 	Readline(#[from] ReadlineError),
@@ -95,6 +98,9 @@ impl Display for AppError {
 			Self::VM(e) => {
 				write!(f, "VM error: {e}")
 			}
+			Self::RawVM(e) => {
+				write!(f, "VM error: {e}")
+			}
 			Self::IO(e) => {
 				write!(f, "IO error: {e}")
 			}
@@ -123,7 +129,7 @@ fn format(spans: Option<&[(usize, usize)]>, e: &AppError, f: &mut String) -> fmt
 fn repl() -> Result<(), AppError> {
 	let mut rl = DefaultEditor::new()?;
 
-	let mut vm = VM::new(None);
+	let mut vm = VM::new();
 
 	loop {
 		// println!("Tokenizing expr '{}'", code);
@@ -170,15 +176,17 @@ fn repl() -> Result<(), AppError> {
 
 		let mut compiler = Compiler::new();
 
-		let mut result = Vec::new();
-
-		if let Err(e) = compiler.compile_loop(&ast, &mut result) {
+		if let Err(e) = compiler.compile_loop(&ast) {
 			eprintln!("Compiler error: {e}");
 
 			continue;
 		}
 
-		vm.bytecode = Some(result);
+		let bytes = compiler.build()?;
+
+		let pc = vm.mem.place_to_heap(&bytes)?;
+
+		vm.mem.regs.pc = pc;
 
 		let result = vm.exec();
 
@@ -201,11 +209,21 @@ fn run_file(file: &str) -> Result<(), AppError> {
 		start_index = shabang_pos + 1;
 	}
 
-	let instructions = Bytecode::disasm(bytes.iter().skip(start_index).copied())?;
+	let instructions: Vec<u8> = bytes.iter().skip(start_index).copied().collect();
 
-	let mut interpreter = VM::new(Some(instructions));
+	let mut vm = VM::new();
 
-	let result = interpreter.exec()?;
+	let pc = vm.mem.place_to_heap(&instructions)?;
+
+	vm.mem.regs.pc = pc;
+
+	let word = vm.mem.get_word(pc as usize)?;
+
+	for byte in word.to_le_bytes() {
+		println!("{byte:02X}");
+	}
+
+	let result = vm.exec()?;
 
 	println!("result = {result}");
 
@@ -292,54 +310,31 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 	println!("ast = {ast}");
 	println!("ast = {ast_str}");
 
-	let mut optimizer = Optimizer::new();
-
-	if let Err(e) = optimizer.fold(&mut ast) {
-		return Err((e.into(), spans))
-	}
-
-	ast_str.clear();
-
-	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
-		return Err((e.into(), spans))
-	}
-
-	println!("ast after optimizer = {ast_str}");
-
-	for var in optimizer.unused_vars {
-		println!("'{var}' unused");
-	}
+// 	let mut optimizer = Optimizer::new();
+//
+// 	if let Err(e) = optimizer.fold(&mut ast) {
+// 		return Err((e.into(), spans))
+// 	}
+//
+// 	ast_str.clear();
+//
+// 	if let Err(e) = ast.format_human_readable(&mut ast_str, false, 0) {
+// 		return Err((e.into(), spans))
+// 	}
+//
+// 	println!("ast after optimizer = {ast_str}");
+//
+// 	for var in optimizer.unused_vars {
+// 		println!("'{var}' unused");
+// 	}
 
 	let mut compiler = Compiler::new();
 
-	let mut bytes = Vec::new();
-
-	if let Err(e) = compiler.compile_loop(&ast, &mut bytes) {
+	if let Err(e) = compiler.compile_loop(&ast) {
 		return Err((e.into(), spans))
 	}
 
-	println!("Bytecode before optimizer:");
-
-	for (i, byte) in bytes.iter().enumerate() {
-		println!("{i:02}: {byte}");
-	}
-
-	let mut asm_optimizer = AssemblerOptimizer::new(&bytes);
-
-	let optimized = asm_optimizer.optimize();
-
-	println!("Bytecode after optimizer:");
-
-	for (i, byte) in optimized.iter().enumerate() {
-		println!("{i:02}: {byte}");
-	}
-
-	let bytes = match Bytecode::asm(optimized) {
-		Ok(res) => res,
-		Err(e) => {
-			return Err((e.into(), spans))
-		}
-	};
+	let bytes = compiler.build().map_err(|e| (e.into(), spans))?;
 
 	for byte in &bytes {
 		print!("{byte:02X} ");

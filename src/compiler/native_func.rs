@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, fmt::Display};
 
-use crate::{assembler::VMWord, vm::Memory};
+use crate::vm::{Memory, VMWord};
 
 #[derive(thiserror::Error, Clone, Debug)]
 pub enum NativeFunctionIDError {

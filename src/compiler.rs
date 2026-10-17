@@ -1,8 +1,9 @@
 pub mod lexer;
 pub mod parser;
 pub mod optimizer;
+pub mod native_func;
 
-use crate::{assembler::BytecodeRegister, assembler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}};
+use crate::{assembler::{BytecodeRegister, defs::BytecodeError, optimizer::AssemblerOptimizer}, compiler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}};
 use crate::wrapper::{wmatch, Spanned};
 
 use std::{collections::HashMap};
@@ -68,36 +69,46 @@ pub struct Compiler {
 	stack: u32,
 	break_pos: Vec<Option<u32>>,
 	global_functions: HashMap<String, u32>,
+
+	result: Vec<Bytecode>,
+	back: Vec<u8>,
 }
 
 impl Compiler {
 	pub fn new() -> Self {
-		Self {stack: 0, break_pos: Vec::new(), global_functions: HashMap::new()}
+		Self {
+			stack: 0,
+			break_pos: Vec::new(),
+			global_functions: HashMap::new(),
+
+			result: Vec::new(),
+			back: Vec::new(),
+		}
 	}
 
-	fn pc(result: &[Bytecode]) -> u32 {
-		result.len() as u32
+	fn pc(&self) -> u32 {
+		self.result.len() as u32
 	}
 
-	fn look(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::Look(stack_pos));
+	fn look(&mut self, stack_pos: u32) {
+		self.result.push(Bytecode::Look(stack_pos));
 
 		self.stack += 1;
 	}
 
-	fn load(&mut self, stack_pos: u32, result: &mut Vec<Bytecode>) {
-		result.push(Bytecode::Load(stack_pos));
+	fn load(&mut self, stack_pos: u32) {
+		self.result.push(Bytecode::Load(stack_pos));
 
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: &Spanned<&str>, args: T, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
+	fn call_func<'a, T>(&mut self, name: &Spanned<&str>, args: T, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
 	where T: Iterator<Item=&'a Spanned<ASTNode>> {
 		if let Ok(id) = NativeFunctionID::try_from(name.val) {
 			let mut len = 0;
 
 			for arg in args {
-				self.compile(arg, result, context)?;
+				self.compile(arg, context)?;
 
 				len += 1;
 			}
@@ -119,28 +130,28 @@ impl Compiler {
 				}
 
 				NativeFunctionArgsNumber::Dynamic =>
-					result.push(Bytecode::PushNumber(len)),
+					self.result.push(Bytecode::PushNumber(len)),
 			}
 
-			result.push(Bytecode::NativeCall(id));
+			self.result.push(Bytecode::NativeCall(id));
 			self.stack -= len;
 			self.stack += 1;
 
 			return Ok(())
 		} else if let Some(&pos) = self.global_functions.get(name.val) {
 			for arg in args {
-				self.compile(arg, result, context)?;
+				self.compile(arg, context)?;
 			}
 
-			result.push(Bytecode::Call(pos));
+			self.result.push(Bytecode::Call(pos));
 
 			return Ok(())
 		} else if let Some(pos) = context.get_function(name.val) {
 			for arg in args {
-				self.compile(arg, result, context)?;
+				self.compile(arg, context)?;
 			}
 
-			result.push(Bytecode::Call(pos));
+			self.result.push(Bytecode::Call(pos));
 
 			return Ok(())
 		}
@@ -153,7 +164,7 @@ impl Compiler {
 		)
 	}
 
-	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: Bytecode, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: Bytecode, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
 		let ASTNode::Variable(name) = &left.val else {
 			return Err(
 				Spanned::from_with_span(
@@ -172,19 +183,51 @@ impl Compiler {
 			);
 		};
 
-		self.look(stack_pos, result);
-		self.compile(right, result, context)?;
+		self.look(stack_pos);
+		self.compile(right, context)?;
 
 		self.stack -= 1;
 
-		result.push(op);
+		self.result.push(op);
 
-		self.load(stack_pos, result);
+		self.load(stack_pos);
 
 		Ok(())
 	}
 
-	fn compile(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+	pub fn build(self) -> Result<Vec<u8>, BytecodeError> {
+		println!("Bytecode before optimizer:");
+
+		for (i, byte) in self.result.iter().enumerate() {
+			println!("{i:02}: {byte}");
+		}
+
+		let mut asm_optimizer = AssemblerOptimizer::new(&self.result);
+
+		let optimized = asm_optimizer.optimize();
+
+		println!("Bytecode after optimizer:");
+
+		for (i, byte) in optimized.iter().enumerate() {
+			println!("{i:02}: {byte}");
+		}
+
+		let bytes = match Bytecode::asm(optimized) {
+			Ok(res) => res,
+			Err(e) => {
+				return Err(e)
+			}
+		};
+
+		let mut result = Vec::new();
+
+		result.extend(bytes);
+		result.extend(self.back);
+
+		Ok(result)
+	}
+
+	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
 		println!("context = {context:?}");
 
 		println!("stack_pos = {}; ast = {ast}", self.stack);
@@ -193,21 +236,21 @@ impl Compiler {
 
 		match &ast.val {
 			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
-				let jmp = Self::pc(result);
-				result.push(Bytecode::Jmp(0));
+				let jmp = self.pc();
+				self.result.push(Bytecode::Jmp(0));
 
 				if *is_global {
-					self.global_functions.insert(name.val.clone(), Self::pc(result));
+					self.global_functions.insert(name.val.clone(), self.pc());
 				} else {
-					context.insert_function(name.val.clone(), Self::pc(result));
+					context.insert_function(name.val.clone(), self.pc());
 				}
 
-				result.push(
+				self.result.push(
 					Bytecode::PushReg(
 						BytecodeRegister::BasePointer
 					)
 				);
-				result.push(
+				self.result.push(
 					Bytecode::MovRegToReg(
 						BytecodeRegister::BasePointer,
 						BytecodeRegister::StackPointer,
@@ -222,25 +265,27 @@ impl Compiler {
 					body_context.insert_var(&arg.val, i as u32);
 				}
 
-				self.compile(body, result, &mut body_context)?;
+				self.compile(body, &mut body_context)?;
 
-				result.push(
+				self.result.push(
 					Bytecode::PopReg(
 						BytecodeRegister::BasePointer
 					)
 				);
 
-				result.push(Bytecode::Ret);
+				self.result.push(Bytecode::Ret);
 
-				*result.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
+				*self.result.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 			},
 			ASTNode::Return(value) => {
-				self.compile(value, result, context)?;
+				self.compile(value, context)?;
 
-				result.push(Bytecode::Ret);
+				self.result.push(Bytecode::Ret);
 			},
 			ASTNode::Break(value) => {
-				self.compile(value, result, context)?;
+				self.compile(value, context)?;
+
+				let pc = self.pc();
 
 				let Some(pos) = self.break_pos.last_mut() else {
 					return Err(
@@ -248,21 +293,21 @@ impl Compiler {
 					)
 				};
 
-				*pos = Some(Self::pc(result));
+				*pos = Some(pc);
 
-				result.push(Bytecode::Jmp(0));
+				self.result.push(Bytecode::Jmp(0));
 			},
 			ASTNode::FunctionDefinition {..} => todo!("{}", ast.val),
 			ASTNode::None => return Ok(()),
 			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushNumber(x.into()));
+				self.result.push(Bytecode::PushNumber(x.into()));
 			},
 			&ASTNode::Number(x) => {
 				self.stack += 1;
 
-				result.push(Bytecode::PushNumber(x.cast_unsigned()));
+				self.result.push(Bytecode::PushNumber(x.cast_unsigned()));
 			},
 			&ASTNode::Float(x) => {
 				self.stack += 1;
@@ -281,13 +326,13 @@ impl Compiler {
 			ASTNode::List(values) => if !values.is_empty() {
 				self.call_func(
 					&Spanned::from_with_span("list", span),
-					values.iter(), result, context
+					values.iter(), context
 				)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Range), right } => {
 				self.call_func(
 					&Spanned::from_with_span("range", left.span),
-					[&**left, &**right].into_iter(), result, context
+					[&**left, &**right].into_iter(), context
 				)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Assignment), right } => {
@@ -301,31 +346,31 @@ impl Compiler {
 				};
 
 				if let Some(stack_pos) = context.get_var(name) {
-					self.compile(right, result, context)?;
+					self.compile(right, context)?;
 
-					self.load(stack_pos, result);
+					self.load(stack_pos);
 				} else {
 					let stack_pos = self.stack;
 
-					self.compile(right, result, context)?;
+					self.compile(right, context)?;
 
 					context.insert_var(name.to_owned(), stack_pos);
 				}
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::PlusAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Add, result, context)?;
+				self.compile_assignment(left, right, Bytecode::Add, context)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::MinusAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Sub, result, context)?;
+				self.compile_assignment(left, right, Bytecode::Sub, context)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::MultiplyAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Mul, result, context)?;
+				self.compile_assignment(left, right, Bytecode::Mul, context)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::PowAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Pow, result, context)?;
+				self.compile_assignment(left, right, Bytecode::Pow, context)?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::DivideAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Div, result, context)?;
+				self.compile_assignment(left, right, Bytecode::Div, context)?;
 			},
 			ASTNode::Variable(name) => {
 				let Some(stack_pos) = context.get_var(name) else {
@@ -337,141 +382,145 @@ impl Compiler {
 					);
 				};
 
-				self.look(stack_pos, result);
+				self.look(stack_pos);
 			},
 			ASTNode::Unary { op, value } => {
-				self.compile(value, result, context)?;
+				self.compile(value, context)?;
+
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result.push(Bytecode::from_unary_op(op));
 
-				result.push(Bytecode::from_unary_op(op));
+				self.result.push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.stack += 1;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::LessOrEquals), right } => {
-				self.compile(right, result, context)?;
+				self.compile(left, context)?;
+				self.compile(right, context)?;
+
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.stack -= 1;
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.compile(left, result, context)?;
+				self.result.push(Bytecode::from_binary_op(&BinaryOp::Less));
+				self.result.push(Bytecode::from_unary_op(&UnaryOp::Not));
 
-				self.stack -= 2;
-
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
-
-				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
-				result.push(Bytecode::from_unary_op(&UnaryOp::Not));
+				self.result.push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.stack += 1;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Great), right } => {
-				self.compile(right, result, context)?;
+				self.compile(right, context)?;
+				self.compile(left, context)?;
+
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.stack -= 1;
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.compile(left, result, context)?;
+				self.result.push(Bytecode::from_binary_op(&BinaryOp::Less));
 
-				self.stack -= 1;
-
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
-
-				result.push(Bytecode::from_binary_op(&BinaryOp::Less));
+				self.result.push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.stack += 1;
 			},
 			ASTNode::Binary { left, op, right } => {
-				self.compile(left, result, context)?;
+				self.compile(left, context)?;
+				self.compile(right, context)?;
+
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.stack -= 1;
+				self.result.push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.compile(right, result, context)?;
+				self.result.push(Bytecode::from_binary_op(op));
 
-				println!("self.stack = {}", self.stack);
-
-				result.push(Bytecode::PopReg(BytecodeRegister::Base));
-				result.push(Bytecode::PopReg(BytecodeRegister::Accum));
-
-				result.push(Bytecode::from_binary_op(&op.val));
-
-				result.push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result.push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.stack += 1;
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(
 					&Spanned::from_with_span(name, span),
-					args.iter(), result, context
+					args.iter(), context
 				)?;
 			},
 			ASTNode::While { condition, body, else_body: Some(else_body) } => {
-				let cond = Self::pc(result);
+				let cond = self.pc();
 
-				self.compile(condition, result, context)?;
+				self.compile(condition, context)?;
 
-				let jif = Self::pc(result);
-				result.push(Bytecode::Jif(0));
+				let jif = self.pc();
+				self.result.push(Bytecode::Jif(0));
 
 				self.break_pos.push(None);
 
-				self.compile(body, result, context)?;
+				self.compile(body, context)?;
 
-				result.push(Bytecode::Jmp(cond));
+				self.result.push(Bytecode::Jmp(cond));
 
-				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
+				*self.result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
-				self.compile(else_body, result, context)?;
+				self.compile(else_body, context)?;
 
 				if let Some(break_pos) = self.break_pos.pop().expect("Unexpected pop from self.break_pos") {
-					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
+					*self.result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 				}
 			},
 			ASTNode::While { condition, body, else_body: None } => {
-				let cond = Self::pc(result);
+				let cond = self.pc();
 
-				self.compile(condition, result, context)?;
+				self.compile(condition, context)?;
 
-				let jif = Self::pc(result);
-				result.push(Bytecode::Jif(0));
+				let jif = self.pc();
+				self.result.push(Bytecode::Jif(0));
 				self.stack -= 1;
 
 				self.break_pos.push(None);
 
-				self.compile(body, result, context)?;
+				self.compile(body, context)?;
 
-				result.push(Bytecode::Jmp(cond));
+				self.result.push(Bytecode::Jmp(cond));
 
-				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
+				*self.result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
 				if let Some(break_pos) = self.break_pos.pop().expect("Unexpected pop from self.break_pos") {
-					*result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(Self::pc(result));
+					*self.result.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 				}
 			},
 			ASTNode::If { condition, body, else_body: Some(else_body) } => {
-				self.compile(condition, result, context)?;
+				self.compile(condition, context)?;
 
 				self.stack -= 1;
-				let jif = Self::pc(result);
-				result.push(Bytecode::Jif(0));
+				let jif = self.pc();
+				self.result.push(Bytecode::Jif(0));
 
-				self.compile(body, result, context)?;
-				let jmp = Self::pc(result);
-				result.push(Bytecode::Jmp(0));
+				self.compile(body, context)?;
+				let jmp = self.pc();
+				self.result.push(Bytecode::Jmp(0));
 
-				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
+				*self.result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
-				self.compile(else_body, result, context)?;
+				self.compile(else_body, context)?;
 
-				*result.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(Self::pc(result));
+				*self.result.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(self.pc());
 			},
 			ASTNode::If { condition, body, else_body: None } => {
-				self.compile(condition, result, context)?;
+				self.compile(condition, context)?;
 
 				self.stack -= 1;
-				let jif = Self::pc(result);
+				let jif = self.pc();
 
-				result.push(Bytecode::Jif(0));
+				self.result.push(Bytecode::Jif(0));
 
-				self.compile(body, result, context)?;
+				self.compile(body, context)?;
 
-				*result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(Self::pc(result));
+				*self.result.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 			},
 			ASTNode::Block(statements) => {
 				let mut local_context = CompilerContext::new(Some(context));
 
 				for statement in statements {
-					self.compile(statement, result, &mut local_context)?;
+					self.compile(statement, &mut local_context)?;
 				}
 			},
 		}
@@ -479,10 +528,10 @@ impl Compiler {
 		Ok(())
 	}
 
-	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>, result: &mut Vec<Bytecode>) -> Result<(), Spanned<CompilerError>> {
+	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>) -> Result<(), Spanned<CompilerError>> {
 		let mut context = CompilerContext::new(None);
 
-		self.compile(ast, result, &mut context)?;
+		self.compile(ast, &mut context)?;
 
 		// self.call_func(
 		// 	&Spanned::from_with_span("main", 0),
