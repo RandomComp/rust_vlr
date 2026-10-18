@@ -125,11 +125,95 @@ macro_rules! gen_regs_code {
 }
 
 #[macro_export]
+macro_rules! gen_from_bin_ops_match_body {
+	( $matching_op:ident $inst:ident, bin $op:ident ) => {
+		Bytecode::$inst
+	};
+	( $matching_op:ident $inst:ident, un $op:ident ) => {
+		unreachable!()
+	};
+}
+
+#[macro_export]
+macro_rules! gen_from_bin_ops_guard_pattern {
+	( bin ) => {
+		true
+	};
+	( un ) => {
+		false
+	};
+}
+
+#[macro_export]
+macro_rules! gen_from_bin_ops {
+	( bin $op:ident ) => {
+		BinaryOp::$op
+	};
+	( un $op:ident ) => {
+		_
+	};
+	( $matching_op:ident, $( $inst:ident, $op_type:ident $op:ident ),+ $(,)? ) => {
+		match $matching_op {
+			$(
+				gen_from_bin_ops!( $op_type $op ) if gen_from_bin_ops_guard_pattern!( $op_type ) =>
+					gen_from_bin_ops_match_body!( $matching_op $inst, $op_type $op ),
+			)+
+			_ => {
+				todo!("'{}' not handled in from_binary_op or unreachable", $matching_op)
+			}
+		}
+	};
+}
+
+
+
+#[macro_export]
+macro_rules! gen_from_un_ops_match_body {
+	( $matching_op:ident $inst:ident, bin $op:ident ) => {
+		Bytecode::$inst
+	};
+	( $matching_op:ident $inst:ident, un $op:ident ) => {
+		unreachable!()
+	};
+}
+
+#[macro_export]
+macro_rules! gen_from_un_ops_guard_pattern {
+	( bin ) => {
+		false
+	};
+	( un ) => {
+		true
+	};
+}
+
+#[macro_export]
+macro_rules! gen_from_un_ops {
+	( bin $op:ident ) => {
+		_
+	};
+	( un $op:ident ) => {
+		UnaryOp::$op
+	};
+	( $matching_op:ident, $( $inst:ident, $op_type:ident $op:ident ),+ $(,)? ) => {
+		match $matching_op {
+			$(
+				gen_from_un_ops!( $op_type $op ) if gen_from_un_ops_guard_pattern!( $op_type ) =>
+					gen_from_un_ops_match_body!( $matching_op $inst, $op_type $op ),
+			)+
+			_ => {
+				todo!("'{}' not handled in from_unary_op or unreachable", $matching_op)
+			}
+		}
+	};
+}
+
+#[macro_export]
 macro_rules! gen_insts_impl {
 	(
 		$(
-			$( ( bin $binary_op:ident ) )? $( ( un $unary_op:ident ) )?
-			$inst:ident $( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
+			$( ( $op_type:ident $op:ident ) )? $inst:ident
+			$( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{
 				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
@@ -173,6 +257,7 @@ macro_rules! gen_insts_impl {
 						Self::$inst $( ( $( $asm_arg, )* ) )? => {
 							result.push($main_opcode);
 
+							#[allow(unused_mut)]
 							let mut $result = result;
 
 							$inst_asm;
@@ -204,6 +289,8 @@ macro_rules! gen_insts_impl {
 				let result = match opcode {
 					$(
 						$main_opcode $( | $( $opcode )|* )? => {
+							#[allow(unused_variables)]
+							#[allow(unused_mut)]
 							let mut $bytes = bytes;
 
 							$inst_disasm
@@ -215,7 +302,8 @@ macro_rules! gen_insts_impl {
 				Ok(Some(result))
 			}
 
-			pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> {
+			#[allow(dead_code)]
+			pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> + fmt::Debug {
 				let mut result = Vec::new();
 
 				while let Some(val) = Self::disasm_inst(&mut bytes)? {
@@ -228,11 +316,14 @@ macro_rules! gen_insts_impl {
 			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
 				match self {
 					$(
+						#[allow(unused_variables)]
 						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
+							#[allow(unused_mut)]
 							let mut $mem = mem;
 
 							$inst_exec;
 
+							#[allow(unreachable_code)]
 							Ok(())
 
 							// result
@@ -242,24 +333,15 @@ macro_rules! gen_insts_impl {
 			}
 
 			pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
-				match op {
-					$(
-						$(
-							UnaryOp::$unary_op => Self::$inst,
-						)?
-					)*
-				}
+				gen_from_un_ops!(op,
+					$( $( $inst, $op_type $op , )? )*
+				)
 			}
 
 			pub fn from_binary_op(op: &BinaryOp) -> Bytecode {
-				match op {
-					$(
-						$(
-							BinaryOp::$binary_op => Self::$inst,
-						)?
-					)*
-					_ => unreachable!("'{op}' not handled in from_binary_op"),
-				}
+				gen_from_bin_ops!(op,
+					$( $( $inst, $op_type $op , )? )*
+				)
 			}
 		}
 	};

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::fmt::Display;
 
 use crate::vm::{Memory, VMWord};
 
@@ -20,27 +20,6 @@ pub enum NativeFunctionIDError {
 pub enum NativeFunctionArgsNumber {
 	Fixed(u32),
 	Dynamic,
-}
-
-impl PartialEq<u32> for NativeFunctionArgsNumber {
-	fn eq(&self, other: &u32) -> bool {
-		match self {
-			NativeFunctionArgsNumber::Fixed(fixed) =>
-				fixed == other,
-			NativeFunctionArgsNumber::Dynamic => false,
-		}
-	}
-}
-
-impl PartialOrd<u32> for NativeFunctionArgsNumber {
-	fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
-		match self {
-			NativeFunctionArgsNumber::Fixed(fixed) => {
-				Some(fixed.cmp(other))
-			},
-			NativeFunctionArgsNumber::Dynamic => Some(Ordering::Greater),
-		}
-	}
 }
 
 impl Display for NativeFunctionArgsNumber {
@@ -75,12 +54,26 @@ macro_rules! args_cnt {
 	};
 }
 
-macro_rules! if_is_dynamic_else {
-	( dynamic: $( $arg:expr )?, $block:block, $block_else:block ) => {
-		$block
+macro_rules! call_implementation {
+	( $implementation: block, $args:ident, dynamic: $arg:ident ) => {
+		{
+			let $arg = &$args;
+
+			#[warn(unused_assignments)]
+			$implementation
+		}
 	};
-	( fixed: $arg:expr, $block:block, $block_else:block ) => {
-		$block_else
+	( $implementation: block, $args:ident, fixed: $arg:ident ) => {
+		{
+			let mut index = 0;
+
+			let $arg = $args[index];
+
+			index += 1;
+
+			#[warn(unused_assignments)]
+			$implementation
+		}
 	};
 }
 
@@ -156,28 +149,9 @@ macro_rules! gen_native_functions {
 
 				match self {
 					$(
-						NativeFunctionID::$name => {
-							if_is_dynamic_else!($args_type: args_cnt!( $( $arg ),* ),
-								{
-									$(
-										let $arg = &args;
-									)?
-
-									$implementation
-								},
-								{
-									let mut index = 0;
-
-									$(
-										let $arg = args[index];
-
-										index += 1;
-									)*
-
-									$implementation
-								}
-							)
-						},
+						#[allow(unused_assignments)]
+						NativeFunctionID::$name =>
+							call_implementation!($implementation, args, $args_type: $( $arg ),* ),
 					)*
 				}
 			}

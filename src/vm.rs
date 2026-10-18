@@ -112,7 +112,7 @@ impl Memory {
 	pub fn push(&mut self, value: VMWord) -> Result<(), RawVMError> {
 		self.regs.sp = self.regs.sp.checked_sub(1).ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
-		self.set_word(self.regs.sp as usize, value);
+		self.set_word(self.regs.sp as usize, value)?;
 
 		Ok(())
 	}

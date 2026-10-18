@@ -18,8 +18,8 @@ mod assembler;
 mod compiler;
 mod vm;
 
-use crate::assembler::{Bytecode};
-use crate::assembler::optimizer::AssemblerOptimizer;
+// use crate::assembler::{Bytecode};
+// use crate::assembler::optimizer::AssemblerOptimizer;
 use crate::assembler::defs::BytecodeError;
 
 use crate::compiler::{Compiler, CompilerError, optimizer::Optimizer};

@@ -1,3 +1,5 @@
+use crate::{gen_from_bin_ops, gen_from_un_ops, gen_from_bin_ops_match_body, gen_from_bin_ops_guard_pattern, gen_from_un_ops_guard_pattern, gen_from_un_ops_match_body};
+
 use crate::{{assembler::defs::BytecodeError}, {compiler::native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
 
 pub mod defs;
@@ -24,7 +26,7 @@ gen_regs_code!(
 	2 | BasePointer 	=> bp,
 	/// Stack pointer, points to current stack element
 	3 | StackPointer 	=> sp,
-	/// Program counter, points to current instruction
+	/// Program counter, points to next instruction
 	4 | ProgramCounter 	=> pc,
 );
 

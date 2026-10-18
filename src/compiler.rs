@@ -212,12 +212,7 @@ impl Compiler {
 			println!("{i:02}: {byte}");
 		}
 
-		let bytes = match Bytecode::asm(optimized) {
-			Ok(res) => res,
-			Err(e) => {
-				return Err(e)
-			}
-		};
+		let bytes = Bytecode::asm(optimized)?;
 
 		let mut result = Vec::new();
 
