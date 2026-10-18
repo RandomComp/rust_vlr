@@ -125,70 +125,56 @@ macro_rules! gen_regs_code {
 }
 
 #[macro_export]
-macro_rules! gen_from_bin_ops_match_body {
-	( $matching_op:ident $inst:ident, bin $op:ident ) => {
+macro_rules! gen_from_bin_ops {
+	( @match_body $matching_op:ident $inst:ident, bin $op:ident ) => {
 		Bytecode::$inst
 	};
-	( $matching_op:ident $inst:ident, un $op:ident ) => {
+	( @match_body $matching_op:ident $inst:ident, un $op:ident ) => {
 		unreachable!()
 	};
-}
 
-#[macro_export]
-macro_rules! gen_from_bin_ops_guard_pattern {
-	( bin ) => {
+	( @guard_pattern bin ) => {
 		true
 	};
-	( un ) => {
+	( @guard_pattern un ) => {
 		false
 	};
-}
 
-#[macro_export]
-macro_rules! gen_from_bin_ops {
-	( bin $op:ident ) => {
+	( @pattern bin $op:ident ) => {
 		BinaryOp::$op
 	};
-	( un $op:ident ) => {
+	( @pattern un $op:ident ) => {
 		_
 	};
 	( $matching_op:ident, $( $inst:ident, $op_type:ident $op:ident ),+ $(,)? ) => {
 		match $matching_op {
 			$(
-				gen_from_bin_ops!( $op_type $op ) if gen_from_bin_ops_guard_pattern!( $op_type ) =>
-					gen_from_bin_ops_match_body!( $matching_op $inst, $op_type $op ),
+				gen_from_bin_ops!( @pattern $op_type $op )
+				if gen_from_bin_ops!( @guard_pattern $op_type ) =>
+					gen_from_bin_ops!( @match_body $matching_op $inst, $op_type $op ),
 			)+
-			_ => {
-				todo!("'{}' not handled in from_binary_op or unreachable", $matching_op)
-			}
+			_ =>
+				todo!("'{}' not handled in from_unary_op or unreachable", $matching_op)
 		}
-	};
-}
-
-
-
-#[macro_export]
-macro_rules! gen_from_un_ops_match_body {
-	( $matching_op:ident $inst:ident, bin $op:ident ) => {
-		Bytecode::$inst
-	};
-	( $matching_op:ident $inst:ident, un $op:ident ) => {
-		unreachable!()
-	};
-}
-
-#[macro_export]
-macro_rules! gen_from_un_ops_guard_pattern {
-	( bin ) => {
-		false
-	};
-	( un ) => {
-		true
 	};
 }
 
 #[macro_export]
 macro_rules! gen_from_un_ops {
+	( @match_body $matching_op:ident $inst:ident, bin $op:ident ) => {
+		unreachable!()
+	};
+	( @match_body $matching_op:ident $inst:ident, un $op:ident ) => {
+		Bytecode::$inst
+	};
+
+	( @guard_pattern bin ) => {
+		false
+	};
+	( @guard_pattern un ) => {
+		true
+	};
+
 	( bin $op:ident ) => {
 		_
 	};
@@ -198,8 +184,8 @@ macro_rules! gen_from_un_ops {
 	( $matching_op:ident, $( $inst:ident, $op_type:ident $op:ident ),+ $(,)? ) => {
 		match $matching_op {
 			$(
-				gen_from_un_ops!( $op_type $op ) if gen_from_un_ops_guard_pattern!( $op_type ) =>
-					gen_from_un_ops_match_body!( $matching_op $inst, $op_type $op ),
+				gen_from_un_ops!( $op_type $op ) if gen_from_un_ops!( @guard_pattern $op_type ) =>
+					gen_from_un_ops!( @match_body $matching_op $inst, $op_type $op ),
 			)+
 			_ => {
 				todo!("'{}' not handled in from_unary_op or unreachable", $matching_op)

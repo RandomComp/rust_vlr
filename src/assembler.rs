@@ -1,4 +1,4 @@
-use crate::{gen_from_bin_ops, gen_from_un_ops, gen_from_bin_ops_match_body, gen_from_bin_ops_guard_pattern, gen_from_un_ops_guard_pattern, gen_from_un_ops_match_body};
+use crate::{gen_from_bin_ops, gen_from_un_ops};
 
 use crate::{{assembler::defs::BytecodeError}, {compiler::native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
 
@@ -122,7 +122,7 @@ gen_insts_impl!(
 
 			Self::Load(value)
 		},
-		exec(mem,stack) => {
+		exec(mem, stack) => {
 
 		},
 		display(f, stack) => {
