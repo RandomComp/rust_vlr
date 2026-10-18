@@ -319,10 +319,12 @@ impl Compiler {
 				// result.push(Bytecode::PushString(x.clone()));
 			},
 			ASTNode::List(values) => if !values.is_empty() {
-				self.call_func(
-					&Spanned::from_with_span("list", span),
-					values.iter(), context
-				)?;
+				todo!();
+
+				// self.call_func(
+				// 	&Spanned::from_with_span("list", span),
+				// 	values.iter(), context
+				// )?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Range), right } => {
 				self.call_func(
