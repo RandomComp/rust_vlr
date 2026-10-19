@@ -224,7 +224,7 @@ macro_rules! gen_from_un_ops {
 macro_rules! gen_insts_impl {
 	(
 		$(
-			#[doc=$inst_doc:literal] $( ( $op_type:ident $op:ident ) )? $inst:ident
+			$( #[doc=$inst_doc:literal] )+ $( ( $op_type:ident $op:ident ) )? $inst:ident
 			$( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{
@@ -243,10 +243,14 @@ macro_rules! gen_insts_impl {
 		#[derive(PartialEq, Clone, Debug)]
 		pub enum Bytecode {
 			$(
-				#[doc = concat!($inst_doc, ", accepts: ",
+				$(
+					#[doc=$inst_doc]
+				)*
+				#[doc = concat!(
 					$(
+						"# Where: \n\r",
 						$(
-							stringify!($asm_arg), ": ", stringify!($arg), ", ",
+							stringify!($asm_arg), ": `", stringify!($arg), "`, ",
 						)*
 					)?
 				)]

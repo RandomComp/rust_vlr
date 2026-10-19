@@ -23,16 +23,26 @@ gen_regs_code!(
 	0 | Accum 			=> acc,
 	/// Base register (use it for second operand)
 	1 | Base 			=> base,
+	/// Loop counter (prefer use it for loop's)
+	2 | Counter 		=> cnt,
 	/// Base stack pointer, points to stack frame begin
-	2 | BasePointer 	=> bp,
+	3 | BasePointer 	=> bp,
 	/// Stack pointer, points to current stack element
-	3 | StackPointer 	=> sp,
+	4 | StackPointer 	=> sp,
 	/// Program counter, points to next instruction
-	4 | ProgramCounter 	=> pc,
+	5 | ProgramCounter 	=> pc,
 );
 
 gen_insts_impl!(
-	/// Halts program
+	/// # Halts program
+	/// # Example
+	/// ```asm,ignore
+	/// hlt ; after this, next code should NEVER EXECUTED
+	/// ; this is dead code, cuz hlt after this:
+	/// mov acc, 0
+	/// mov base, 0
+	/// div
+	/// ```
 	Halt as 0x00 | 0xFF => {
 		asm(result) => {
 		},
@@ -46,7 +56,11 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Push number to stack
+	/// # Example
+	/// ```asm,ignore
+	/// push 123 ; push 123 to stack
+	/// ```
 	PushNumber(u32) as 0x01 => {
 		asm(result, val) => {
 			result.extend(val.to_le_bytes());
@@ -64,7 +78,13 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Push `reg` value to stack
+	/// # Example
+	/// ```asm,ignore
+	/// mov acc, 123
+	/// push acc
+	/// pop base ; in base now 123
+	/// ```
 	PushReg(BytecodeRegister) as 0x04 => {
 		asm(result, reg) => {
 			result.extend(reg.to_le_bytes());
@@ -84,7 +104,12 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Pop from stack to `reg`
+	/// # Example
+	/// ```asm,ignore
+	/// push 123
+	/// pop acc ; in acc now 123
+	/// ```
 	PopReg(BytecodeRegister) as 0x05 => {
 		asm(result, reg) => {
 			result.extend(reg.to_le_bytes());
@@ -104,7 +129,13 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Loads `[reg2-offset]` to `reg1`
+	/// # Example
+	/// ```asm,ignore
+	/// mov base, 0x16 ; heap address, 0x16 + 128 = 150 = 0x96
+	/// mov acc, [base+0x80] ; move acc value to heap 0x16
+	/// ; in acc our value
+	/// ```
 	LoadToReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x06 => {
 		asm(result, reg1, reg2, offset) => {
 			result.extend(reg1.to_le_bytes());
@@ -135,7 +166,13 @@ gen_insts_impl!(
 		}
 	},
 
-	/// `val_reg` Loads to `[reg-offset]`
+	/// # Loads `val_reg` value to `[reg-offset]`
+	/// # Example
+	/// ```asm,ignore
+	/// mov acc, 123 ; value
+	/// mov base, 0x16 ; heap address, 0x16 + 128 = 150 = 0x96
+	/// mov [base+0x80], acc ; move acc value to heap 0x16
+	/// ```
 	LoadFromReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x07 => {
 		asm(result, val_reg, reg, offset) => {
 			result.extend(val_reg.to_le_bytes());
@@ -162,12 +199,15 @@ gen_insts_impl!(
 			mem.set_word(addr, value)?;
 		},
 		display(f, val_reg, reg, offset) => {
-			write!(f, "mov [{reg}-{offset}], {val_reg}")
+			write!(f, "mov [{reg}{offset:+}], {val_reg}")
 		}
 	},
 
-
-	/// No docs
+	/// # Moves `val` constant to `reg`
+	/// # Example
+	/// ```asm,ignore
+	/// mov acc, 123
+	/// ```
 	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
 		asm(result, reg, val) => {
 			result.extend(reg.to_le_bytes());
@@ -190,7 +230,11 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Move `reg2` value to `reg1`
+	/// # Example
+	/// ```asm,ignore
+	/// mov acc, base
+	/// ```
 	MovRegToReg(BytecodeRegister, BytecodeRegister) as 0x0B => {
 		asm(result, reg1, reg2) => {
 			result.extend(reg1.to_le_bytes());
@@ -215,8 +259,20 @@ gen_insts_impl!(
 		}
 	},
 
-
-	/// No docs
+	/// # Conditional jump if `acc == 0` on address `pos`
+	/// # Example
+	/// ```asm,ignore
+	/// mov cnt, 0 ; our counter
+	/// mov base, 10
+	///
+	/// some_label: ; our label
+	/// mov acc, cnt
+	/// lt
+	/// jif loop_exit ; our conditional jump
+	/// add cnt, 1
+	/// jmp some_label
+	/// loop_exit:
+	/// ```
 	Jif(u32) as 0x20 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -234,7 +290,20 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Unconditional jump on address `pos`
+	/// # Example
+	/// ```asm,ignore
+	/// mov cnt, 0 ; our counter
+	/// mov base, 10
+	///
+	/// some_label: ; our label
+	/// mov acc, cnt
+	/// lt
+	/// jif loop_exit
+	/// add cnt, 1
+	/// jmp some_label ; jump on some_label
+	/// loop_exit:
+	/// ```
 	Jmp(u32) as 0x28 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -252,7 +321,17 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Push pc to stack and jump on address `pos`
+	/// # Example
+	/// ```asm,ignore
+	/// some_subprogram: ; our subprogram
+	/// push bp
+	/// mov bp, sp
+	/// ; ... some instructions ...
+	/// pop bp
+	/// ret ; returns from subprogram to where called
+	/// call some_subprogram ; our calling
+	/// ```
 	Call(u32) as 0x2A => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -272,7 +351,17 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Pop address from stack and jumps on it:
+	/// # Example
+	/// ```asm,ignore
+	/// some_subprogram: ; our subprogram
+	/// push bp
+	/// mov bp, sp
+	/// ; ... some instructions ...
+	/// pop bp
+	/// ret ; returns from subprogram to where called
+	/// call some_subprogram ; our calling
+	/// ```
 	Ret as 0x2C => {
 		asm(_result) => {
 		},
@@ -287,7 +376,12 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Call built-in function `id`:
+	/// # Example
+	/// ```ignore
+	/// mov acc, 1 ; our exit code
+	/// native exit ; exit from program
+	/// ```
 	NativeCall(NativeFunctionID) as 0x80 => {
 		asm(result, id) => {
 			result.extend(id.to_le_bytes());
@@ -303,11 +397,20 @@ gen_insts_impl!(
 			id.call(mem)?;
 		},
 		display(f, id) => {
-			write!(f, "native_call {id}")
+			write!(f, "native {id}")
 		}
 	},
 
-	/// No docs
+	/// # Binary equal, calculates:
+	/// ```ignore
+	/// acc = acc == base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 2
+	/// eq
+	/// ```
 	(bin Equals) Eq as 0x50 => {
 		asm(result) => {
 		},
@@ -324,7 +427,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary less, calculates:
+	/// ```ignore
+	/// acc = acc < base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 3
+	/// lt
+	/// ```
 	(bin Less) Lt as 0x52 => {
 		asm(result) => {
 		},
@@ -341,7 +453,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary addition, calculates:
+	/// ```ignore
+	/// acc = acc + base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 2
+	/// add
+	/// ```
 	(bin Plus) Add as 0xA0 => {
 		asm(_result) => {
 		},
@@ -358,7 +479,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary subtraction, calculates:
+	/// ```ignore
+	/// acc = acc - base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 123
+	/// mov base, 3
+	/// sub
+	/// ```
 	(bin Minus) Sub as 0xA3 => {
 		asm(_result) => {
 		},
@@ -375,7 +505,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary multiplication, calculates:
+	/// ```ignore
+	/// acc = acc * base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 3
+	/// mul
+	/// ```
 	(bin Multiply) Mul as 0xB0 => {
 		asm(_result) => {
 		},
@@ -392,7 +531,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary divizion, calculates:
+	/// ```ignore
+	/// acc = acc / base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 3
+	/// div
+	/// ```
 	(bin Divide) Div as 0xB3 => {
 		asm(_result) => {
 		},
@@ -409,7 +557,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Binary power, calculates:
+	/// ```ignore
+	/// acc = acc ** base
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 2
+	/// mov base, 3
+	/// pow
+	/// ```
 	(bin Pow) Pow as 0xC0 => {
 		asm(_result) => {
 		},
@@ -426,7 +583,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Logical and, calculates:
+	/// ```ignore
+	/// acc = acc != 0 && base != 0
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 1
+	/// mov base, 1
+	/// land
+	/// ```
 	(bin LogicalAnd) LogicalAnd as 0xD3 => {
 		asm(_result) => {
 		},
@@ -443,7 +609,16 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Logical or, calculates:
+	/// ```ignore
+	/// acc = acc != 0 || base != 0
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 1
+	/// mov base, 1
+	/// lor
+	/// ```
 	(bin LogicalOr) LogicalOr as 0xE0 => {
 		asm(_result) => {
 		},
@@ -460,7 +635,15 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Unary negation, calculates:
+	/// ```ignore
+	/// acc = -acc
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 123
+	/// neg
+	/// ```
 	(un Minus) Neg as 0xC3 => {
 		asm(_result) => {
 		},
@@ -475,7 +658,15 @@ gen_insts_impl!(
 		}
 	},
 
-	/// No docs
+	/// # Logical not, calculates:
+	/// ```ignore
+	/// acc = acc == 0
+	/// ```
+	/// # Example
+	/// ```ignore
+	/// mov acc, 0
+	/// not
+	/// ```
 	(un Not) Not as 0xD0 => {
 		asm(_result) => {
 		},

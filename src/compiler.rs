@@ -345,7 +345,7 @@ impl Compiler {
 				if let Some(stack_pos) = context.get_var(name) {
 					self.compile(right, context)?;
 
-					self.load_from_reg(stack_pos);
+					self.load_from_reg(BytecodeRegister::BasePointer, stack_pos);
 				} else {
 					let stack_pos = self.stack;
 
@@ -379,7 +379,9 @@ impl Compiler {
 					);
 				};
 
-				self.look(stack_pos);
+				self.look_to_reg(BytecodeRegister::Accum, stack_pos);
+
+				self.result.push(Bytecode::PushReg(BytecodeRegister::Accum));
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, context)?;
