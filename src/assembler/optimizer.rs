@@ -61,6 +61,14 @@ impl<'a> AssemblerOptimizer<'a> {
 
 					self.next_inst(&mut result);
 				}
+				Bytecode::Add | Bytecode::Sub | Bytecode::Mul | Bytecode::Div |
+			 	Bytecode::Eq | Bytecode::Lt | Bytecode::Neg | Bytecode::Not => {
+					if let Some((reg2, is_affected)) = self.affected_regs.last_mut() && *reg2 == BytecodeRegister::Accum {
+						*is_affected = true;
+					}
+
+					self.next_inst(&mut result);
+				}
 				Bytecode::MovU32ToReg(reg, _) | Bytecode::MovRegToReg(reg, _) => {
 					if let Some((reg2, is_affected)) = self.affected_regs.last_mut() && reg == *reg2 {
 						*is_affected = true;
@@ -86,27 +94,35 @@ impl<'a> AssemblerOptimizer<'a> {
 
 							self.consumed_inst();
 
-							result.remove(index);
+							result[index] = Bytecode::Nop;
 						},
 						StackValue::Reg(reg1) => {
-							if let Some((reg2, false)) = self.affected_regs.last() && reg1 == *reg2 {
-								self.affected_regs.pop();
-
-								if reg != reg1 {
-									result.push(Bytecode::MovRegToReg(reg, reg1));
-								}
-
-								self.consumed_inst();
-
-								result.remove(index);
-							} else {
+							let Some((affected_reg, is_affected)) = self.affected_regs.last_mut() else {
 								self.next_inst(&mut result);
 
-								if let Some((reg2, is_affected)) = self.affected_regs.last_mut() && reg == *reg2 {
-									*is_affected = true;
+								continue;
+							};
 
-									println!("*is_affected = true;");
+							if reg1 == *affected_reg {
+								if !*is_affected {
+									if reg != reg1 {
+										result.push(Bytecode::MovRegToReg(reg, reg1));
+									}
+
+									self.consumed_inst();
+
+									result[index] = Bytecode::Nop;
 								}
+
+								self.affected_regs.pop();
+
+								self.next_inst(&mut result);
+							} else {
+								*is_affected = true;
+
+								println!("*is_affected = true;");
+
+								self.next_inst(&mut result);
 							}
 						}
 					}

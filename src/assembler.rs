@@ -34,6 +34,31 @@ gen_regs_code!(
 );
 
 gen_insts_impl!(
+	/// # Do nothing.
+	/// # Example
+	/// ```asm,ignore
+	/// nop ; do nothings
+	///
+	/// nop
+	/// nop
+	/// nop
+	/// nop
+	/// ...
+	/// ; repeating doesn't do anything
+	/// ```
+	Nop as 0x90 => {
+		asm(result) => {
+		},
+		disasm(bytes) => {
+			Self::Nop
+		},
+		exec(mem) => {
+		},
+		display(f) => {
+			write!(f, "nop")
+		}
+	},
+
 	/// # Halts program
 	/// # Example
 	/// ```asm,ignore
