@@ -55,30 +55,42 @@ macro_rules! args_cnt {
 }
 
 macro_rules! call_implementation {
-	( $implementation: block, $args:ident, dynamic: $arg:ident ) => {
+	( $mem_ptr:expr, $impl: block, $args:ident, $mem:ident, dynamic: $arg:ident ) => {
 		{
 			let $arg = &$args;
 
+			let $mem = $mem_ptr;
+
 			#[warn(unused_assignments)]
-			$implementation
+			$impl
 		}
 	};
-	( $implementation: block, $args:ident, fixed: $arg:ident ) => {
+	( $mem_ptr:expr, $impl: block, $args:ident, $mem:ident, fixed: $( $arg:ident ),* ) => {
 		{
 			let mut index = 0;
 
-			let $arg = $args[index];
+			$(
+				let $arg = $args[index];
+			)*
 
 			index += 1;
 
+			#[allow(unused_variables)]
+			let $mem = $mem_ptr;
+
 			#[warn(unused_assignments)]
-			$implementation
+			$impl
 		}
 	};
 }
 
 macro_rules! gen_native_functions {
-	( $( $name:ident( $args_type:ident: $( $arg:ident ),*  ) = $id:literal as $text:literal => $implementation:block ),* $(,)? ) => {
+	(
+		$(
+			$name:ident( $mem:ident, $args_type:ident: $( $arg:ident ),*  ) = $id:literal as $text:literal => $implementation:block
+		),*
+		$(,)?
+	) => {
 		#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 		pub enum NativeFunctionID {
 			$(
@@ -151,7 +163,7 @@ macro_rules! gen_native_functions {
 					$(
 						#[allow(unused_assignments)]
 						NativeFunctionID::$name =>
-							call_implementation!($implementation, args, $args_type: $( $arg ),* ),
+							call_implementation!(mem, $implementation, args, $mem, $args_type: $( $arg ),* ),
 					)*
 				}
 			}
@@ -200,16 +212,20 @@ macro_rules! gen_native_functions {
 }
 
 gen_native_functions!(
-	Print(dynamic: args) = 0 as "print" => {
-		for arg in args {
-			print!("{arg} ");
-		}
+	Write(mem, fixed: fd, addr, cnt) = 0 as "write" => {
+		if fd == 1 {
+			let mut buf = Vec::new();
 
-		println!();
+			for byte in mem.mem_iter(addr as usize).take(cnt as usize) {
+				buf.push(byte);
+			}
+
+			println!("{}", String::from_utf8(buf).unwrap());
+		}
 
 		Ok(0)
 	},
-	Exit(fixed: code) = 1 as "exit" => {
+	Exit(mem, fixed: code) = 1 as "exit" => {
 		Err(NativeFunctionIDError::Exit(code))
 	},
 );

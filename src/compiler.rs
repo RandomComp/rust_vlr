@@ -3,7 +3,10 @@ pub mod parser;
 pub mod optimizer;
 pub mod native_func;
 
-use crate::{assembler::{BytecodeRegister, defs::BytecodeError, optimizer::AssemblerOptimizer}, compiler::native_func::{NativeFunctionArgsNumber, NativeFunctionID}};
+use std::fmt;
+
+use crate::assembler::{BytecodeRegister, defs::BytecodeError, optimizer::AssemblerOptimizer};
+use crate::compiler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::wrapper::{wmatch, Spanned};
 
 use std::{collections::HashMap};
@@ -65,6 +68,31 @@ impl<'a> CompilerContext<'a> {
 	}
 }
 
+#[derive(PartialEq, Clone, Debug)]
+enum CompilerBytecode {
+	/// Real bytecode
+	Real(Bytecode),
+	/// Push positional independent reference from back begin
+	PushRef(usize)
+}
+
+impl fmt::Display for CompilerBytecode {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			CompilerBytecode::Real(real) =>
+				write!(f, "{real}"),
+			CompilerBytecode::PushRef(addr) =>
+				write!(f, "push ref {addr}"),
+		}
+	}
+}
+
+impl From<Bytecode> for CompilerBytecode {
+	fn from(value: Bytecode) -> Self {
+		CompilerBytecode::Real(value)
+	}
+}
+
 pub struct Compiler {
 	stack: u32,
 	break_pos: Vec<Option<u32>>,
@@ -90,14 +118,18 @@ impl Compiler {
 		self.result.len() as u32
 	}
 
+	fn result_push(&mut self, code: Bytecode) {
+		self.result.push(code.into());
+	}
+
 	fn look_to_reg(&mut self, reg: BytecodeRegister, stack_pos: u32) {
-		self.result.push(Bytecode::LoadToReg(reg, BytecodeRegister::StackPointer, stack_pos));
+		self.result_push(Bytecode::LoadToReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack += 1;
 	}
 
 	fn load_from_reg(&mut self, reg: BytecodeRegister, stack_pos: u32) {
-		self.result.push(Bytecode::LoadFromReg(reg, BytecodeRegister::StackPointer, stack_pos));
+		self.result_push(Bytecode::LoadFromReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack -= 1;
 	}
@@ -130,10 +162,10 @@ impl Compiler {
 				}
 
 				NativeFunctionArgsNumber::Dynamic =>
-					self.result.push(Bytecode::PushNumber(len)),
+					self.result_push(Bytecode::PushNumber(len)),
 			}
 
-			self.result.push(Bytecode::NativeCall(id));
+			self.result_push(Bytecode::NativeCall(id));
 			self.stack -= len;
 			self.stack += 1;
 
@@ -143,7 +175,7 @@ impl Compiler {
 				self.compile(arg, context)?;
 			}
 
-			self.result.push(Bytecode::Call(pos));
+			self.result_push(Bytecode::Call(pos));
 
 			return Ok(())
 		} else if let Some(pos) = context.get_function(name.val) {
@@ -151,7 +183,7 @@ impl Compiler {
 				self.compile(arg, context)?;
 			}
 
-			self.result.push(Bytecode::Call(pos));
+			self.result_push(Bytecode::Call(pos));
 
 			return Ok(())
 		}
@@ -188,7 +220,7 @@ impl Compiler {
 
 		self.stack -= 1;
 
-		self.result.push(op);
+		self.result_push(op);
 
 		self.load_from_reg(BytecodeRegister::Accum, stack_pos);
 
@@ -204,13 +236,15 @@ impl Compiler {
 
 		let mut asm_optimizer = AssemblerOptimizer::new(&self.result);
 
-		let optimized = asm_optimizer.optimize();
+		let mut optimized = asm_optimizer.optimize();
 
 		println!("Bytecode after optimizer:");
 
 		for (i, byte) in optimized.iter().enumerate() {
 			println!("{i:02}: {byte}");
 		}
+
+		optimized.push(Bytecode::Halt);
 
 		let bytes = Bytecode::asm(optimized)?;
 
@@ -314,9 +348,9 @@ impl Compiler {
 			ASTNode::String(x) => {
 				self.stack += 1;
 
-				todo!();
+				self.back.extend(x.clone().into_bytes());
 
-				// result.push(Bytecode::PushString(x.clone()));
+				// self.result.push(Bytecode::PushNumber(x.));
 			},
 			ASTNode::List(values) => if !values.is_empty() {
 				todo!();

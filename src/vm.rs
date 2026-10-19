@@ -142,7 +142,7 @@ impl Memory {
 			.ok_or(RawVMError::StackOverflow)
 	}
 
-	fn mem_iter(&self, offset: usize) -> impl Iterator<Item = u8> {
+	pub fn mem_iter(&self, offset: usize) -> impl Iterator<Item = u8> {
 		self.mem.iter().skip(offset).copied()
 	}
 

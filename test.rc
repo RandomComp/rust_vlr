@@ -1,6 +1,4 @@
-result = (7 + 5) * 4 - 18 / 3;
-
-print(result);
+write(1, "Hello, world!", 1)
 
 
 # result = 2 + 3 * 4;

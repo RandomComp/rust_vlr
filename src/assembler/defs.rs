@@ -366,6 +366,16 @@ macro_rules! gen_insts_impl {
 				}
 			}
 
+			pub fn len(&self) -> usize {
+				match self {
+					$(
+						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
+							1 $( $( + std::mem::size_of::<$arg>() )* )?
+						}
+					)*
+				}
+			}
+
 			pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
 				gen_from_un_ops!(op,
 					$(
