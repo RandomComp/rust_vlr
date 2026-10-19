@@ -22,6 +22,7 @@ pub enum BytecodeError {
 	NativeFunctionID(#[from] NativeFunctionIDError),
 }
 
+#[derive(Copy, Clone)]
 pub struct IndexedIterator<T> where T: Iterator {
 	it: T,
 	pub index: usize,
@@ -291,36 +292,38 @@ macro_rules! gen_insts_impl {
 				Ok(result)
 			}
 
-			pub fn disasm_inst<T>(bytes: &mut IndexedIterator<T>) -> Result<Option<Self>, BytecodeError>
+			pub fn disasm_inst<T>(bytes: T) -> Result<Option<(Self, usize)>, BytecodeError>
 				where T: Iterator<Item = u8> {
+				let mut bytes = IndexedIterator::from(bytes);
+
 				let Some(opcode) = bytes.next() else {
 					return Ok(None)
 				};
 
-				let result = match opcode {
+				match opcode {
 					$(
 						$main_opcode $( | $( $opcode )|* )? => {
 							#[allow(unused_variables)]
 							#[allow(unused_mut)]
 							let mut $bytes = bytes;
 
-							$inst_disasm
+							let result = $inst_disasm;
+
+							Ok(Some((result, $bytes.index)))
 						},
 					)*
-					x => return Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
-				};
-
-				Ok(Some(result))
+					x => Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
+				}
 			}
 
 			#[allow(dead_code)]
-			pub fn disasm<T>(bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> + fmt::Debug {
+			pub fn disasm<T>(bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> + fmt::Debug + Copy {
 				let mut result = Vec::new();
 
-				let mut bytes = IndexedIterator::from(bytes);
+				let bytes = IndexedIterator::from(bytes);
 
-				while let Some(val) = Self::disasm_inst(&mut bytes)? {
-					result.push(val);
+				while let Some(val) = Self::disasm_inst(bytes)? {
+					result.push(val.0);
 				}
 
 				Ok(result)

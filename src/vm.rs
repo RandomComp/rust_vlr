@@ -195,15 +195,11 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, RawVMError> {
-		let mut bytes = IndexedIterator::from(self.mem.mem_iter(self.mem.regs.pc as usize));
+		let bytes = self.mem.mem_iter(self.mem.regs.pc as usize);
 
-		let Some(inst) = Bytecode::disasm_inst(&mut bytes)? else {
+		let Some((inst, inst_size)) = Bytecode::disasm_inst(bytes)? else {
 			return Ok(false)
 		};
-
-		let inst_size = bytes.index;
-
-		drop(bytes);
 
 		println!("{inst}");
 
@@ -229,10 +225,11 @@ impl VM {
 					let mut bytes = IndexedIterator::from(self.mem.mem_iter(self.mem.regs.pc as usize));
 
 					let inst = Bytecode::disasm_inst(&mut bytes).map_err(|e|
-					VMError {
-						val: e.into(),
-						inst: None
-					})?;
+						VMError {
+							val: e.into(),
+							inst: None
+						}
+					)?;
 
 					let Some(inst) = inst else {
 						return Err(
@@ -246,7 +243,7 @@ impl VM {
 					return Err(
 						VMError {
 							val: e,
-							inst: Some(inst)
+							inst: Some(inst.0)
 						}
 					)
 				}
