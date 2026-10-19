@@ -110,7 +110,7 @@ impl Memory {
 	}
 
 	pub fn push(&mut self, value: VMWord) -> Result<(), RawVMError> {
-		self.regs.sp = self.regs.sp.checked_sub(1).ok_or(RawVMError::StackEmptyButExpectedValue)?;
+		self.regs.sp = self.regs.sp.checked_sub(4).ok_or(RawVMError::StackEmptyButExpectedValue)?;
 
 		self.set_word(self.regs.sp as usize, value)?;
 
@@ -124,7 +124,7 @@ impl Memory {
 
 		let result = self.get_word(self.regs.sp as usize)?;
 
-		self.regs.sp += 1;
+		self.regs.sp += 4;
 
 		Ok(result)
 	}
@@ -152,9 +152,9 @@ impl Memory {
 
 	fn stack_iter(&self) -> impl Iterator<Item = VMWord> {
 		self.mem.chunks(4)
-			.skip(self.regs.sp as usize)
-			.take((self.regs.bp - self.regs.sp) as usize)
-			.map(|v| u32::from_le_bytes(
+			.skip((self.regs.sp as usize) / 4)
+			.take(((self.regs.bp - self.regs.sp) as usize) / 4)
+			.map(|v| VMWord::from_le_bytes(
 				v[0..4].try_into().unwrap()
 			))
 			.rev()
@@ -218,6 +218,8 @@ impl VM {
 	pub fn exec(&mut self) -> Result<VMWord, VMError> {
 		self.dump_regs();
 
+		println!();
+
 		loop {
 			let is_not_hlt = match self.exec_inst() {
 				Ok(value) => value,
@@ -255,6 +257,8 @@ impl VM {
 
 			self.dump_stack();
 			self.dump_regs();
+
+			println!();
 
 			// sleep(Duration::from_millis(100));
 		}

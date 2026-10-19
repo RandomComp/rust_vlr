@@ -261,7 +261,7 @@ macro_rules! gen_insts_impl {
 		}
 
 		impl Bytecode {
-			fn asm_inst(&self) -> Result<Vec<u8>, BytecodeError> {
+			fn asm_inst(self) -> Result<Vec<u8>, BytecodeError> {
 				let mut result = Vec::new();
 
 				match self {
@@ -303,7 +303,6 @@ macro_rules! gen_insts_impl {
 				match opcode {
 					$(
 						$main_opcode $( | $( $opcode )|* )? => {
-							#[allow(unused_variables)]
 							#[allow(unused_mut)]
 							let mut $bytes = bytes;
 

@@ -98,36 +98,46 @@ gen_insts_impl!(
 		}
 	},
 
-	Look(u32) as 0x06 => {
-		asm(result, stack) => {
-			result.extend(stack.to_le_bytes());
+	Look(BytecodeRegister, VMWord) as 0x06 => {
+		asm(result, reg, offset) => {
+			result.extend(reg.to_le_bytes());
+			result.extend(offset.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
-			Self::Look(value)
-		},
-		exec(mem, stack) => {
+			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
+			Self::Look(reg, offset)
 		},
-		display(f, stack) => {
-			write!(f, "look {stack}")
+		exec(mem, reg, offset) => {
+			mem.push(mem.get_word((mem.regs[reg] - offset) as usize)?)?;
+		},
+		display(f, reg, offset) => {
+			write!(f, "look {reg}-{offset}")
 		}
 	},
-	Load(u32) as 0x07 => {
-		asm(result, stack) => {
-			result.extend(stack.to_le_bytes());
+	Load(BytecodeRegister, VMWord) as 0x07 => {
+		asm(result, reg, offset) => {
+			result.extend(reg.to_le_bytes());
+			result.extend(offset.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
-			Self::Load(value)
+			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+
+			Self::Load(reg, offset)
 		},
-		exec(mem, stack) => {
+		exec(mem, reg, offset) => {
 
 		},
-		display(f, stack) => {
-			write!(f, "load {stack}")
+		display(f, reg, offset) => {
+			write!(f, "load {reg}-{offset}")
 		}
 	},
 

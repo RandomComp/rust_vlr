@@ -91,13 +91,13 @@ impl Compiler {
 	}
 
 	fn look(&mut self, stack_pos: u32) {
-		self.result.push(Bytecode::Look(stack_pos));
+		self.result.push(Bytecode::Look(BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack += 1;
 	}
 
 	fn load(&mut self, stack_pos: u32) {
-		self.result.push(Bytecode::Load(stack_pos));
+		self.result.push(Bytecode::Load(BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack -= 1;
 	}
