@@ -22,6 +22,29 @@ pub enum BytecodeError {
 	NativeFunctionID(#[from] NativeFunctionIDError),
 }
 
+pub struct IndexedIterator<T> where T: Iterator {
+	it: T,
+	pub index: usize,
+}
+
+impl<T> Iterator for IndexedIterator<T> where T: Iterator {
+	type Item = T::Item;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let result = self.it.next()?;
+
+		self.index += 1;
+
+		Some(result)
+	}
+}
+
+impl<T> From<T> for IndexedIterator<T> where T: Iterator {
+	fn from(it: T) -> Self {
+		Self { it, index: 0 }
+	}
+}
+
 #[macro_export]
 macro_rules! gen_regs_code {
 	(
@@ -213,6 +236,7 @@ macro_rules! gen_insts_impl {
 	) => {
 		use $crate::vm::{Memory, RawVMError};
 		use $crate::compiler::parser::{UnaryOp, BinaryOp};
+		use $crate::assembler::defs::IndexedIterator;
 
 		#[derive(PartialEq, Clone, Debug)]
 		pub enum Bytecode {
@@ -267,7 +291,7 @@ macro_rules! gen_insts_impl {
 				Ok(result)
 			}
 
-			pub fn disasm_inst<T>(mut bytes: T) -> Result<Option<Self>, BytecodeError>
+			pub fn disasm_inst<T>(bytes: &mut IndexedIterator<T>) -> Result<Option<Self>, BytecodeError>
 				where T: Iterator<Item = u8> {
 				let Some(opcode) = bytes.next() else {
 					return Ok(None)
@@ -290,8 +314,10 @@ macro_rules! gen_insts_impl {
 			}
 
 			#[allow(dead_code)]
-			pub fn disasm<T>(mut bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> + fmt::Debug {
+			pub fn disasm<T>(bytes: T) -> Result<Vec<Self>, BytecodeError> where T: Iterator<Item = u8> + fmt::Debug {
 				let mut result = Vec::new();
+
+				let mut bytes = IndexedIterator::from(bytes);
 
 				while let Some(val) = Self::disasm_inst(&mut bytes)? {
 					result.push(val);

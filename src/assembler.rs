@@ -7,7 +7,8 @@ pub mod optimizer;
 
 use std::fmt;
 
-fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut T) -> Result<[u8; LEN], BytecodeError> where T: Iterator<Item=u8> {
+fn consume_const_bytes_and_get<T, const LEN: usize>(arr: &mut IndexedIterator<T>) -> Result<[u8; LEN], BytecodeError>
+	where T: Iterator<Item=u8> {
 	let mut result = [0u8; LEN];
 
 	for val in &mut result {
@@ -48,7 +49,7 @@ gen_insts_impl!(
 			result.extend(val.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::PushNumber(value)
 		},
@@ -102,7 +103,7 @@ gen_insts_impl!(
 			result.extend(stack.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::Look(value)
 		},
@@ -118,7 +119,7 @@ gen_insts_impl!(
 			result.extend(stack.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let value = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::Load(value)
 		},
@@ -140,7 +141,7 @@ gen_insts_impl!(
 				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
 			)?;
 
-			let val = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let val = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::MovU32ToReg(reg, val)
 		},
@@ -180,7 +181,7 @@ gen_insts_impl!(
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::Jif(pos)
 		},
@@ -196,7 +197,7 @@ gen_insts_impl!(
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::Jmp(pos)
 		},
@@ -212,7 +213,7 @@ gen_insts_impl!(
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(&mut bytes)?);
+			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<T, 4>(bytes)?);
 
 			Self::Call(pos)
 		},

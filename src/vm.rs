@@ -4,7 +4,7 @@ use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::assembler::defs::BytecodeError;
+use crate::assembler::defs::{BytecodeError, IndexedIterator};
 use crate::assembler::{Bytecode, VMRegs};
 use crate::compiler::{native_func::NativeFunctionIDError};
 
@@ -195,9 +195,15 @@ impl VM {
 	}
 
 	fn exec_inst(&mut self) -> Result<bool, RawVMError> {
-		let Some(inst) = Bytecode::disasm_inst(self.mem.mem_iter(self.mem.regs.pc as usize))? else {
+		let mut bytes = IndexedIterator::from(self.mem.mem_iter(self.mem.regs.pc as usize));
+
+		let Some(inst) = Bytecode::disasm_inst(&mut bytes)? else {
 			return Ok(false)
 		};
+
+		let inst_size = bytes.index;
+
+		drop(bytes);
 
 		println!("{inst}");
 
@@ -205,7 +211,7 @@ impl VM {
 			return Ok(false)
 		}
 
-		let pc = self.mem.regs.pc + 1;
+		let pc = self.mem.regs.pc + (inst_size as u32);
 		self.mem.regs.pc = pc;
 
 		inst.exec(&mut self.mem)?;
@@ -220,7 +226,9 @@ impl VM {
 			let is_not_hlt = match self.exec_inst() {
 				Ok(value) => value,
 				Err(e) => {
-					let inst = Bytecode::disasm_inst(self.mem.mem_iter(self.mem.regs.pc as usize)).map_err(|e|
+					let mut bytes = IndexedIterator::from(self.mem.mem_iter(self.mem.regs.pc as usize));
+
+					let inst = Bytecode::disasm_inst(&mut bytes).map_err(|e|
 					VMError {
 						val: e.into(),
 						inst: None
