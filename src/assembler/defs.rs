@@ -147,7 +147,7 @@ macro_rules! gen_from_bin_ops {
 		_
 	};
 
-	( $matching_op:ident, $( $inst:path, $op_type:ident $op:path ),+ $(,)? ) => {
+	( $matching_op:ident, $( $inst:path => $op_type:ident $op:path ),+ $(,)? ) => {
 		match $matching_op {
 			$(
 				gen_from_bin_ops!( @pattern $op_type $op )
@@ -182,7 +182,7 @@ macro_rules! gen_from_un_ops {
 	( un $op:path ) => {
 		$op
 	};
-	( $matching_op:ident, $( $inst:path, $op_type:ident $op:path ),+ $(,)? ) => {
+	( $matching_op:ident, $( $inst:path => $op_type:ident $op:path ),+ $(,)? ) => {
 		match $matching_op {
 			$(
 				gen_from_un_ops!( $op_type $op ) if gen_from_un_ops!( @guard_pattern $op_type ) =>
@@ -323,7 +323,7 @@ macro_rules! gen_insts_impl {
 				gen_from_un_ops!(op,
 					$(
 						$(
-							Bytecode::$inst, $op_type UnaryOp::$op,
+							Bytecode::$inst => $op_type UnaryOp::$op,
 						)?
 					)*
 				)
@@ -333,7 +333,7 @@ macro_rules! gen_insts_impl {
 				gen_from_bin_ops!(op,
 					$(
 						$(
-							Bytecode::$inst, $op_type BinaryOp::$op,
+							Bytecode::$inst => $op_type BinaryOp::$op,
 						)?
 					)*
 				)
