@@ -56,7 +56,7 @@ gen_insts_impl!(
 		}
 	},
 
-	/// # Push number to stack
+	/// # Push `val` number to stack
 	/// # Example
 	/// ```asm,ignore
 	/// push 123 ; push 123 to stack
@@ -378,7 +378,7 @@ gen_insts_impl!(
 
 	/// # Call built-in function `id`:
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 1 ; our exit code
 	/// native exit ; exit from program
 	/// ```
@@ -402,11 +402,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary equal, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc == base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 2
 	/// eq
@@ -428,11 +428,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary less, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc < base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 3
 	/// lt
@@ -454,11 +454,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary addition, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc + base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 2
 	/// add
@@ -480,11 +480,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary subtraction, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc - base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 123
 	/// mov base, 3
 	/// sub
@@ -506,11 +506,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary multiplication, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc * base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 3
 	/// mul
@@ -532,11 +532,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary divizion, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc / base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 3
 	/// div
@@ -558,11 +558,11 @@ gen_insts_impl!(
 	},
 
 	/// # Binary power, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc ** base
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 2
 	/// mov base, 3
 	/// pow
@@ -584,11 +584,11 @@ gen_insts_impl!(
 	},
 
 	/// # Logical and, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc != 0 && base != 0
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 1
 	/// mov base, 1
 	/// land
@@ -610,11 +610,11 @@ gen_insts_impl!(
 	},
 
 	/// # Logical or, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc != 0 || base != 0
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 1
 	/// mov base, 1
 	/// lor
@@ -636,11 +636,11 @@ gen_insts_impl!(
 	},
 
 	/// # Unary negation, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = -acc
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 123
 	/// neg
 	/// ```
@@ -659,11 +659,11 @@ gen_insts_impl!(
 	},
 
 	/// # Logical not, calculates:
-	/// ```ignore
+	/// ```asm,ignore
 	/// acc = acc == 0
 	/// ```
 	/// # Example
-	/// ```ignore
+	/// ```asm,ignore
 	/// mov acc, 0
 	/// not
 	/// ```
