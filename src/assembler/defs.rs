@@ -224,7 +224,7 @@ macro_rules! gen_from_un_ops {
 macro_rules! gen_insts_impl {
 	(
 		$(
-			$( ( $op_type:ident $op:ident ) )? #[doc=$inst_doc:literal] $inst:ident
+			#[doc=$inst_doc:literal] $( ( $op_type:ident $op:ident ) )? $inst:ident
 			$( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{

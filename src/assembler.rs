@@ -32,6 +32,7 @@ gen_regs_code!(
 );
 
 gen_insts_impl!(
+	/// Halts program
 	Halt as 0x00 | 0xFF => {
 		asm(result) => {
 		},
@@ -44,6 +45,8 @@ gen_insts_impl!(
 			write!(f, "hlt")
 		}
 	},
+
+	/// No docs
 	PushNumber(u32) as 0x01 => {
 		asm(result, val) => {
 			result.extend(val.to_le_bytes());
@@ -61,6 +64,7 @@ gen_insts_impl!(
 		}
 	},
 
+	/// No docs
 	PushReg(BytecodeRegister) as 0x04 => {
 		asm(result, reg) => {
 			result.extend(reg.to_le_bytes());
@@ -79,6 +83,8 @@ gen_insts_impl!(
 			write!(f, "push {reg}")
 		}
 	},
+
+	/// No docs
 	PopReg(BytecodeRegister) as 0x05 => {
 		asm(result, reg) => {
 			result.extend(reg.to_le_bytes());
@@ -98,6 +104,7 @@ gen_insts_impl!(
 		}
 	},
 
+	/// No docs
 	LoadToReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x06 => {
 		asm(result, reg1, reg2, offset) => {
 			result.extend(reg1.to_le_bytes());
@@ -159,6 +166,8 @@ gen_insts_impl!(
 		}
 	},
 
+
+	/// No docs
 	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
 		asm(result, reg, val) => {
 			result.extend(reg.to_le_bytes());
@@ -180,6 +189,8 @@ gen_insts_impl!(
 			write!(f, "mov {reg}, {val}")
 		}
 	},
+
+	/// No docs
 	MovRegToReg(BytecodeRegister, BytecodeRegister) as 0x0B => {
 		asm(result, reg1, reg2) => {
 			result.extend(reg1.to_le_bytes());
@@ -204,6 +215,8 @@ gen_insts_impl!(
 		}
 	},
 
+
+	/// No docs
 	Jif(u32) as 0x20 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -220,6 +233,8 @@ gen_insts_impl!(
 			write!(f, "jif {pos}")
 		}
 	},
+
+	/// No docs
 	Jmp(u32) as 0x28 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -236,6 +251,8 @@ gen_insts_impl!(
 			write!(f, "jmp {pos}")
 		}
 	},
+
+	/// No docs
 	Call(u32) as 0x2A => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -254,6 +271,8 @@ gen_insts_impl!(
 			write!(f, "call {pos}")
 		}
 	},
+
+	/// No docs
 	Ret as 0x2C => {
 		asm(_result) => {
 		},
@@ -267,6 +286,8 @@ gen_insts_impl!(
 			write!(f, "ret")
 		}
 	},
+
+	/// No docs
 	NativeCall(NativeFunctionID) as 0x80 => {
 		asm(result, id) => {
 			result.extend(id.to_le_bytes());
@@ -285,6 +306,8 @@ gen_insts_impl!(
 			write!(f, "native_call {id}")
 		}
 	},
+
+	/// No docs
 	(bin Equals) Eq as 0x50 => {
 		asm(result) => {
 		},
@@ -300,6 +323,8 @@ gen_insts_impl!(
 			write!(f, "eq")
 		}
 	},
+
+	/// No docs
 	(bin Less) Lt as 0x52 => {
 		asm(result) => {
 		},
@@ -315,6 +340,8 @@ gen_insts_impl!(
 			write!(f, "lt")
 		}
 	},
+
+	/// No docs
 	(bin Plus) Add as 0xA0 => {
 		asm(_result) => {
 		},
@@ -330,6 +357,8 @@ gen_insts_impl!(
 			write!(f, "add")
 		}
 	},
+
+	/// No docs
 	(bin Minus) Sub as 0xA3 => {
 		asm(_result) => {
 		},
@@ -345,6 +374,8 @@ gen_insts_impl!(
 			write!(f, "sub")
 		}
 	},
+
+	/// No docs
 	(bin Multiply) Mul as 0xB0 => {
 		asm(_result) => {
 		},
@@ -360,6 +391,8 @@ gen_insts_impl!(
 			write!(f, "mul")
 		}
 	},
+
+	/// No docs
 	(bin Divide) Div as 0xB3 => {
 		asm(_result) => {
 		},
@@ -375,6 +408,8 @@ gen_insts_impl!(
 			write!(f, "div")
 		}
 	},
+
+	/// No docs
 	(bin Pow) Pow as 0xC0 => {
 		asm(_result) => {
 		},
@@ -390,6 +425,8 @@ gen_insts_impl!(
 			write!(f, "pow")
 		}
 	},
+
+	/// No docs
 	(bin LogicalAnd) LogicalAnd as 0xD3 => {
 		asm(_result) => {
 		},
@@ -405,6 +442,8 @@ gen_insts_impl!(
 			write!(f, "land")
 		}
 	},
+
+	/// No docs
 	(bin LogicalOr) LogicalOr as 0xE0 => {
 		asm(_result) => {
 		},
@@ -420,6 +459,8 @@ gen_insts_impl!(
 			write!(f, "lor")
 		}
 	},
+
+	/// No docs
 	(un Minus) Neg as 0xC3 => {
 		asm(_result) => {
 		},
@@ -433,6 +474,8 @@ gen_insts_impl!(
 			write!(f, "neg")
 		}
 	},
+
+	/// No docs
 	(un Not) Not as 0xD0 => {
 		asm(_result) => {
 		},
