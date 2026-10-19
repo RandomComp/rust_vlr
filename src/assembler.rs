@@ -61,12 +61,12 @@ gen_insts_impl!(
 	/// ```asm,ignore
 	/// push 123 ; push 123 to stack
 	/// ```
-	PushNumber(u32) as 0x01 => {
+	PushNumber(VMWord) as 0x01 => {
 		asm(result, val) => {
 			result.extend(val.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let value = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let value = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::PushNumber(value)
 		},
@@ -208,7 +208,7 @@ gen_insts_impl!(
 	/// ```asm,ignore
 	/// mov acc, 123
 	/// ```
-	MovU32ToReg(BytecodeRegister, u32) as 0x0A => {
+	MovU32ToReg(BytecodeRegister, VMWord) as 0x0A => {
 		asm(result, reg, val) => {
 			result.extend(reg.to_le_bytes());
 			result.extend(val.to_le_bytes());
@@ -218,7 +218,7 @@ gen_insts_impl!(
 				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
 			)?;
 
-			let val = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let val = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::MovU32ToReg(reg, val)
 		},
@@ -273,12 +273,12 @@ gen_insts_impl!(
 	/// jmp some_label
 	/// loop_exit:
 	/// ```
-	Jif(u32) as 0x20 => {
+	Jif(VMWord) as 0x20 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let pos = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::Jif(pos)
 		},
@@ -304,12 +304,12 @@ gen_insts_impl!(
 	/// jmp some_label ; jump on some_label
 	/// loop_exit:
 	/// ```
-	Jmp(u32) as 0x28 => {
+	Jmp(VMWord) as 0x28 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let pos = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::Jmp(pos)
 		},

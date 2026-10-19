@@ -248,11 +248,16 @@ macro_rules! gen_insts_impl {
 				)*
 				#[doc = concat!(
 					$(
-						"# Where: \n\r",
+						"# Where \n",
 						$(
-							stringify!($asm_arg), ": `", stringify!($arg), "`, ",
+							"* ", stringify!($asm_arg), ": `", stringify!($arg), "`\n",
 						)*
 					)?
+				)]
+				#[doc = concat!(
+					"# Opcodes \n",
+					"* main opcode: `", stringify!($main_opcode), "`\n",
+					$( $( "* other possible opcode: `", stringify!($opcode), "`\n", )* )?
 				)]
 				$inst $(
 					( $( $arg, )* )
