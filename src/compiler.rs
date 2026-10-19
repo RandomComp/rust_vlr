@@ -230,8 +230,12 @@ impl Compiler {
 	pub fn build(self) -> Result<Vec<u8>, BytecodeError> {
 		println!("Bytecode before optimizer:");
 
-		for (i, byte) in self.result.iter().enumerate() {
+		let mut i = 0;
+
+		for byte in &self.result {
 			println!("{i:02}: {byte}");
+
+			i += byte.len();
 		}
 
 		let mut asm_optimizer = AssemblerOptimizer::new(&self.result);
@@ -240,8 +244,12 @@ impl Compiler {
 
 		println!("Bytecode after optimizer:");
 
-		for (i, byte) in optimized.iter().enumerate() {
+		let mut i = 0;
+
+		for byte in &optimized {
 			println!("{i:02}: {byte}");
+
+			i += byte.len();
 		}
 
 		optimized.push(Bytecode::Halt);
