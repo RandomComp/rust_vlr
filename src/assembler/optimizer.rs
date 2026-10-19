@@ -155,6 +155,8 @@ impl<'a> AssemblerOptimizer<'a> {
 			}
 		}
 
+		result.retain(|v| *v != Bytecode::Nop);
+
 		result
 	}
 }
