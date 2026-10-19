@@ -38,7 +38,7 @@ gen_insts_impl!(
 	/// # Example
 	/// ```asm,ignore
 	/// hlt ; after this, next code should NEVER EXECUTED
-	/// ; this is dead code, cuz hlt after this:
+	/// ; this is dead code, cuz hlt before this:
 	/// mov acc, 0
 	/// mov base, 0
 	/// div
@@ -129,11 +129,11 @@ gen_insts_impl!(
 		}
 	},
 
-	/// # Loads `[reg2-offset]` to `reg1`
+	/// # Loads `[reg2 +/- offset]` to `reg1`
 	/// # Example
 	/// ```asm,ignore
 	/// mov base, 0x16 ; heap address, 0x16 + 128 = 150 = 0x96
-	/// mov acc, [base+0x80] ; move acc value to heap 0x16
+	/// mov acc, [base+0x80] ; move heap 0x16 value to acc
 	/// ; in acc our value
 	/// ```
 	LoadToReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x06 => {
@@ -162,11 +162,11 @@ gen_insts_impl!(
 			mem.regs[reg1] = value;
 		},
 		display(f, reg1, reg2, offset) => {
-			write!(f, "mov {reg1}, [{reg2}-{offset}]")
+			write!(f, "mov {reg1}, [{reg2}{offset:+}]")
 		}
 	},
 
-	/// # Loads `val_reg` value to `[reg-offset]`
+	/// # Loads `val_reg` value to `[reg +/- offset]`
 	/// # Example
 	/// ```asm,ignore
 	/// mov acc, 123 ; value

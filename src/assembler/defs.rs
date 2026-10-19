@@ -250,7 +250,7 @@ macro_rules! gen_insts_impl {
 					$(
 						"# Where \n",
 						$(
-							"* ", stringify!($asm_arg), ": `", stringify!($arg), "`\n",
+							"* ", stringify!($asm_arg), ": [`", stringify!($arg), "`]\n",
 						)*
 					)?
 				)]
