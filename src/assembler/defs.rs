@@ -6,11 +6,11 @@ use crate::compiler::native_func::{NativeFunctionIDError};
 pub enum BytecodeError {
 	#[error("Byte {byte:02X} at {pos:02} unexpected")]
 	UnexpectedByte {
-		pos: u32, byte: u8
+		pos: usize, byte: u8
 	},
 	#[error("Unexpected EOF at {pos}")]
 	UnexpectedEof {
-		pos: u32,
+		pos: usize,
 	},
 	#[error("String constant length is too long for u32 type, that means string is bigger than 4 GiB, try using dynamic string")]
 	StringTooLong,
@@ -58,6 +58,7 @@ macro_rules! gen_regs_code {
 		use $crate::vm::VMWord;
 
 		#[derive(PartialEq, Copy, Clone, Debug)]
+		#[repr(u8)]
 		pub enum BytecodeRegister {
 			$(
 				$( #[$doc] )*
@@ -223,7 +224,7 @@ macro_rules! gen_from_un_ops {
 macro_rules! gen_insts_impl {
 	(
 		$(
-			$( ( $op_type:ident $op:ident ) )? $inst:ident
+			$( ( $op_type:ident $op:ident ) )? #[doc=$inst_doc:literal] $inst:ident
 			$( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
 			=>
 			{
@@ -242,7 +243,16 @@ macro_rules! gen_insts_impl {
 		#[derive(PartialEq, Clone, Debug)]
 		pub enum Bytecode {
 			$(
-				$inst $( ( $( $arg, )* ) )?,
+				#[doc = concat!($inst_doc, ", accepts: ",
+					$(
+						$(
+							stringify!($asm_arg), ": ", stringify!($arg), ", ",
+						)*
+					)?
+				)]
+				$inst $(
+					( $( $arg, )* )
+				)?,
 			)*
 		}
 

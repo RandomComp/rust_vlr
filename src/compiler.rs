@@ -90,14 +90,14 @@ impl Compiler {
 		self.result.len() as u32
 	}
 
-	fn look(&mut self, stack_pos: u32) {
-		self.result.push(Bytecode::Look(BytecodeRegister::StackPointer, stack_pos));
+	fn look_to_reg(&mut self, reg: BytecodeRegister, stack_pos: u32) {
+		self.result.push(Bytecode::LoadToReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack += 1;
 	}
 
-	fn load(&mut self, stack_pos: u32) {
-		self.result.push(Bytecode::Load(BytecodeRegister::StackPointer, stack_pos));
+	fn load_from_reg(&mut self, reg: BytecodeRegister, stack_pos: u32) {
+		self.result.push(Bytecode::LoadFromReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack -= 1;
 	}
@@ -183,14 +183,14 @@ impl Compiler {
 			);
 		};
 
-		self.look(stack_pos);
+		self.look_to_reg(BytecodeRegister::Base, stack_pos);
 		self.compile(right, context)?;
 
 		self.stack -= 1;
 
 		self.result.push(op);
 
-		self.load(stack_pos);
+		self.load_from_reg(BytecodeRegister::Accum, stack_pos);
 
 		Ok(())
 	}
@@ -345,7 +345,7 @@ impl Compiler {
 				if let Some(stack_pos) = context.get_var(name) {
 					self.compile(right, context)?;
 
-					self.load(stack_pos);
+					self.load_from_reg(stack_pos);
 				} else {
 					let stack_pos = self.stack;
 

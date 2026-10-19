@@ -98,46 +98,64 @@ gen_insts_impl!(
 		}
 	},
 
-	Look(BytecodeRegister, VMWord) as 0x06 => {
-		asm(result, reg, offset) => {
-			result.extend(reg.to_le_bytes());
+	LoadToReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x06 => {
+		asm(result, reg1, reg2, offset) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 			result.extend(offset.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let reg = BytecodeRegister::try_from(
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+			let reg2 = BytecodeRegister::try_from(
 				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
 			)?;
 
 			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
-			Self::Look(reg, offset)
+			Self::LoadToReg(reg1, reg2, offset)
 		},
-		exec(mem, reg, offset) => {
-			mem.push(mem.get_word((mem.regs[reg] - offset) as usize)?)?;
+		exec(mem, reg1, reg2, offset) => {
+			let addr = (mem.regs[reg2] - offset) as usize;
+
+			let value = mem.get_word(addr)?;
+
+			mem.regs[reg1] = value;
 		},
-		display(f, reg, offset) => {
-			write!(f, "look {reg}-{offset}")
+		display(f, reg1, reg2, offset) => {
+			write!(f, "mov {reg1}, [{reg2}-{offset}]")
 		}
 	},
-	Load(BytecodeRegister, VMWord) as 0x07 => {
-		asm(result, reg, offset) => {
+
+	/// `val_reg` Loads to `[reg-offset]`
+	LoadFromReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x07 => {
+		asm(result, val_reg, reg, offset) => {
+			result.extend(val_reg.to_le_bytes());
 			result.extend(reg.to_le_bytes());
 			result.extend(offset.to_le_bytes());
 		},
 		disasm(bytes) => {
+			let val_reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: bytes.index })?
+			)?;
 			let reg = BytecodeRegister::try_from(
-				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: bytes.index })?
 			)?;
 
 			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
-			Self::Load(reg, offset)
+			Self::LoadFromReg(val_reg, reg, offset)
 		},
-		exec(mem, reg, offset) => {
+		exec(mem, val_reg, reg, offset) => {
+			let value = mem.regs[val_reg];
 
+			let addr = (mem.regs[reg] - offset) as usize;
+
+			mem.set_word(addr, value)?;
 		},
-		display(f, reg, offset) => {
-			write!(f, "load {reg}-{offset}")
+		display(f, val_reg, reg, offset) => {
+			write!(f, "mov [{reg}-{offset}], {val_reg}")
 		}
 	},
 
