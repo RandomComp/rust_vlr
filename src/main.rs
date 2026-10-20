@@ -187,7 +187,7 @@ fn repl() -> Result<(), AppError> {
 			continue;
 		}
 
-		let segs = compiler.build()?;
+		let segs = compiler.build();
 
 		let bytes = Linker::link(segs)?;
 
@@ -344,12 +344,7 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 		return Err((e.into(), spans))
 	}
 
-	let segs = match compiler.build() {
-		Ok(res) => res,
-		Err(e) => {
-			return Err((e.into(), spans))
-		}
-	};
+	let segs = compiler.build();
 
 	let bytes = match Linker::link(segs) {
 		Ok(res) => res,

@@ -3,7 +3,7 @@ pub mod parser;
 pub mod optimizer;
 pub mod native_func;
 
-use crate::assembler::{BytecodeRegister, defs::BytecodeError, optimizer::AssemblerOptimizer};
+use crate::assembler::{BytecodeRegister, optimizer::AssemblerOptimizer};
 use crate::compiler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::vm::VMWord;
 use crate::wrapper::{wmatch, Spanned};
@@ -105,7 +105,7 @@ impl Compiler {
 	}
 
 	fn pc(&self) -> VMWord {
-		self.segs.code.len() as VMWord
+		self.segs.code.iter().map(|v| v.len()).sum::<usize>() as VMWord
 	}
 
 	fn result_push(&mut self, code: Bytecode) {
@@ -237,7 +237,7 @@ impl Compiler {
 		Ok(())
 	}
 
-	pub fn build(self) -> Result<Segments, BytecodeError> {
+	pub fn build(self) -> Segments {
 		println!("Bytecode before optimizer:");
 
 		let mut i = 0;
@@ -267,9 +267,7 @@ impl Compiler {
 
 		optimized.push(Bytecode::Halt);
 
-		Ok(
-			Segments { code: optimized, data: self.segs.data }
-		)
+		Segments { code: optimized, data: self.segs.data }
 	}
 
 	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
@@ -324,6 +322,11 @@ impl Compiler {
 			},
 			ASTNode::Return(value) => {
 				self.compile(value, context)?;
+				self.result_push(
+					Bytecode::PopReg(
+						BytecodeRegister::Accum
+					)
+				);
 
 				self.result_push(Bytecode::Ret);
 			},
@@ -483,6 +486,21 @@ impl Compiler {
 				self.stack -= 1;
 
 				self.result_push(Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(Bytecode::Not(BytecodeRegister::Accum));
+
+				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.stack += 1;
+			},
+			ASTNode::Binary { left, op: wmatch!(BinaryOp::Neq), right } => {
+				self.compile(left, context)?;
+				self.compile(right, context)?;
+
+				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.stack -= 1;
+				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.stack -= 1;
+
+				self.result_push(Bytecode::Eq(BytecodeRegister::Accum, BytecodeRegister::Base));
 				self.result_push(Bytecode::Not(BytecodeRegister::Accum));
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
