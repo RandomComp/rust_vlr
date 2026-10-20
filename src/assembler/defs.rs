@@ -253,8 +253,8 @@ macro_rules! gen_insts_impl {
 			$( ( $($arg:ty),* $(,)? ) )? $( as $main_opcode:literal $( | $opcode:literal )* )?
 			=>
 			{
-				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
 				$(
+					asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
 					disasm ( $bytes:ident ) => $inst_disasm:block,
 					exec 	( $mem:ident $(, $( $exec_arg:ident ),* $(,)? )? ) => $inst_exec:block,
 				)?
@@ -277,7 +277,7 @@ macro_rules! gen_insts_impl {
 					$(
 						"# Where \n",
 						$(
-							"* ", stringify!($asm_arg), ": [`", stringify!($arg), "`]\n",
+							"* ", stringify!($display_arg), ": [`", stringify!($arg), "`]\n",
 						)*
 					)?
 				)]
@@ -337,19 +337,22 @@ macro_rules! gen_insts_impl {
 
 				match self {
 					$(
-						Self::$inst $( ( $( $display_arg, )* ) )? => {
-							$(
+						$(
+							Self::$inst $( ( $( $asm_arg, )* ) )? => {
 								result.push($main_opcode);
-							)?
 
-							#[allow(unused_mut)]
-							let mut $result = result;
+								#[allow(unused_mut)]
+								let mut $result = result;
 
-							$inst_asm;
+								$inst_asm;
 
-							Ok($result)
-						},
+								return Ok($result);
+							},
+						)?
 					)*
+					_ => {
+						unreachable!("Instruction {self} is pseudo, so cannot be assembled")
+					}
 				}
 			}
 
@@ -357,10 +360,6 @@ macro_rules! gen_insts_impl {
 				let mut result = Vec::new();
 
 				for value in values {
-					if value.is_pseudo() {
-						continue
-					}
-
 					let res: Vec<u8> = value.asm_inst()?;
 
 					result.extend(res);

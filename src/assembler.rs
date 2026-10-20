@@ -87,9 +87,6 @@ gen_insts_impl!(
 	/// push ref [data+0x10] ; push reference to stack offset 0x10 of data segment
 	/// ```
 	(pseudo) PushRef(VMWord) => {
-		asm(result, val) => {
-			result.extend(Bytecode::PushNumber(val).asm_inst()?);
-		},
 		display(f, val) => {
 			write!(f, "push ref [data{val:+}]")
 		}
