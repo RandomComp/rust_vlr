@@ -62,8 +62,8 @@ gen_insts_impl!(
 	/// # Halts program
 	/// # Example
 	/// ```asm,ignore
-	/// hlt ; after this, next code should NEVER EXECUTED
-	/// ; this is dead code, cuz hlt before this:
+	/// hlt
+	/// ; intentionally unreachable
 	/// mov acc, 0
 	/// mov base, 0
 	/// div
@@ -78,6 +78,25 @@ gen_insts_impl!(
 		},
 		display(f) => {
 			write!(f, "hlt")
+		}
+	},
+
+	/// # Push reference offset to stack
+	/// # Example
+	/// ```asm,ignore
+	/// push ref [data+0x10] ; push reference to stack offset 0x10 of data segment
+	/// ```
+	(pseudo) PushRef(VMWord) => {
+		asm(result, val) => {
+			result.extend(val.to_le_bytes());
+		},
+		disasm(bytes) => {
+			Self::PushRef(0)
+		},
+		exec(mem, val) => {
+		},
+		display(f, val) => {
+			write!(f, "push ref [data{val:+}]")
 		}
 	},
 

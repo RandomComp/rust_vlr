@@ -1,7 +1,7 @@
-# write(1, "Hello, world!", 1)
+write(1, "Hello, world!", 13)
 
 
-result = 2 + 3 * 4;
+# result = 2 + 3 * 4;
 
 # print(result);
 
@@ -28,14 +28,14 @@ result = 2 + 3 * 4;
 
 
 
-2 + 2 * 2;
-
-def my_function() {
-	exit(123)
-	# print("Hello!")
-}
-
-my_function()
+# 2 + 2 * 2;
+#
+# def my_function() {
+# 	exit(123)
+# 	# print("Hello!")
+# }
+#
+# my_function()
 
 
 

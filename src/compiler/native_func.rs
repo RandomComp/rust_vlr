@@ -71,9 +71,9 @@ macro_rules! call_implementation {
 
 			$(
 				let $arg = $args[index];
-			)*
 
-			index += 1;
+				index += 1;
+			)*
 
 			#[allow(unused_variables)]
 			let $mem = $mem_ptr;
@@ -213,14 +213,20 @@ macro_rules! gen_native_functions {
 
 gen_native_functions!(
 	Write(mem, fixed: fd, addr, cnt) = 0 as "write" => {
+		println!("fd = {fd}, addr = {addr}, cnt = {cnt}");
+
 		if fd == 1 {
 			let mut buf = Vec::new();
 
 			for byte in mem.mem_iter(addr as usize).take(cnt as usize) {
+				print!("{byte:02X} ");
+
 				buf.push(byte);
 			}
 
-			println!("{}", String::from_utf8(buf).unwrap());
+			println!();
+
+			println!("{}", String::from_utf8_lossy_owned(buf));
 		}
 
 		Ok(0)

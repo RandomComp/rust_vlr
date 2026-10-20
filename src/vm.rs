@@ -146,10 +146,6 @@ impl Memory {
 		self.mem.iter().skip(offset).copied()
 	}
 
-	fn stack_get(&self, index: usize) -> Result<VMWord, RawVMError> {
-		self.get_word(self.regs.bp as usize + index)
-	}
-
 	fn stack_iter(&self) -> impl Iterator<Item = VMWord> {
 		self.mem.chunks(4)
 			.skip((self.regs.sp as usize) / 4)
@@ -207,7 +203,7 @@ impl VM {
 			return Ok(false)
 		}
 
-		let pc = self.mem.regs.pc + (inst_size as u32);
+		let pc = self.mem.regs.pc + (inst_size as VMWord);
 		self.mem.regs.pc = pc;
 
 		inst.exec(&mut self.mem)?;

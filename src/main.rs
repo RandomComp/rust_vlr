@@ -336,6 +336,8 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 
 	let bytes = compiler.build().map_err(|e| (e.into(), spans))?;
 
+	println!("bytes = {}", String::from_utf8_lossy_owned(bytes.clone()));
+
 	for byte in &bytes {
 		print!("{byte:02X} ");
 	}

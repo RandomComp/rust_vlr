@@ -172,12 +172,13 @@ macro_rules! gen_from_bin_ops {
 		_
 	};
 
-	( $matching_op:ident, $( $inst:path => $op_type:ident $op:path ),+ $(,)? ) => {
+	( $matching_op:ident, $( $inst:path => $attr_type:ident $( $op:ident )? ),+ $(,)? ) => {
 		match $matching_op {
 			$(
-				gen_from_bin_ops!( @pattern $op_type $op )
-				if gen_from_bin_ops!( @guard_pattern $op_type ) =>
-					gen_from_bin_ops!( @match_body $matching_op $inst, $op_type $op ),
+				$(
+					gen_from_bin_ops!( @pattern $attr_type BinaryOp::$op ) if gen_from_bin_ops!( @guard_pattern $attr_type ) =>
+						gen_from_bin_ops!( @match_body $matching_op $inst, $attr_type BinaryOp::$op ),
+				)?
 			)+
 			_ =>
 				todo!("'{}' not handled in from_binary_op or unreachable", $matching_op)
@@ -207,11 +208,13 @@ macro_rules! gen_from_un_ops {
 	( un $op:path ) => {
 		$op
 	};
-	( $matching_op:ident, $( $inst:path => $op_type:ident $op:path ),+ $(,)? ) => {
+	( $matching_op:ident, $( $inst:path => $attr_type:ident $( $op:ident )? ),+ $(,)? ) => {
 		match $matching_op {
 			$(
-				gen_from_un_ops!( $op_type $op ) if gen_from_un_ops!( @guard_pattern $op_type ) =>
-					gen_from_un_ops!( @match_body $matching_op $inst, $op_type $op ),
+				$(
+					gen_from_un_ops!( $attr_type UnaryOp::$op ) if gen_from_un_ops!( @guard_pattern $attr_type ) =>
+						gen_from_un_ops!( @match_body $matching_op $inst, $attr_type UnaryOp::$op ),
+				)?
 			)+
 			_ => {
 				todo!("'{}' not handled in from_unary_op or unreachable", $matching_op)
@@ -222,10 +225,32 @@ macro_rules! gen_from_un_ops {
 
 #[macro_export]
 macro_rules! gen_insts_impl {
+	( @text_if_pseudo pseudo ) => {
+		concat!(
+			"# Important\n\r",
+			"This is a pseudo instruction, this instrunction doesn't have a disasm or execution function implementation"
+		)
+	};
+	( @text_if_pseudo bin $op:ident ) => {
+		concat!(
+			"# Note\n\r",
+			"This is a binary '", stringify!($op), "' mathemetical instruction"
+		)
+	};
+	( @text_if_pseudo un $op:ident ) => {
+		concat!(
+			"# Note\n\r",
+			"This is a unary '", stringify!($op), "' mathemetical instruction"
+		)
+	};
+	( @text_if_pseudo ) => {
+		""
+	};
+
 	(
 		$(
-			$( #[doc=$inst_doc:literal] )+ $( ( $op_type:ident $op:ident ) )? $inst:ident
-			$( ( $($arg:ty),* $(,)? ) )? as $main_opcode:literal $( | $( $opcode:literal )|* )?
+			$( #[doc=$inst_doc:literal] )+ $( ( $( $attr:ident )+ ) )? $inst:ident
+			$( ( $($arg:ty),* $(,)? ) )? $( as $main_opcode:literal $( | $opcode:literal )* )?
 			=>
 			{
 				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
@@ -246,7 +271,7 @@ macro_rules! gen_insts_impl {
 				$(
 					#[doc=$inst_doc]
 				)*
-				#[doc = concat!(
+				#[doc=concat!(
 					$(
 						"# Where \n",
 						$(
@@ -254,11 +279,18 @@ macro_rules! gen_insts_impl {
 						)*
 					)?
 				)]
-				#[doc = concat!(
-					"# Opcodes \n",
-					"* main opcode: `", stringify!($main_opcode), "`\n",
-					$( $( "* other possible opcode: `", stringify!($opcode), "`\n", )* )?
-				)]
+				$(
+					#[doc=concat!(
+						"# Opcodes \n",
+						"* main opcode: `", stringify!($main_opcode), "`\n",
+						$( "* other possible opcode: `", stringify!($opcode), "`\n", )*
+					)]
+				)?
+				$(
+					#[doc=
+						gen_insts_impl!( @text_if_pseudo $( $attr )+ )
+					]
+				)?
 				$inst $(
 					( $( $arg, )* )
 				)?,
@@ -286,7 +318,9 @@ macro_rules! gen_insts_impl {
 				match self {
 					$(
 						Self::$inst $( ( $( $asm_arg, )* ) )? => {
-							result.push($main_opcode);
+							$(
+								result.push($main_opcode);
+							)?
 
 							#[allow(unused_mut)]
 							let mut $result = result;
@@ -321,14 +355,16 @@ macro_rules! gen_insts_impl {
 
 				match opcode {
 					$(
-						$main_opcode $( | $( $opcode )|* )? => {
-							#[allow(unused_mut)]
-							let mut $bytes = bytes;
+						$(
+							$main_opcode $( | $opcode )* => {
+								#[allow(unused_mut)]
+								let mut $bytes = bytes;
 
-							let result = $inst_disasm;
+								let result = $inst_disasm;
 
-							Ok(Some((result, $bytes.index)))
-						},
+								Ok(Some((result, $bytes.index)))
+							},
+						)?
 					)*
 					x => Err(BytecodeError::UnexpectedByte { pos: 0, byte: x }), // TODO: fix: pos: 0 in bytecode disasembler
 				}
@@ -369,7 +405,7 @@ macro_rules! gen_insts_impl {
 			pub fn len(&self) -> usize {
 				match self {
 					$(
-						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
+						Self::$inst $( ( $( $exec_arg, )* ) )? => {
 							1 $( $( + std::mem::size_of::<$arg>() )* )?
 						}
 					)*
@@ -380,7 +416,7 @@ macro_rules! gen_insts_impl {
 				gen_from_un_ops!(op,
 					$(
 						$(
-							Bytecode::$inst => $op_type UnaryOp::$op,
+							Bytecode::$inst => $( $attr )+,
 						)?
 					)*
 				)
@@ -390,7 +426,7 @@ macro_rules! gen_insts_impl {
 				gen_from_bin_ops!(op,
 					$(
 						$(
-							Bytecode::$inst => $op_type BinaryOp::$op,
+							Bytecode::$inst => $( $attr )+,
 						)?
 					)*
 				)
