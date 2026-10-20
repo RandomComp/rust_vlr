@@ -462,8 +462,8 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_binary_op(&BinaryOp::Less));
-				self.result_push(Bytecode::from_unary_op(&UnaryOp::Not));
+				self.result_push(Bytecode::Lt);
+				self.result_push(Bytecode::Not);
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
@@ -477,7 +477,7 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_binary_op(&BinaryOp::Less));
+				self.result_push(Bytecode::Lt);
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
