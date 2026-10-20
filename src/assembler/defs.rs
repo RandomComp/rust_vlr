@@ -188,11 +188,11 @@ macro_rules! gen_from_bin_ops {
 
 #[macro_export]
 macro_rules! gen_from_un_ops {
-	( @match_body $matching_op:ident $inst:ident($reg1:ident, $reg2:ident), bin $op:path ) => {
+	( @match_body $matching_op:ident $inst:ident($reg:ident), bin $op:path ) => {
 		unreachable!()
 	};
-	( @match_body $matching_op:ident $inst:ident($reg1:ident, $reg2:ident), un $op:path ) => {
-		Bytecode::$inst($reg1, $reg2)
+	( @match_body $matching_op:ident $inst:ident($reg:ident), un $op:path ) => {
+		Bytecode::$inst($reg)
 	};
 
 	( @guard_pattern bin ) => {
@@ -208,12 +208,12 @@ macro_rules! gen_from_un_ops {
 	( un $op:path ) => {
 		$op
 	};
-	( $matching_op:ident, $( $inst:ident($reg1:ident, $reg2:ident) => $attr_type:ident $( $op:ident )? ),+ $(,)? ) => {
+	( $matching_op:ident, $( $inst:ident($reg:ident) => $attr_type:ident $( $op:ident )? ),+ $(,)? ) => {
 		match $matching_op {
 			$(
 				$(
 					gen_from_un_ops!( $attr_type UnaryOp::$op ) if gen_from_un_ops!( @guard_pattern $attr_type ) =>
-						gen_from_un_ops!( @match_body $matching_op $inst($reg1, $reg2), $attr_type UnaryOp::$op ),
+						gen_from_un_ops!( @match_body $matching_op $inst($reg), $attr_type UnaryOp::$op ),
 				)?
 			)+
 			_ => {
@@ -442,11 +442,11 @@ macro_rules! gen_insts_impl {
 				}
 			}
 
-			pub fn from_unary_op(op: &UnaryOp, reg1: BytecodeRegister, reg2: BytecodeRegister) -> Bytecode {
+			pub fn from_unary_op(op: &UnaryOp, reg: BytecodeRegister) -> Bytecode {
 				gen_from_un_ops!(op,
 					$(
 						$(
-							$inst(reg1, reg2) => $( $attr )+,
+							$inst(reg) => $( $attr )+,
 						)?
 					)*
 				)

@@ -109,7 +109,7 @@ impl Compiler {
 	}
 
 	fn result_push(&mut self, code: Bytecode) {
-		self.segs.code.push(code.into());
+		self.segs.code.push(code);
 	}
 
 	fn look_to_reg(&mut self, reg: BytecodeRegister, stack_pos: VMWord) {
@@ -186,7 +186,7 @@ impl Compiler {
 		)
 	}
 
-	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: Bytecode, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: &BinaryOp, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
 		let ASTNode::Variable(name) = &left.val else {
 			return Err(
 				Spanned::from_with_span(
@@ -210,7 +210,27 @@ impl Compiler {
 
 		self.stack -= 1;
 
-		self.result_push(op);
+		match op {
+			BinaryOp::PlusAssignment => {
+				self.result_push(Bytecode::Add(BytecodeRegister::Accum, BytecodeRegister::Base));
+			}
+			BinaryOp::MinusAssignment => {
+				self.result_push(Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
+			}
+			BinaryOp::MultiplyAssignment => {
+				self.result_push(Bytecode::Mul(BytecodeRegister::Accum, BytecodeRegister::Base));
+			}
+			BinaryOp::DivideAssignment => {
+				self.result_push(Bytecode::Div(BytecodeRegister::Accum, BytecodeRegister::Base));
+			}
+			// BinaryOp::RemainderAssignment => {
+			// 	self.result_push(Bytecode::Re(BytecodeRegister::Accum, BytecodeRegister::Base));
+			// }
+			BinaryOp::PowAssignment => {
+				self.result_push(Bytecode::Pow(BytecodeRegister::Accum, BytecodeRegister::Base));
+			}
+			_ => unreachable!("{op} is not valid assignment binary operator or not handled")
+		}
 
 		self.load_from_reg(BytecodeRegister::Accum, stack_pos);
 
@@ -382,20 +402,20 @@ impl Compiler {
 					context.insert_var(name.to_owned(), stack_pos);
 				}
 			},
-			ASTNode::Binary { left, op: wmatch!(BinaryOp::PlusAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Add, context)?;
-			},
-			ASTNode::Binary { left, op: wmatch!(BinaryOp::MinusAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Sub, context)?;
-			},
-			ASTNode::Binary { left, op: wmatch!(BinaryOp::MultiplyAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Mul, context)?;
-			},
-			ASTNode::Binary { left, op: wmatch!(BinaryOp::PowAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Pow, context)?;
-			},
-			ASTNode::Binary { left, op: wmatch!(BinaryOp::DivideAssignment), right } => {
-				self.compile_assignment(left, right, Bytecode::Div, context)?;
+			ASTNode::Binary {
+				left,
+				op:
+					op @ wmatch!(
+						BinaryOp::PlusAssignment |
+						BinaryOp::MinusAssignment |
+						BinaryOp::MultiplyAssignment |
+						BinaryOp::DivideAssignment |
+						BinaryOp::RemainderAssignment |
+						BinaryOp::PowAssignment
+					),
+				right
+			} => {
+				self.compile_assignment(left, right, &op.val, context)?;
 			},
 			ASTNode::Variable(name) => {
 				let Some(stack_pos) = context.get_var(name) else {
@@ -434,7 +454,7 @@ impl Compiler {
 
 				self.result_push(Bytecode::MovRegToReg(BytecodeRegister::Accum, BytecodeRegister::BasePointer));
 				self.result_push(Bytecode::MovU32ToReg(BytecodeRegister::Base, stack_pos + 4));
-				self.result_push(Bytecode::Sub);
+				self.result_push(Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
 
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
 
@@ -448,7 +468,7 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_unary_op(op));
+				self.result_push(Bytecode::from_unary_op(op, BytecodeRegister::Accum));
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
@@ -462,8 +482,8 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::Lt);
-				self.result_push(Bytecode::Not);
+				self.result_push(Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(Bytecode::Not(BytecodeRegister::Accum));
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
@@ -477,7 +497,7 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::Lt);
+				self.result_push(Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
@@ -491,7 +511,7 @@ impl Compiler {
 				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_binary_op(op));
+				self.result_push(Bytecode::from_binary_op(op, BytecodeRegister::Accum, BytecodeRegister::Base));
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;

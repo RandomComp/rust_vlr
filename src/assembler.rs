@@ -468,7 +468,7 @@ gen_insts_impl!(
 			mem.regs.acc = (mem.regs.acc == right).into();
 		},
 		display(f, reg1, reg2) => {
-			write!(f, "eq")
+			write!(f, "eq {reg1}, {reg2}")
 		}
 	},
 
@@ -482,19 +482,27 @@ gen_insts_impl!(
 	/// mov base, 3
 	/// lt
 	/// ```
-	(bin Less) Lt as 0x52 => {
-		asm(result) => {
+	(bin Less) Lt(BytecodeRegister, BytecodeRegister) as 0x52 => {
+		asm(result, reg1, reg2) => {
 		},
-		disasm(_bytes) => {
-			Self::Lt
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Lt(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc = (mem.regs.acc < right).into();
 		},
-		display(f) => {
-			write!(f, "lt")
+		display(f, reg1, reg2) => {
+			write!(f, "lt {reg1}, {reg2}")
 		}
 	},
 
@@ -508,19 +516,29 @@ gen_insts_impl!(
 	/// mov base, 2
 	/// add
 	/// ```
-	(bin Plus) Add as 0xA0 => {
-		asm(_result) => {
+	(bin Plus) Add(BytecodeRegister, BytecodeRegister) as 0xA0 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Add
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Add(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc += right;
 		},
-		display(f) => {
-			write!(f, "add")
+		display(f, reg1, reg2) => {
+			write!(f, "add {reg1}, {reg2}")
 		}
 	},
 
@@ -534,19 +552,29 @@ gen_insts_impl!(
 	/// mov base, 3
 	/// sub
 	/// ```
-	(bin Minus) Sub as 0xA3 => {
-		asm(_result) => {
+	(bin Minus) Sub(BytecodeRegister, BytecodeRegister) as 0xA3 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Sub
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Sub(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc -= right;
 		},
-		display(f) => {
-			write!(f, "sub")
+		display(f, reg1, reg2) => {
+			write!(f, "sub {reg1}, {reg2}")
 		}
 	},
 
@@ -560,19 +588,29 @@ gen_insts_impl!(
 	/// mov base, 3
 	/// mul
 	/// ```
-	(bin Multiply) Mul as 0xB0 => {
-		asm(_result) => {
+	(bin Multiply) Mul(BytecodeRegister, BytecodeRegister) as 0xB0 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Mul
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Mul(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc *= right;
 		},
-		display(f) => {
-			write!(f, "mul")
+		display(f, reg1, reg2) => {
+			write!(f, "mul {reg1}, {reg2}")
 		}
 	},
 
@@ -586,19 +624,29 @@ gen_insts_impl!(
 	/// mov base, 3
 	/// div
 	/// ```
-	(bin Divide) Div as 0xB3 => {
-		asm(_result) => {
+	(bin Divide) Div(BytecodeRegister, BytecodeRegister) as 0xB3 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Div
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Div(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc /= right;
 		},
-		display(f) => {
-			write!(f, "div")
+		display(f, reg1, reg2) => {
+			write!(f, "div {reg1}, {reg2}")
 		}
 	},
 
@@ -612,19 +660,29 @@ gen_insts_impl!(
 	/// mov base, 3
 	/// pow
 	/// ```
-	(bin Pow) Pow as 0xC0 => {
-		asm(_result) => {
+	(bin Pow) Pow(BytecodeRegister, BytecodeRegister) as 0xC0 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Pow
-		},
-		exec(mem) => {
-			let right = mem.regs.base;
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
-			mem.regs.acc = mem.regs.acc.pow(right);
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Pow(reg1, reg2)
 		},
-		display(f) => {
-			write!(f, "pow")
+		exec(mem, reg1, reg2) => {
+			let right = mem.regs[reg2];
+
+			mem.regs[reg1] = mem.regs[reg1].pow(right);
+		},
+		display(f, reg1, reg2) => {
+			write!(f, "pow {reg1}, {reg2}")
 		}
 	},
 
@@ -638,19 +696,29 @@ gen_insts_impl!(
 	/// mov base, 1
 	/// land
 	/// ```
-	(bin LogicalAnd) LogicalAnd as 0xD3 => {
-		asm(_result) => {
+	(bin LogicalAnd) LogicalAnd(BytecodeRegister, BytecodeRegister) as 0xD3 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::LogicalAnd
-		},
-		exec(mem) => {
-			let right = mem.regs.base;
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
-			mem.regs.acc = (mem.regs.acc != 0 && right != 0).into();
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::LogicalAnd(reg1, reg2)
 		},
-		display(f) => {
-			write!(f, "land")
+		exec(mem, reg1, reg2) => {
+			let right = mem.regs[reg2];
+
+			mem.regs[reg1] = (mem.regs[reg1] != 0 && right != 0).into();
+		},
+		display(f, reg1, reg2) => {
+			write!(f, "land {reg1}, {reg2}")
 		}
 	},
 
@@ -664,19 +732,29 @@ gen_insts_impl!(
 	/// mov base, 1
 	/// lor
 	/// ```
-	(bin LogicalOr) LogicalOr as 0xE0 => {
-		asm(_result) => {
+	(bin LogicalOr) LogicalOr(BytecodeRegister, BytecodeRegister) as 0xE0 => {
+		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::LogicalOr
-		},
-		exec(mem) => {
-			let right = mem.regs.base;
+		disasm(bytes) => {
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
 
-			mem.regs.acc = (mem.regs.acc != 0 || right != 0).into();
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::LogicalOr(reg1, reg2)
 		},
-		display(f) => {
-			write!(f, "lor")
+		exec(mem, reg1, reg2) => {
+			let right = mem.regs[reg2];
+
+			mem.regs[reg1] = (mem.regs[reg1] != 0 || right != 0).into();
+		},
+		display(f, reg1, reg2) => {
+			write!(f, "lor {reg1}, {reg2}")
 		}
 	},
 
@@ -689,17 +767,22 @@ gen_insts_impl!(
 	/// mov acc, 123
 	/// neg
 	/// ```
-	(un Minus) Neg as 0xC3 => {
-		asm(_result) => {
+	(un Minus) Neg(BytecodeRegister) as 0xC3 => {
+		asm(result, reg) => {
+			result.extend(reg.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Neg
+		disasm(bytes) => {
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Neg(reg)
 		},
-		exec(mem) => {
-			mem.regs.acc = mem.regs.acc.strict_neg();
+		exec(mem, reg) => {
+			mem.regs[reg] = mem.regs[reg].strict_neg();
 		},
-		display(f) => {
-			write!(f, "neg")
+		display(f, reg) => {
+			write!(f, "neg {reg}")
 		}
 	},
 
@@ -712,17 +795,22 @@ gen_insts_impl!(
 	/// mov acc, 0
 	/// not
 	/// ```
-	(un Not) Not as 0xD0 => {
-		asm(_result) => {
+	(un Not) Not(BytecodeRegister) as 0xD0 => {
+		asm(result, reg) => {
+			result.extend(reg.to_le_bytes());
 		},
-		disasm(_bytes) => {
-			Self::Not
+		disasm(bytes) => {
+			let reg = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Not(reg)
 		},
-		exec(mem) => {
-			mem.regs.acc = (mem.regs.acc == 0).into();
+		exec(mem, reg) => {
+			mem.regs[reg] = (mem.regs[reg] == 0).into();
 		},
-		display(f) => {
-			write!(f, "not")
+		display(f, reg) => {
+			write!(f, "not {reg}")
 		}
 	},
 );

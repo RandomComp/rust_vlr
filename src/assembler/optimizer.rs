@@ -61,9 +61,9 @@ impl<'a> AssemblerOptimizer<'a> {
 
 					self.next_inst(&mut result);
 				}
-				Bytecode::Add | Bytecode::Sub | Bytecode::Mul | Bytecode::Div |
-			 	Bytecode::Eq | Bytecode::Lt | Bytecode::Neg | Bytecode::Not => {
-					if let Some((reg2, is_affected)) = self.affected_regs.last_mut() && *reg2 == BytecodeRegister::Accum {
+				Bytecode::Add(reg, _) | Bytecode::Sub(reg, _) | Bytecode::Mul(reg, _) | Bytecode::Div(reg, _) |
+			 	Bytecode::Eq(reg, _) | Bytecode::Lt(reg, _) | Bytecode::Neg(reg) | Bytecode::Not(reg) => {
+					if let Some((reg2, is_affected)) = self.affected_regs.last_mut() && *reg2 == reg {
 						*is_affected = true;
 					}
 
