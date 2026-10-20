@@ -10,8 +10,10 @@ pub enum UniResultError {
 	IncompatibleUnaryOperationType {val: UniResultType},
 	#[error("Using 'into' on incompatible type {0:?}")]
 	UsingIntoOnIncompatibleType(UniResult),
-	#[error("Unsupported operation '{0}'")]
-	UnsupportedOperation(BinaryOp),
+	#[error("Unsupported binary operation '{0}'")]
+	UnsupportedBinaryOperation(BinaryOp),
+	#[error("Unsupported unary operation '{0}'")]
+	UnsupportedUnaryOperation(UnaryOp),
 	#[error("Cannot convert from {0:?} to UniResult")]
 	CannotConvertToUniResult(ASTNode),
 	#[error("Cannot convert to {0:?} from UniResult")]
@@ -145,7 +147,7 @@ impl UniResult {
 			BinaryOp::LogicalOr 	=> Self::log_or(left, right),
 			_ => Err(
 				Spanned::from_with_span(
-					UniResultError::UnsupportedOperation(op.to_owned()),
+					UniResultError::UnsupportedBinaryOperation(op.to_owned()),
 					left.span
 				)
 			),
@@ -156,6 +158,12 @@ impl UniResult {
 		match op {
 			UnaryOp::Minus 	=> Self::neg(left),
 			UnaryOp::Not 	=> Self::not(left),
+			_ => Err(
+				Spanned::from_with_span(
+					UniResultError::UnsupportedUnaryOperation(op.to_owned()),
+					left.span
+				)
+			),
 		}
 	}
 

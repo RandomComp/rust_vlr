@@ -212,6 +212,8 @@ impl TryFrom<&Spanned<Token>> for BinaryOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnaryOp {
+	Ref,
+	Deref,
 	Minus,
 	Not,
 }
@@ -219,9 +221,11 @@ pub enum UnaryOp {
 impl fmt::Display for UnaryOp {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Self::Minus => write!(f, "-"),
-			Self::Not => write!(f, "!"),
-		}
+			Self::Ref => "&",
+			Self::Deref => "*",
+			Self::Minus => "-",
+			Self::Not => "!",
+		}.fmt(f)
 	}
 }
 
@@ -687,7 +691,7 @@ impl Parser {
 
 		let span = cur.span;
 
-		let result = match (cur, self.peek(1)) {
+		let result = match (&cur.val, self.peek(1)) {
 			// (&Token {token_type: TokenType::Everything, column, row}, ..) => {
 			// 	self.consume_next();
 
@@ -696,30 +700,30 @@ impl Parser {
 			// 	))
 			// }
 
-			(wmatch!(Token::True), ..) => {
+			(Token::True, ..) => {
 				self.consume_next();
 
 				ASTNode::Boolean(true)
 			}
-
-			(wmatch!(Token::False), ..) => {
+			(Token::False, ..) => {
 				self.consume_next();
 
 				ASTNode::Boolean(false)
 			}
-			(&wmatch!(Token::Number(value)), _) => {
+
+			(&Token::Number(value), _) => {
 				self.consume_next();
 
 				ASTNode::Number(value)
 			}
 
-			(&wmatch!(Token::Float(value)), _) => {
+			(&Token::Float(value), _) => {
 				self.consume_next();
 
 				ASTNode::Float(value)
 			}
 
-			(wmatch!(Token::String(value)), ..) => {
+			(Token::String(value), ..) => {
 				let value = value.clone();
 
 				self.consume_next();
@@ -729,13 +733,13 @@ impl Parser {
 
 			// TODO: сделать генерацию парсинга унарных операторов
 
-			(wmatch!(Token::Plus), ..) => {
+			(Token::Plus, ..) => {
 				self.consume_next();
 
 				return self.parse_unary()
 			}
 
-			(wmatch!(Token::Minus), ..) => {
+			(Token::Minus, ..) => {
 				self.consume_next();
 
 				let value = self.parse_unary()?;
@@ -745,8 +749,42 @@ impl Parser {
 					value: Box::new(value)
 				}
 			}
+			(Token::Ref, Some(name_token @ wmatch!(Token::Word(name)))) => {
+				let name = name.clone();
+				let span = name_token.span;
 
-			(wmatch!(Token::Exclamation), ..) => {
+				self.consume_next();
+				self.consume_next();
+
+				ASTNode::Unary {
+					op: UnaryOp::Ref,
+					value: Box::new(
+						Spanned::from_with_span(
+							ASTNode::Variable(name),
+							span
+						)
+					)
+				}
+			}
+			(Token::Multiply, Some(name_token @ wmatch!(Token::Word(name)))) => {
+				let name = name.clone();
+				let span = name_token.span;
+
+				self.consume_next();
+				self.consume_next();
+
+				ASTNode::Unary {
+					op: UnaryOp::Deref,
+					value: Box::new(
+						Spanned::from_with_span(
+							ASTNode::Variable(name),
+							span
+						)
+					)
+				}
+			}
+
+			(Token::Exclamation, ..) => {
 				self.consume_next();
 
 				let value = self.parse_unary()?;
@@ -757,7 +795,7 @@ impl Parser {
 				}
 			}
 
-			(wmatch!(Token::LPar), ..) => {
+			(Token::LPar, ..) => {
 				self.consume_next();
 
 				let result = self.parse(BinaryOp::MAX_PRECEDENCE)?;
@@ -767,11 +805,11 @@ impl Parser {
 				result.val
 			}
 
-			(wmatch!(Token::LBracket), ..) => {
+			(Token::LBracket, ..) => {
 				self.parse_list()?
 			}
 
-			(wmatch!(Token::Word(word)), Some(wmatch!(Token::LPar))) => {
+			(Token::Word(word), Some(wmatch!(Token::LPar))) => {
 				let name = word.to_owned();
 
 				self.consume_next();
@@ -784,7 +822,7 @@ impl Parser {
 				}
 			}
 
-			(wmatch!(Token::Word(word)), ..) => {
+			(Token::Word(word), ..) => {
 				let word = word.to_owned();
 
 				self.consume_next();

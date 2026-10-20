@@ -110,7 +110,7 @@ impl Memory {
 	}
 
 	pub fn push(&mut self, value: VMWord) -> Result<(), RawVMError> {
-		self.regs.sp = self.regs.sp.checked_sub(4).ok_or(RawVMError::StackEmptyButExpectedValue)?;
+		self.regs.sp = self.regs.sp.checked_sub(4).ok_or(RawVMError::StackOverflow)?;
 
 		self.set_word(self.regs.sp as usize, value)?;
 
@@ -132,14 +132,14 @@ impl Memory {
 	pub fn get_mem<I>(&self, index: I) -> Result<u8, RawVMError>
 		where I: SliceIndex<[u8], Output = u8> {
 		self.mem.get(index)
-			.ok_or(RawVMError::StackOverflow)
+			.ok_or(RawVMError::InvalidMemoryAddress)
 			.copied()
 	}
 
 	fn get_mem_mut<I>(&mut self, index: I) -> Result<&mut u8, RawVMError>
 		where I: SliceIndex<[u8], Output = u8> {
 		self.mem.get_mut(index)
-			.ok_or(RawVMError::StackOverflow)
+			.ok_or(RawVMError::InvalidMemoryAddress)
 	}
 
 	pub fn mem_iter(&self, offset: usize) -> impl Iterator<Item = u8> {
@@ -202,7 +202,7 @@ impl VM {
 			return Ok(false);
 		};
 
-		println!("{inst}");
+		// println!("{inst}");
 
 		if let Bytecode::Halt = inst {
 			return Ok(false)
@@ -231,10 +231,10 @@ impl VM {
 				break
 			}
 
-			self.dump_stack();
-			self.dump_regs();
+			// self.dump_stack();
+			// self.dump_regs();
 
-			println!();
+			// println!();
 
 			// sleep(Duration::from_millis(100));
 		}

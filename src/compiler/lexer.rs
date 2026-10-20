@@ -179,6 +179,7 @@ gen_code_for_ops_and_for_display!(
 		Multiply 				=> "*",
 		Divide 					=> "/",
 		Remainder 				=> "%",
+		Ref 					=> "&",
 
 		Comma 					=> ",",
 		Semicolon 				=> ";",
@@ -219,6 +220,10 @@ gen_code_for_ops_and_for_display!(
 pub enum LexerError {
 	#[error("unknown operation")]
 	UnknownOperation,
+	#[error("empty character literal")]
+	EmptyCharacterLiteral,
+	#[error("unknown character escape '\\{0}'")]
+	UnknownCharacterEscape(char),
 	#[error("{0}")]
 	InvalidNumber(#[from] ParseIntError),
 	#[error("{0}")]
@@ -341,27 +346,74 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	fn tokenize_one_char(&mut self, end_sym: char) -> Result<Option<char>, LexerError> {
+		let Some(c) = self.peek(0) else {
+			return Ok(None)
+		};
+
+		if c == end_sym {
+			return Ok(None)
+		}
+
+		self.consume_next(1);
+
+		if c == '\\' {
+			let Some(next) = self.peek(0) else {
+				return Ok(None)
+			};
+
+			self.consume_next(1);
+
+			let result = match next {
+				next if next == end_sym =>
+					return Ok(None),
+				'n' => '\n',
+				'r' => '\r',
+				't' => '\t',
+				'\'' => '\'',
+				'"' => '"',
+				// 'x' => '"',
+				_ => {
+					return Err(LexerError::UnknownCharacterEscape(next))
+				}
+			};
+
+			Ok(Some(result))
+		} else {
+			Ok(Some(c))
+		}
+	}
+
 	fn tokenize_string(&mut self) -> Result<Token, LexerError> {
 		self.consume('"')?;
 
-		let mut word_chr_cnt: usize = 0;
-
 		let mut word_str = String::new();
 
-		for c in self.get() {
+		while let Some(c) = self.tokenize_one_char('"')? {
 			if c == '"' {
 				break;
 			}
 
 			word_str.push(c);
-			word_chr_cnt += 1;
 		}
-
-		self.consume_next(word_chr_cnt);
 
 		self.consume('"')?;
 
 		Ok(Token::String(word_str))
+	}
+
+	fn tokenize_char(&mut self) -> Result<Token, LexerError> {
+		self.consume('\'')?;
+
+		if let Some(c) = self.tokenize_one_char('\'')? {
+			self.consume('\'')?;
+
+			Ok(Token::Number((c as i32) & 0xFF))
+		} else {
+			Err(
+				LexerError::EmptyCharacterLiteral
+			)
+		}
 	}
 
 	fn skip_comments(&mut self) {
@@ -435,6 +487,8 @@ impl<'a> Lexer<'a> {
 				Ok(self.tokenize_word()),
 			Some('"') =>
 				self.tokenize_string(),
+			Some('\'') =>
+				self.tokenize_char(),
 			Some(c) if c.is_ascii_digit() =>
 				self.tokenize_number(),
 			Some(_) =>

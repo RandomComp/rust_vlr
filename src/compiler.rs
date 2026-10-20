@@ -3,8 +3,6 @@ pub mod parser;
 pub mod optimizer;
 pub mod native_func;
 
-use std::fmt;
-
 use crate::assembler::{BytecodeRegister, defs::BytecodeError, optimizer::AssemblerOptimizer};
 use crate::compiler::native_func::{NativeFunctionArgsNumber, NativeFunctionID};
 use crate::vm::VMWord;
@@ -23,7 +21,9 @@ pub enum CompilerError {
 	#[error("'{0}' variable is not known in current scope")]
 	NotKnownAtThisScope(String),
 	#[error("L-value of assignment should be variable name, not '{0}'")]
-	LeftExprShouldBeId(String),
+	LeftExprShouldBeId(ASTNode),
+	#[error("Value of reference unary operation should be variable, not '{0}'")]
+	ValueShouldBeVariable(ASTNode),
 	#[error("Break outside of loop")]
 	BreakOutsideOfLoop,
 	#[error("Return outside of function")]
@@ -178,7 +178,7 @@ impl Compiler {
 		let ASTNode::Variable(name) = &left.val else {
 			return Err(
 				Spanned::from_with_span(
-					CompilerError::LeftExprShouldBeId(left.val.to_string()),
+					CompilerError::LeftExprShouldBeId(left.val.clone()),
 					left.span
 				)
 			);
@@ -357,7 +357,7 @@ impl Compiler {
 				let ASTNode::Variable(name) = &left.val else {
 					return Err(
 						Spanned::from_with_span(
-							CompilerError::LeftExprShouldBeId(left.val.to_string()),
+							CompilerError::LeftExprShouldBeId(left.val.clone()),
 							span
 						)
 					);
@@ -403,6 +403,37 @@ impl Compiler {
 				self.look_to_reg(BytecodeRegister::Accum, stack_pos);
 
 				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+			},
+			ASTNode::Unary { op: UnaryOp::Ref, value } => {
+				let ASTNode::Variable(name) = &value.val else {
+					return Err(
+						Spanned::from_with_span(
+							CompilerError::ValueShouldBeVariable(value.val.clone()),
+							span
+						)
+					);
+				};
+
+				let Some(stack_pos) = context.get_var(name) else {
+					return Err(
+						Spanned::from_with_span(
+							CompilerError::NotKnownAtThisScope(name.clone()),
+							span
+						)
+					);
+				};
+
+				self.result_push(Bytecode::PushReg(BytecodeRegister::Base));
+
+				self.result_push(Bytecode::MovRegToReg(BytecodeRegister::Accum, BytecodeRegister::BasePointer));
+				self.result_push(Bytecode::MovU32ToReg(BytecodeRegister::Base, stack_pos + 4));
+				self.result_push(Bytecode::Sub);
+
+				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+
+				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+
+				self.stack += 1;
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, context)?;
