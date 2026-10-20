@@ -412,6 +412,7 @@ macro_rules! gen_insts_impl {
 			pub fn len(&self) -> usize {
 				match self {
 					$(
+						#[allow(unused_variables)]
 						Self::$inst $( ( $( $display_arg, )* ) )? => {
 							1 $( $( + std::mem::size_of::<$arg>() )* )?
 						}
