@@ -264,7 +264,6 @@ macro_rules! gen_insts_impl {
 		$(,)?
 	) => {
 		use $crate::vm::{Memory, RawVMError};
-		use $crate::compiler::parser::{UnaryOp, BinaryOp};
 		use $crate::assembler::defs::IndexedIterator;
 
 		#[derive(PartialEq, Clone, Debug)]
@@ -314,6 +313,7 @@ macro_rules! gen_insts_impl {
 		}
 
 		impl Bytecode {
+			#[allow(dead_code)]
 			fn is_pseudo(&self) -> bool {
 				match self {
 					$(
@@ -425,7 +425,7 @@ macro_rules! gen_insts_impl {
 						)?
 					)*
 					_ => {
-						unreachable!("Instruction \"{self}\" is pseudo, so cannot call exec on it")
+						unreachable!("Instruction \"{self}\" is pseudo, so cannot execute it")
 					}
 				}
 			}
@@ -439,26 +439,6 @@ macro_rules! gen_insts_impl {
 						}
 					)*
 				}
-			}
-
-			pub fn from_unary_op(op: &UnaryOp) -> Bytecode {
-				gen_from_un_ops!(op,
-					$(
-						$(
-							Bytecode::$inst => $( $attr )+,
-						)?
-					)*
-				)
-			}
-
-			pub fn from_binary_op(op: &BinaryOp) -> Bytecode {
-				gen_from_bin_ops!(op,
-					$(
-						$(
-							Bytecode::$inst => $( $attr )+,
-						)?
-					)*
-				)
 			}
 		}
 	};

@@ -1,11 +1,14 @@
 # write(1, "Hello, world!", 13)
 
+x = 123;
 
-result = 2 + 3 * 4;
+exit(&x);
+
+# result = 2 + 3 * 4;
 
 # print(result);
 
-exit(result);
+# exit(result);
 
 
 

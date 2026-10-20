@@ -440,7 +440,7 @@ gen_insts_impl!(
 
 	/// # Binary equal, calculates:
 	/// ```asm,ignore
-	/// acc = acc == base
+	/// reg1 = reg1 == reg2
 	/// ```
 	/// # Example
 	/// ```asm,ignore
@@ -448,18 +448,26 @@ gen_insts_impl!(
 	/// mov base, 2
 	/// eq
 	/// ```
-	(bin Equals) Eq as 0x50 => {
-		asm(result) => {
+	(bin Equals) Eq(BytecodeRegister, BytecodeRegister) as 0x50 => {
+		asm(result, reg1, reg2) => {
 		},
 		disasm(bytes) => {
-			Self::Eq
+			let reg1 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			let reg2 = BytecodeRegister::try_from(
+				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
+			)?;
+
+			Self::Eq(reg1, reg2)
 		},
-		exec(mem) => {
+		exec(mem, reg1, reg2) => {
 			let right = mem.regs.base;
 
 			mem.regs.acc = (mem.regs.acc == right).into();
 		},
-		display(f) => {
+		display(f, reg1, reg2) => {
 			write!(f, "eq")
 		}
 	},
