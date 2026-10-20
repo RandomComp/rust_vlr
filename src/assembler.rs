@@ -450,6 +450,8 @@ gen_insts_impl!(
 	/// ```
 	(bin Equals) Eq(BytecodeRegister, BytecodeRegister) as 0x50 => {
 		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
 		disasm(bytes) => {
 			let reg1 = BytecodeRegister::try_from(
@@ -463,9 +465,9 @@ gen_insts_impl!(
 			Self::Eq(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc = (mem.regs.acc == right).into();
+			mem.regs[reg1] = (mem.regs[reg1] == right).into();
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "eq {reg1}, {reg2}")
@@ -484,6 +486,8 @@ gen_insts_impl!(
 	/// ```
 	(bin Less) Lt(BytecodeRegister, BytecodeRegister) as 0x52 => {
 		asm(result, reg1, reg2) => {
+			result.extend(reg1.to_le_bytes());
+			result.extend(reg2.to_le_bytes());
 		},
 		disasm(bytes) => {
 			let reg1 = BytecodeRegister::try_from(
@@ -497,9 +501,9 @@ gen_insts_impl!(
 			Self::Lt(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc = (mem.regs.acc < right).into();
+			mem.regs[reg1] = (mem.regs[reg1] < right).into();
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "lt {reg1}, {reg2}")
@@ -533,9 +537,9 @@ gen_insts_impl!(
 			Self::Add(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc += right;
+			mem.regs[reg1] += right;
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "add {reg1}, {reg2}")
@@ -569,9 +573,9 @@ gen_insts_impl!(
 			Self::Sub(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc -= right;
+			mem.regs[reg1] -= right;
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "sub {reg1}, {reg2}")
@@ -605,9 +609,9 @@ gen_insts_impl!(
 			Self::Mul(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc *= right;
+			mem.regs[reg1] *= right;
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "mul {reg1}, {reg2}")
@@ -641,9 +645,9 @@ gen_insts_impl!(
 			Self::Div(reg1, reg2)
 		},
 		exec(mem, reg1, reg2) => {
-			let right = mem.regs.base;
+			let right = mem.regs[reg2];
 
-			mem.regs.acc /= right;
+			mem.regs[reg1] /= right;
 		},
 		display(f, reg1, reg2) => {
 			write!(f, "div {reg1}, {reg2}")
