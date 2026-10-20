@@ -9,6 +9,8 @@ pub enum NativeFunctionIDError {
 	#[error("Unknown native function {0}")]
 	UnknownNativeFunctionWithName(String),
 
+	#[error("Expected number of dynamic arguments in stack")]
+	ExpectedDynamicArgsNumber,
 	#[error("Too few arguments for native function '{id}' call, expected {expected}, found {found}")]
 	ArgumentsNativeFunctionCall {id: NativeFunctionID, found: u32, expected: u32 },
 
@@ -123,13 +125,15 @@ macro_rules! gen_native_functions {
 				match expected {
 					NativeFunctionArgsNumber::Fixed(fixed) => {
 						while i < fixed  {
-							let value = mem.pop().map_err(|_|
-								NativeFunctionIDError::ArgumentsNativeFunctionCall {
-									id: self,
-									found: i,
-									expected: fixed
-								}
-							)?;
+							let Ok(value) = mem.pop() else {
+								return Err(
+									NativeFunctionIDError::ArgumentsNativeFunctionCall {
+										id: self,
+										found: i,
+										expected: fixed
+									}
+								)
+							};
 
 							args.push(value);
 
@@ -137,22 +141,24 @@ macro_rules! gen_native_functions {
 						}
 					}
 					NativeFunctionArgsNumber::Dynamic => {
-						if let Ok(fixed) = mem.pop() {
-							while i < fixed  {
-								let Ok(value) = mem.pop() else {
-									return Err(
-										NativeFunctionIDError::ArgumentsNativeFunctionCall {
-											id: self,
-											found: i,
-											expected: fixed
-										}
-									)
-								};
+						let Ok(fixed) = mem.pop() else {
+							return Err(NativeFunctionIDError::ExpectedDynamicArgsNumber)
+						};
 
-								args.push(value);
+						while i < fixed  {
+							let Ok(value) = mem.pop() else {
+								return Err(
+									NativeFunctionIDError::ArgumentsNativeFunctionCall {
+										id: self,
+										found: i,
+										expected: fixed
+									}
+								)
+							};
 
-								i += 1;
-							}
+							args.push(value);
+
+							i += 1;
 						}
 					}
 				}

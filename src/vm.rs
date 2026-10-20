@@ -193,17 +193,13 @@ impl VM {
 	fn exec_inst(&mut self) -> Result<bool, VMError> {
 		let bytes = self.mem.mem_iter(self.mem.regs.pc as usize);
 
-		let (inst, inst_size) = match Bytecode::disasm_inst(bytes) {
-			Ok(Some(val)) =>
-				val,
-			Ok(None) =>
-				return Ok(false),
-			Err(e) => {
-				return Err(VMError {
-					val: e.into(),
-					inst: None
-				})
-			}
+		let inst_opt = Bytecode::disasm_inst(bytes).map_err(|e| VMError {
+			val: e.into(),
+			inst: None
+		})?;
+
+		let Some((inst, inst_size)) = inst_opt else {
+			return Ok(false);
 		};
 
 		println!("{inst}");
