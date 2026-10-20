@@ -4,6 +4,7 @@ use crate::{{assembler::defs::BytecodeError}, {compiler::native_func::NativeFunc
 
 pub mod defs;
 pub mod optimizer;
+pub mod linker;
 
 use std::fmt;
 
@@ -84,7 +85,7 @@ gen_insts_impl!(
 	/// # Push reference offset to stack
 	/// # Example
 	/// ```asm,ignore
-	/// push ref [data+0x10] ; push reference to stack offset 0x10 of data segment
+	/// push ref [data+0x10] ; push reference with offset 0x10 of data segment to stack
 	/// ```
 	(pseudo) PushRef(VMWord) => {
 		display(f, val) => {

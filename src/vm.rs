@@ -202,7 +202,7 @@ impl VM {
 			return Ok(false);
 		};
 
-		// println!("{inst}");
+		println!("{inst}");
 
 		if let Bytecode::Halt = inst {
 			return Ok(false)
@@ -231,10 +231,10 @@ impl VM {
 				break
 			}
 
-			// self.dump_stack();
-			// self.dump_regs();
+			self.dump_stack();
+			self.dump_regs();
 
-			// println!();
+			println!();
 
 			// sleep(Duration::from_millis(100));
 		}

@@ -69,15 +69,28 @@ impl<'a> CompilerContext<'a> {
 	}
 }
 
+pub struct Segments {
+	/// Code segment
+	pub code: Vec<Bytecode>,
+	/// Read-only data segment
+	pub data: Vec<u8>,
+}
+
+impl Segments {
+	pub fn new() -> Self {
+		Self {
+			code: Vec::new(),
+			data: Vec::new(),
+		}
+	}
+}
+
 pub struct Compiler {
 	stack: u32,
 	break_pos: Vec<Option<u32>>,
 	global_functions: HashMap<String, u32>,
 
-	/// Code segment
-	code_seg: Vec<Bytecode>,
-	/// Read-only data segment
-	data_seg: Vec<u8>,
+	segs: Segments,
 }
 
 impl Compiler {
@@ -87,17 +100,16 @@ impl Compiler {
 			break_pos: Vec::new(),
 			global_functions: HashMap::new(),
 
-			code_seg: Vec::new(),
-			data_seg: Vec::new(),
+			segs: Segments::new()
 		}
 	}
 
 	fn pc(&self) -> VMWord {
-		self.code_seg.len() as VMWord
+		self.segs.code.len() as VMWord
 	}
 
 	fn result_push(&mut self, code: Bytecode) {
-		self.code_seg.push(code.into());
+		self.segs.code.push(code.into());
 	}
 
 	fn look_to_reg(&mut self, reg: BytecodeRegister, stack_pos: VMWord) {
@@ -205,18 +217,18 @@ impl Compiler {
 		Ok(())
 	}
 
-	pub fn build(self) -> Result<Vec<u8>, BytecodeError> {
+	pub fn build(self) -> Result<Segments, BytecodeError> {
 		println!("Bytecode before optimizer:");
 
 		let mut i = 0;
 
-		for byte in &self.code_seg {
+		for byte in &self.segs.code {
 			println!("{i:02}: {byte}");
 
 			i += byte.len();
 		}
 
-		let result = self.code_seg;
+		let result = self.segs.code;
 		// result.push(Bytecode::PushNumber((i + 1 + offset + 0x80) as VMWord));
 
 		let mut asm_optimizer = AssemblerOptimizer::new(&result);
@@ -235,14 +247,9 @@ impl Compiler {
 
 		optimized.push(Bytecode::Halt);
 
-		let bytes = Bytecode::asm(optimized)?;
-
-		let mut binary = Vec::new();
-
-		binary.extend(bytes);
-		binary.extend(self.data_seg);
-
-		Ok(binary)
+		Ok(
+			Segments { code: optimized, data: self.segs.data }
+		)
 	}
 
 	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
@@ -293,7 +300,7 @@ impl Compiler {
 
 				self.result_push(Bytecode::Ret);
 
-				*self.code_seg.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
+				*self.segs.code.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 			},
 			ASTNode::Return(value) => {
 				self.compile(value, context)?;
@@ -335,9 +342,9 @@ impl Compiler {
 			ASTNode::String(x) => {
 				self.stack += 1;
 
-				self.result_push(Bytecode::PushRef(self.data_seg.len() as u32));
+				self.result_push(Bytecode::PushRef(self.segs.data.len() as u32));
 
-				self.data_seg.extend(x.clone().into_bytes());
+				self.segs.data.extend(x.clone().into_bytes());
 			},
 			ASTNode::List(values) => if !values.is_empty() {
 				todo!();
@@ -509,12 +516,12 @@ impl Compiler {
 
 				self.result_push(Bytecode::Jmp(cond));
 
-				*self.code_seg.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
+				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
 				self.compile(else_body, context)?;
 
 				if let Some(break_pos) = self.break_pos.pop().expect("Unexpected pop from self.break_pos") {
-					*self.code_seg.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
+					*self.segs.code.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 				}
 			},
 			ASTNode::While { condition, body, else_body: None } => {
@@ -532,10 +539,10 @@ impl Compiler {
 
 				self.result_push(Bytecode::Jmp(cond));
 
-				*self.code_seg.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
+				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
 				if let Some(break_pos) = self.break_pos.pop().expect("Unexpected pop from self.break_pos") {
-					*self.code_seg.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
+					*self.segs.code.get_mut(break_pos as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc());
 				}
 			},
 			ASTNode::If { condition, body, else_body: Some(else_body) } => {
@@ -549,11 +556,11 @@ impl Compiler {
 				let jmp = self.pc();
 				self.result_push(Bytecode::Jmp(0));
 
-				*self.code_seg.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
+				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 
 				self.compile(else_body, context)?;
 
-				*self.code_seg.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(self.pc());
+				*self.segs.code.get_mut(jmp as usize).expect("result.len() < jif") = Bytecode::Jmp(self.pc());
 			},
 			ASTNode::If { condition, body, else_body: None } => {
 				self.compile(condition, context)?;
@@ -565,7 +572,7 @@ impl Compiler {
 
 				self.compile(body, context)?;
 
-				*self.code_seg.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
+				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc());
 			},
 			ASTNode::Block(statements) => {
 				let mut local_context = CompilerContext::new(Some(context));

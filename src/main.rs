@@ -22,6 +22,7 @@ mod vm;
 // use crate::assembler::optimizer::AssemblerOptimizer;
 use crate::assembler::defs::BytecodeError;
 
+use crate::assembler::linker::{Linker, LinkerError};
 use crate::compiler::{Compiler, CompilerError, optimizer::Optimizer};
 use crate::compiler::lexer::{Lexer, LexerError};
 use crate::compiler::parser::{Parser, ParserError};
@@ -50,6 +51,7 @@ enum AppError {
 	Optimizer(#[from] OptimizerError),
 	Compiler(#[from] CompilerError),
 	Bytecode(#[from] BytecodeError),
+	Linker(#[from] LinkerError),
 	VM(VMError),
 	RawVM(#[from] RawVMError),
 	IO(#[from] io::Error),
@@ -94,6 +96,9 @@ impl Display for AppError {
 			}
 			Self::Bytecode(e) => {
 				write!(f, "Assembling/Dissasembling error: {e}")
+			}
+			Self::Linker(e) => {
+				write!(f, "Linker error: {e}")
 			}
 			Self::VM(e) => {
 				write!(f, "VM error: {e}")
@@ -182,7 +187,9 @@ fn repl() -> Result<(), AppError> {
 			continue;
 		}
 
-		let bytes = compiler.build()?;
+		let segs = compiler.build()?;
+
+		let bytes = Linker::link(segs)?;
 
 		let pc = vm.mem.place_to_heap(&bytes)?;
 
@@ -190,10 +197,13 @@ fn repl() -> Result<(), AppError> {
 
 		let result = vm.exec();
 
-		if let Ok(result) = result {
-			println!("{result}");
-		} else if let Err(e) = result {
-			eprintln!("VM error: {e}");
+		match result {
+			Ok(result) => {
+				println!("{result}");
+			}
+			Err(e) => {
+				eprintln!("VM error: {e}");
+			}
 		}
 
 		rl.add_history_entry(code)?;
@@ -334,9 +344,21 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 		return Err((e.into(), spans))
 	}
 
-	let bytes = compiler.build().map_err(|e| (e.into(), spans))?;
+	let segs = match compiler.build() {
+		Ok(res) => res,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
 
-	println!("bytes = {}", String::from_utf8_lossy_owned(bytes.clone()));
+	let bytes = match Linker::link(segs) {
+		Ok(res) => res,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
+
+	// println!("bytes = {}", String::from_utf8_lossy_owned(bytes.clone()));
 
 	for byte in &bytes {
 		print!("{byte:02X} ");
