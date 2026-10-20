@@ -90,11 +90,6 @@ gen_insts_impl!(
 		asm(result, val) => {
 			result.extend(val.to_le_bytes());
 		},
-		disasm(bytes) => {
-			Self::PushRef(0)
-		},
-		exec(mem, val) => {
-		},
 		display(f, val) => {
 			write!(f, "push ref [data{val:+}]")
 		}

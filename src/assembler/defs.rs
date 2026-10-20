@@ -254,8 +254,10 @@ macro_rules! gen_insts_impl {
 			=>
 			{
 				asm 	( $result:ident $(, $($asm_arg:ident),* $(,)? )? ) => $inst_asm:block,
-				disasm ( $bytes:ident ) => $inst_disasm:block,
-				exec 	( $mem:ident $(, $( $exec_arg:ident ),* $(,)? )? ) => $inst_exec:block,
+				$(
+					disasm ( $bytes:ident ) => $inst_disasm:block,
+					exec 	( $mem:ident $(, $( $exec_arg:ident ),* $(,)? )? ) => $inst_exec:block,
+				)?
 				display ( $formatter:ident $(, $($display_arg:ident),* $(,)? )? ) => $inst_display:block
 			}
 		),*
@@ -317,7 +319,7 @@ macro_rules! gen_insts_impl {
 
 				match self {
 					$(
-						Self::$inst $( ( $( $asm_arg, )* ) )? => {
+						Self::$inst $( ( $( $display_arg, )* ) )? => {
 							$(
 								result.push($main_opcode);
 							)?
@@ -386,26 +388,31 @@ macro_rules! gen_insts_impl {
 			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
 				match self {
 					$(
-						#[allow(unused_variables)]
-						&Self::$inst $( ( $( $exec_arg, )* ) )? => {
-							#[allow(unused_mut)]
-							let mut $mem = mem;
+						$(
+							#[allow(unused_variables)]
+							&Self::$inst $( ( $( $exec_arg, )* ) )? => {
+								#[allow(unused_mut)]
+								let mut $mem = mem;
 
-							$inst_exec;
+								$inst_exec;
 
-							#[allow(unreachable_code)]
-							Ok(())
+								#[allow(unreachable_code)]
+								Ok(())
 
-							// result
-						},
+								// result
+							},
+						)?
 					)*
+					_ => {
+						unreachable!("Instruction {self} is pseudo, so cannot call exec on it")
+					}
 				}
 			}
 
 			pub fn len(&self) -> usize {
 				match self {
 					$(
-						Self::$inst $( ( $( $exec_arg, )* ) )? => {
+						Self::$inst $( ( $( $display_arg, )* ) )? => {
 							1 $( $( + std::mem::size_of::<$arg>() )* )?
 						}
 					)*
