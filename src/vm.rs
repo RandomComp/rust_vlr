@@ -118,7 +118,7 @@ impl Memory {
 	}
 
 	pub fn pop(&mut self) -> Result<VMWord, RawVMError> {
-		if self.regs.sp > self.regs.bp {
+		if (self.regs.sp + 4) > self.regs.bp {
 			return Err(RawVMError::StackEmptyButExpectedValue)
 		}
 
@@ -190,10 +190,18 @@ impl VM {
 		println!("]");
 	}
 
-	fn exec_inst(&mut self) -> Result<bool, RawVMError> {
+	fn exec_inst(&mut self) -> Result<bool, VMError> {
 		let bytes = self.mem.mem_iter(self.mem.regs.pc as usize);
 
-		let Some((inst, inst_size)) = Bytecode::disasm_inst(bytes)? else {
+		let Some((inst, inst_size)) = (match Bytecode::disasm_inst(bytes) {
+			Ok(val) => val,
+			Err(e) => {
+				return Err(VMError {
+					val: e.into(),
+					inst: None
+				})
+			}
+		}) else {
 			return Ok(false)
 		};
 
@@ -206,7 +214,10 @@ impl VM {
 		let pc = self.mem.regs.pc + (inst_size as VMWord);
 		self.mem.regs.pc = pc;
 
-		inst.exec(&mut self.mem)?;
+		inst.exec(&mut self.mem).map_err(|e| VMError {
+			val: e,
+			inst: Some(inst)
+		})?;
 
 		Ok(true)
 	}
@@ -217,35 +228,7 @@ impl VM {
 		println!();
 
 		loop {
-			let is_not_hlt = match self.exec_inst() {
-				Ok(value) => value,
-				Err(e) => {
-					let mut bytes = IndexedIterator::from(self.mem.mem_iter(self.mem.regs.pc as usize));
-
-					let inst = Bytecode::disasm_inst(&mut bytes).map_err(|e|
-						VMError {
-							val: e.into(),
-							inst: None
-						}
-					)?;
-
-					let Some(inst) = inst else {
-						return Err(
-							VMError {
-								val: e,
-								inst: None
-							}
-						)
-					};
-
-					return Err(
-						VMError {
-							val: e,
-							inst: Some(inst.0)
-						}
-					)
-				}
-			};
+			let is_not_hlt = self.exec_inst()?;
 
 			if !is_not_hlt {
 				break

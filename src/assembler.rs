@@ -88,7 +88,7 @@ gen_insts_impl!(
 	/// ```
 	(pseudo) PushRef(VMWord) => {
 		asm(result, val) => {
-			result.extend(val.to_le_bytes());
+			result.extend(Bytecode::PushNumber(val).asm_inst()?);
 		},
 		display(f, val) => {
 			write!(f, "push ref [data{val:+}]")

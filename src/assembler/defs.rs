@@ -314,6 +314,24 @@ macro_rules! gen_insts_impl {
 		}
 
 		impl Bytecode {
+			fn is_pseudo(&self) -> bool {
+				match self {
+					$(
+						#[allow(unused_variables)]
+						Self::$inst $( ( $( $display_arg, )* ) )? => {
+							$(
+								let _ = $main_opcode;
+
+								return false;
+							)?
+
+							#[allow(unreachable_code)]
+							return true
+						},
+					)*
+				}
+			}
+
 			fn asm_inst(self) -> Result<Vec<u8>, BytecodeError> {
 				let mut result = Vec::new();
 
@@ -339,6 +357,10 @@ macro_rules! gen_insts_impl {
 				let mut result = Vec::new();
 
 				for value in values {
+					if value.is_pseudo() {
+						continue
+					}
+
 					let res: Vec<u8> = value.asm_inst()?;
 
 					result.extend(res);
