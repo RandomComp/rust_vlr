@@ -228,7 +228,7 @@ macro_rules! gen_insts_impl {
 	( @text_if_pseudo pseudo ) => {
 		concat!(
 			"# Important\n\r",
-			"This is a pseudo instruction, this instrunction doesn't have a disasm or execution function implementation"
+			"This is a pseudo instruction, this instrunction have only display implementation, use linker to assemble this instruction in real instruction"
 		)
 	};
 	( @text_if_pseudo bin $op:ident ) => {
@@ -326,7 +326,7 @@ macro_rules! gen_insts_impl {
 							)?
 
 							#[allow(unreachable_code)]
-							return true
+							return true;
 						},
 					)*
 				}
@@ -351,7 +351,7 @@ macro_rules! gen_insts_impl {
 						)?
 					)*
 					_ => {
-						unreachable!("Instruction {self} is pseudo, so cannot be assembled")
+						unreachable!("Instruction \"{self}\" is pseudo, so cannot be assembled")
 					}
 				}
 			}
@@ -425,7 +425,7 @@ macro_rules! gen_insts_impl {
 						)?
 					)*
 					_ => {
-						unreachable!("Instruction {self} is pseudo, so cannot call exec on it")
+						unreachable!("Instruction \"{self}\" is pseudo, so cannot call exec on it")
 					}
 				}
 			}
