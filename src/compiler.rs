@@ -49,8 +49,8 @@ struct CompilerState {
 
 #[derive(Debug)]
 struct CompilerContext<'a> {
-	functions: HashMap<String, u32>,
-	vars: HashMap<String, u32>,
+	functions: HashMap<String, usize>,
+	vars: HashMap<String, i32>,
 	parent: Option<&'a CompilerContext<'a>>,
 }
 
@@ -59,7 +59,7 @@ impl<'a> CompilerContext<'a> {
 		Self {vars: HashMap::new(), functions: HashMap::new(), parent}
 	}
 
-	fn get_var(&self, name: &str) -> Option<u32> {
+	fn get_var(&self, name: &str) -> Option<i32> {
 		if let Some(&value) = self.vars.get(name) {
 			Some(value)
 		} else if let Some(parent) = self.parent {
@@ -68,7 +68,7 @@ impl<'a> CompilerContext<'a> {
 			None
 		}
 	}
-	fn get_function(&self, name: &str) -> Option<u32> {
+	fn get_function(&self, name: &str) -> Option<usize> {
 		if let Some(&value) = self.functions.get(name) {
 			Some(value)
 		} else if let Some(parent) = self.parent {
@@ -78,11 +78,11 @@ impl<'a> CompilerContext<'a> {
 		}
 	}
 
-	fn insert_var<T>(&mut self, name: T, stack_pos: u32) where T: Into<String> {
+	fn insert_var<T>(&mut self, name: T, stack_pos: i32) where T: Into<String> {
 		self.vars.insert(name.into(), stack_pos);
 	}
-	fn insert_function<T>(&mut self, name: T, pos: u32) where T: Into<String> {
-		self.functions.insert(name.into(), pos);
+	fn insert_function<T>(&mut self, name: T, label: usize) where T: Into<String> {
+		self.functions.insert(name.into(), label);
 	}
 }
 
@@ -105,10 +105,14 @@ impl Segments {
 pub struct Compiler {
 	stack: u32,
 	break_pos: Vec<Option<u32>>,
-	global_functions: HashMap<String, u32>,
+	global_functions: HashMap<String, usize>,
 
-	segs: Segments,
+	/// Read-only data segment
+	pub data: Vec<u8>,
 	pc: usize,
+
+	labels_id: usize,
+	labels_name: Vec<String>,
 }
 
 impl Compiler {
@@ -118,36 +122,46 @@ impl Compiler {
 			break_pos: Vec::new(),
 			global_functions: HashMap::new(),
 
-			segs: Segments::new(),
+			data: Vec::new(),
 			pc: 0,
+			labels_id: 0,
+			labels_name: Vec::new(),
 		}
 	}
 
-	fn result_push(&mut self, code: Bytecode) {
-		self.pc += code.len();
+	fn gen_label(&mut self, name: String) -> usize {
+		let id = self.labels_id;
 
-		self.segs.code.push(code);
+		self.labels_name.push(name);
+
+		id
 	}
 
-	fn look_to_reg(&mut self, reg: BytecodeRegister, stack_pos: VMWord) {
-		self.result_push(Bytecode::LoadToReg(reg, BytecodeRegister::StackPointer, stack_pos));
+	fn result_push(&mut self, buf: &mut Vec<Bytecode>, code: Bytecode) {
+		self.pc += code.len();
+
+		buf.push(code);
+	}
+
+	fn look_to_reg(&mut self, buf: &mut Vec<Bytecode>, reg: BytecodeRegister, stack_pos: VMWord) {
+		self.result_push(buf, Bytecode::LoadToReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack += 1;
 	}
 
-	fn load_from_reg(&mut self, reg: BytecodeRegister, stack_pos: VMWord) {
-		self.result_push(Bytecode::LoadFromReg(reg, BytecodeRegister::StackPointer, stack_pos));
+	fn load_from_reg(&mut self, buf: &mut Vec<Bytecode>, reg: BytecodeRegister, stack_pos: VMWord) {
+		self.result_push(buf, Bytecode::LoadFromReg(reg, BytecodeRegister::StackPointer, stack_pos));
 
 		self.stack -= 1;
 	}
 
-	fn call_func<'a, T>(&mut self, name: &Spanned<&str>, args: T, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
+	fn call_func<'a, T>(&mut self, buf: &mut Vec<Bytecode>, name: &Spanned<&str>, args: T, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>>
 	where T: Iterator<Item=&'a Spanned<ASTNode>> {
 		if let Ok(id) = NativeFunctionID::try_from(name.val) {
 			let mut len = 0;
 
 			for arg in args {
-				self.compile(arg, context)?;
+				buf.extend(self.compile(arg, context)?.0);
 
 				len += 1;
 			}
@@ -169,20 +183,20 @@ impl Compiler {
 				}
 
 				NativeFunctionArgsNumber::Dynamic =>
-					self.result_push(Bytecode::PushNumber(len)),
+					self.result_push(buf, Bytecode::PushNumber(len)),
 			}
 
-			self.result_push(Bytecode::NativeCall(id));
+			self.result_push(buf, Bytecode::NativeCall(id));
 			self.stack -= len;
 			self.stack += 1;
 
 			return Ok(())
 		} else if let Some(&pos) = self.global_functions.get(name.val) {
 			for arg in args {
-				self.compile(arg, context)?;
+				buf.extend(self.compile(arg, context)?.0);
 			}
 
-			self.result_push(Bytecode::Call(pos));
+			self.result_push(buf, Bytecode::CallLabel(pos));
 
 			return Ok(())
 		} else if let Some(pos) = context.get_function(name.val) {
@@ -190,7 +204,7 @@ impl Compiler {
 				self.compile(arg, context)?;
 			}
 
-			self.result_push(Bytecode::Call(pos));
+			self.result_push(buf, Bytecode::Call(pos));
 
 			return Ok(())
 		}
@@ -203,7 +217,7 @@ impl Compiler {
 		)
 	}
 
-	fn compile_assignment(&mut self, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: &BinaryOp, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+	fn compile_assignment(&mut self, buf: &mut Vec<Bytecode>, left: &Spanned<ASTNode>, right: &Spanned<ASTNode>, op: &BinaryOp, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
 		let ASTNode::Variable(name) = &left.val else {
 			return Err(
 				Spanned::from_with_span(
@@ -222,50 +236,51 @@ impl Compiler {
 			);
 		};
 
-		self.look_to_reg(BytecodeRegister::Base, stack_pos);
+		self.look_to_reg(buf, BytecodeRegister::Base, stack_pos);
 		self.compile(right, context)?;
 
 		self.stack -= 1;
 
 		match op {
 			BinaryOp::PlusAssignment => {
-				self.result_push(Bytecode::Add(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(buf, Bytecode::Add(BytecodeRegister::Accum, BytecodeRegister::Base));
 			}
 			BinaryOp::MinusAssignment => {
-				self.result_push(Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(buf, Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
 			}
 			BinaryOp::MultiplyAssignment => {
-				self.result_push(Bytecode::Mul(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(buf, Bytecode::Mul(BytecodeRegister::Accum, BytecodeRegister::Base));
 			}
 			BinaryOp::DivideAssignment => {
-				self.result_push(Bytecode::Div(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(buf, Bytecode::Div(BytecodeRegister::Accum, BytecodeRegister::Base));
 			}
 			// BinaryOp::RemainderAssignment => {
 			// 	self.result_push(Bytecode::Re(BytecodeRegister::Accum, BytecodeRegister::Base));
 			// }
 			BinaryOp::PowAssignment => {
-				self.result_push(Bytecode::Pow(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(buf, Bytecode::Pow(BytecodeRegister::Accum, BytecodeRegister::Base));
 			}
 			_ => unreachable!("{op} is not valid assignment binary operator or not handled")
 		}
 
-		self.load_from_reg(BytecodeRegister::Accum, stack_pos);
+		self.load_from_reg(buf, BytecodeRegister::Accum, stack_pos);
 
 		Ok(())
 	}
 
-	pub fn build(self) -> Segments {
+	pub fn build(mut self, code: &Spanned<ASTNode>) -> Result<Segments, Spanned<CompilerError>> {
 		println!("Bytecode before optimizer:");
 
 		let mut i = 0;
 
-		for byte in &self.segs.code {
+		let mut code = self.compile_loop(code)?;
+
+		for byte in &code {
 			println!("{i:02}: {byte}");
 
 			i += byte.len();
 		}
 
-		let mut result = self.segs.code;
 		// result.push(Bytecode::PushNumber((i + 1 + offset + 0x80) as VMWord));
 
 // 		let mut asm_optimizer = AssemblerOptimizer::new(&result);
@@ -282,22 +297,25 @@ impl Compiler {
 // 			i += byte.len();
 // 		}
 
-		result.push(Bytecode::Halt);
+		code.push(Bytecode::Halt);
 
-		Segments { code: result, data: self.segs.data }
+		Ok(
+			Segments { code, data: self.data }
+		)
 	}
 
-	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<CompilerState, Spanned<CompilerError>> {
+	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<(Vec<Bytecode>, CompilerState), Spanned<CompilerError>> {
 		println!("context = {context:?}");
 
 		println!("stack_pos = {}; ast = {ast}", self.stack);
 
 		let span = ast.span;
 
-		let result = match &ast.val {
+		let mut buf = Vec::new();
+
+		match &ast.val {
 			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
-				let jmp = self.pc;
-				self.result_push(Bytecode::Jmp(0));
+				self.result_push(&mut buf, Bytecode::Jmp(self.pc as u32));
 
 				if *is_global {
 					self.global_functions.insert(name.val.clone(), self.pc as u32);
@@ -305,12 +323,12 @@ impl Compiler {
 					context.insert_function(name.val.clone(), self.pc as u32);
 				}
 
-				self.result_push(
+				self.result_push(&mut buf,
 					Bytecode::PushReg(
 						BytecodeRegister::BasePointer
 					)
 				);
-				self.result_push(
+				self.result_push(&mut buf,
 					Bytecode::MovRegToReg(
 						BytecodeRegister::BasePointer,
 						BytecodeRegister::StackPointer,
@@ -325,30 +343,32 @@ impl Compiler {
 					body_context.insert_var(&arg.val, i as VMWord);
 				}
 
-				self.compile(body, &mut body_context)?;
+				let (body_compiled, state) = self.compile(body, &mut body_context)?;
 
-				self.result_push(
+				buf.extend(body_compiled);
+				self.result_push(&mut buf,
 					Bytecode::PopReg(
 						BytecodeRegister::BasePointer
 					)
 				);
+				self.result_push(&mut buf, Bytecode::Ret);
 
-				self.result_push(Bytecode::Ret);
-
-				*self.segs.code.get_mut(jmp as usize).expect("result.len() < jmp") = Bytecode::Jmp(self.pc as u32);
+				// CompilerState::default()
 			},
 			ASTNode::Return(value) => {
-				self.compile(value, context)?;
-				self.result_push(
+				buf.extend(self.compile(value, context)?.0);
+				self.result_push(&mut buf,
 					Bytecode::PopReg(
 						BytecodeRegister::Accum
 					)
 				);
 
-				self.result_push(Bytecode::Ret);
+				self.result_push(&mut buf, Bytecode::Ret);
+
+				// CompilerState::default()
 			},
 			ASTNode::Break(value) => {
-				self.compile(value, context)?;
+				buf.extend(self.compile(value, context)?.0);
 
 				let pc = self.pc;
 
@@ -360,32 +380,31 @@ impl Compiler {
 
 				*pos = Some(pc as u32);
 
-				self.result_push(Bytecode::Jmp(0));
+				self.result_push(&mut buf, Bytecode::Jmp(0));
 			},
 			ASTNode::FunctionDefinition {..} => todo!("{}", ast.val),
-			ASTNode::None =>
-				return Ok(CompilerState::default()),
+			ASTNode::None => {},
 			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
-				self.result_push(Bytecode::PushNumber(x.into()));
+				self.result_push(&mut buf, Bytecode::PushNumber(x.into()));
 			},
 			&ASTNode::Number(x) => {
 				self.stack += 1;
 
-				self.result_push(Bytecode::PushNumber(x.cast_unsigned()));
+				self.result_push(&mut buf, Bytecode::PushNumber(x.cast_unsigned()));
 			},
 			&ASTNode::Float(x) => {
 				self.stack += 1;
 
-				self.result_push(Bytecode::PushNumber(x as VMWord));
+				self.result_push(&mut buf, Bytecode::PushNumber(x as VMWord));
 			},
 			ASTNode::String(x) => {
 				self.stack += 1;
 
-				self.result_push(Bytecode::PushRef(self.segs.data.len() as u32));
+				self.result_push(&mut buf, Bytecode::PushRef(self.data.len() as u32));
 
-				self.segs.data.extend(x.clone().into_bytes());
+				self.data.extend(x.clone().into_bytes());
 			},
 			ASTNode::List(values) => if !values.is_empty() {
 				todo!();
@@ -396,7 +415,7 @@ impl Compiler {
 				// )?;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Range), right } => {
-				self.call_func(
+				self.call_func(&mut buf,
 					&Spanned::from_with_span("range", left.span),
 					[&**left, &**right].into_iter(), context
 				)?;
@@ -414,7 +433,7 @@ impl Compiler {
 				if let Some(stack_pos) = context.get_var(name) {
 					self.compile(right, context)?;
 
-					self.load_from_reg(BytecodeRegister::BasePointer, stack_pos);
+					self.load_from_reg(&mut buf, BytecodeRegister::BasePointer, stack_pos);
 				} else {
 					let stack_pos = self.stack;
 
@@ -448,9 +467,9 @@ impl Compiler {
 					);
 				};
 
-				self.look_to_reg(BytecodeRegister::Accum, stack_pos);
+				self.look_to_reg(&mut buf, BytecodeRegister::Accum, stack_pos);
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 			},
 			ASTNode::Unary { op: UnaryOp::Ref, value } => {
 				let ASTNode::Variable(name) = &value.val else {
@@ -471,83 +490,83 @@ impl Compiler {
 					);
 				};
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Base));
 
-				self.result_push(Bytecode::MovRegToReg(BytecodeRegister::Accum, BytecodeRegister::BasePointer));
-				self.result_push(Bytecode::MovU32ToReg(BytecodeRegister::Base, stack_pos + 4));
-				self.result_push(Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::MovRegToReg(BytecodeRegister::Accum, BytecodeRegister::BasePointer));
+				self.result_push(&mut buf, Bytecode::MovU32ToReg(BytecodeRegister::Base, stack_pos + 4));
+				self.result_push(&mut buf, Bytecode::Sub(BytecodeRegister::Accum, BytecodeRegister::Base));
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 
 				self.stack += 1;
 			},
 			ASTNode::Unary { op, value } => {
 				self.compile(value, context)?;
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_unary_op(op, BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::from_unary_op(op, BytecodeRegister::Accum));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::LessOrEquals), right } => {
 				self.compile(left, context)?;
 				self.compile(right, context)?;
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
 				self.stack -= 1;
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
-				self.result_push(Bytecode::Not(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::Not(BytecodeRegister::Accum));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Neq), right } => {
 				self.compile(left, context)?;
 				self.compile(right, context)?;
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
 				self.stack -= 1;
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::Eq(BytecodeRegister::Accum, BytecodeRegister::Base));
-				self.result_push(Bytecode::Not(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::Eq(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::Not(BytecodeRegister::Accum));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
 			},
 			ASTNode::Binary { left, op: wmatch!(BinaryOp::Great), right } => {
 				self.compile(right, context)?;
 				self.compile(left, context)?;
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
 				self.stack -= 1;
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::Lt(BytecodeRegister::Accum, BytecodeRegister::Base));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PushReg(BytecodeRegister::Accum));
 				self.stack += 1;
 			},
 			ASTNode::Binary { left, op, right } => {
 				self.compile(left, context)?;
 				self.compile(right, context)?;
 
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
 				self.stack -= 1;
-				self.result_push(Bytecode::PopReg(BytecodeRegister::Accum));
+				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
 				self.stack -= 1;
 
-				self.result_push(Bytecode::from_binary_op(op, BytecodeRegister::Accum, BytecodeRegister::Base));
+				self.result_push(&mut buf, Bytecode::from_binary_op(op, BytecodeRegister::Accum, BytecodeRegister::Base));
 
 				// Compile
 			},
@@ -563,13 +582,13 @@ impl Compiler {
 				self.compile(condition, context)?;
 
 				let jif = self.pc;
-				self.result_push(Bytecode::Jif(0));
+				self.result_push(&mut buf, Bytecode::Jif(0));
 
 				self.break_pos.push(None);
 
 				self.compile(body, context)?;
 
-				self.result_push(Bytecode::Jmp(cond as u32));
+				self.result_push(&mut buf, Bytecode::Jmp(cond as u32));
 
 				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc as u32);
 
@@ -582,17 +601,17 @@ impl Compiler {
 			ASTNode::While { condition, body, else_body: None } => {
 				let cond = self.pc;
 
-				self.compile(condition, context)?;
+				buf.extend(self.compile(condition, context)?);
 
 				let jif = self.pc;
-				self.result_push(Bytecode::Jif(0));
+				self.result_push(&mut buf, Bytecode::Jif(0));
 				self.stack -= 1;
 
 				self.break_pos.push(None);
 
 				self.compile(body, context)?;
 
-				self.result_push(Bytecode::Jmp(cond as u32));
+				self.result_push(&mut buf, Bytecode::Jmp(cond as u32));
 
 				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc as u32);
 
@@ -605,11 +624,11 @@ impl Compiler {
 
 				self.stack -= 1;
 				let jif = self.pc;
-				self.result_push(Bytecode::Jif(0));
+				self.result_push(&mut buf, Bytecode::Jif(0));
 
 				self.compile(body, context)?;
 				let jmp = self.pc;
-				self.result_push(Bytecode::Jmp(0));
+				self.result_push(&mut buf, Bytecode::Jmp(0));
 
 				*self.segs.code.get_mut(jif as usize).expect("result.len() < jif") = Bytecode::Jif(self.pc as u32);
 
@@ -636,15 +655,15 @@ impl Compiler {
 					self.compile(statement, &mut local_context)?;
 				}
 			},
-		};
+		}
 
-		Ok(CompilerState::default())
+		Ok((buf, CompilerState::default()))
 	}
 
-	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>) -> Result<(), Spanned<CompilerError>> {
+	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>) -> Result<Vec<Bytecode>, Spanned<CompilerError>> {
 		let mut context = CompilerContext::new(None);
 
-		self.compile(ast, &mut context)?;
+		let result = self.compile(ast, &mut context)?.0;
 
 		// self.call_func(
 		// 	&Spanned::from_with_span("main", 0),
@@ -653,6 +672,6 @@ impl Compiler {
 		// 	&mut context
 		// )?;
 
-		Ok(())
+		Ok(result)
 	}
 }

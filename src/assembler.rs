@@ -341,16 +341,26 @@ gen_insts_impl!(
 	/// jmp some_label ; jump on some_label
 	/// loop_exit:
 	/// ```
-	(pseudo) JmpLabel(usize) as 123 => {
-		asm(result, label) => {
-		},
-		disasm(bytes) => {
-			Self::Halt
-		},
-		exec(mem, label) => {
-		},
+	(pseudo) JmpLabel(usize) => {
 		display(f, label) => {
 			write!(f, "jmp {label}")
+		}
+	},
+
+	/// # Push pc to stack and jump on address `pos`
+	/// # Example
+	/// ```asm,ignore
+	/// some_subprogram: ; our subprogram
+	/// push bp
+	/// mov bp, sp
+	/// ; ... some instructions ...
+	/// pop bp
+	/// ret ; returns from subprogram to where called
+	/// call some_subprogram ; our calling
+	/// ```
+	CallLabel(usize) => {
+		display(f, label) => {
+			write!(f, "call {label}")
 		}
 	},
 
@@ -369,8 +379,8 @@ gen_insts_impl!(
 	/// loop_exit:
 	/// ```
 	/// # Safety
-	/// This is not very safe, because it may jump and execute every data from memory!
-	/// If you wanna use this for loops, use pseudo Jmp with labels instead
+	/// This is not safe, because it may jump and execute every data from memory!
+	/// If you wanna use this for loops or another, use pseudo Jmp with labels instead
 	Jmp(VMWord) as 0x28 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
@@ -399,12 +409,15 @@ gen_insts_impl!(
 	/// ret ; returns from subprogram to where called
 	/// call some_subprogram ; our calling
 	/// ```
-	Call(u32) as 0x2A => {
+	/// # Safety
+	/// This is not safe, because it may call like function and execute every data from memory!
+	/// If you wanna use this for function call, use pseudo Call with labels instead
+	Call(VMWord) as 0x2A => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());
 		},
 		disasm(bytes) => {
-			let pos = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let pos = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::Call(pos)
 		},

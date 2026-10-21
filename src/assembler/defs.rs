@@ -392,20 +392,40 @@ macro_rules! gen_insts_impl {
 
 				let mut result = Vec::new();
 
+				$(
+					#[allow(unused_mut)]
+					#[allow(unused_assignments)]
+					const _: () = {
+						let mut have_asm_disasm_exec = false;
+
+						$(
+							$(
+								$(
+									let _ = stringify!($asm_arg);
+								)*
+							)?
+
+							have_asm_disasm_exec = true;
+						)?
+
+						if have_asm_disasm_exec && gen_insts_impl!(@is_pseudo $( $( $attr )+ )?) {
+							panic!(
+								concat!("Instruction \"", stringify!($inst), "\" is pseudo, so it should not have assemble, disassemble and execution function!")
+							);
+						}
+
+						if !have_asm_disasm_exec && !gen_insts_impl!(@is_pseudo $( $( $attr )+ )?) {
+							panic!(
+								concat!("Instruction \"", stringify!($inst), "\" is not pseudo, so it should have assemble, disassemble and execution function!, perhaps you forgot make this instruction pseudo?")
+							);
+						}
+					};
+				)*
+
 				match self {
 					$(
 						$(
 							Self::$inst $( ( $( $asm_arg, )* ) )? => {
-								const _: () = {
-									let const_inst = RawBytecodeOpcodes::$inst;
-
-									if const_inst.is_pseudo() {
-										panic!(
-											concat!("Instruction \"", stringify!($inst), "\" is pseudo, so it should not have assemble function!")
-										);
-									}
-								};
-
 								result.push($main_opcode);
 
 								#[allow(unused_mut)]
@@ -413,12 +433,14 @@ macro_rules! gen_insts_impl {
 
 								$inst_asm;
 
-								return Ok($result);
+								Ok($result)
 							},
 						)?
 					)*
 					_ => {
-						unreachable!("Instruction \"{self}\" is pseudo, so cannot be assembled")
+						panic!(
+							"Instruction \"{self}\" is pseudo, so cannot be assembled"
+						);
 					}
 				}
 			}
