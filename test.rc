@@ -1,10 +1,10 @@
-def func() {
-	x = 'A';
-
-	write(1, &x, 1);
-}
-
-func()
+# def func() {
+# 	x = 'A';
+#
+# 	write(1, &x, 1);
+# }
+#
+# func()
 
 # write(1, "Hello, world!", 13)
 
@@ -12,11 +12,11 @@ func()
 #
 # exit(&x);
 
-# result = 2 + 3 * 4;
+result = 2 + 3 * 4;
 
 # print(result);
 
-# exit(result);
+exit(result);
 
 
 

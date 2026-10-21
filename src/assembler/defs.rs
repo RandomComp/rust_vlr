@@ -247,6 +247,19 @@ macro_rules! gen_insts_impl {
 		""
 	};
 
+	( @is_pseudo pseudo ) => {
+		true
+	};
+	( @is_pseudo bin $op:ident ) => {
+		false
+	};
+	( @is_pseudo un $op:ident ) => {
+		false
+	};
+	( @is_pseudo ) => {
+		false
+	};
+
 	(
 		$(
 			$( #[doc=$inst_doc:literal] )+ $( ( $( $attr:ident )+ ) )? $inst:ident
@@ -299,6 +312,50 @@ macro_rules! gen_insts_impl {
 			)*
 		}
 
+		#[derive(PartialEq, Clone, Debug)]
+		pub enum RawBytecodeOpcodes {
+			$(
+				$(
+					#[doc=$inst_doc]
+				)*
+				#[doc=concat!(
+					$(
+						"# Where \n",
+						$(
+							"* ", stringify!($display_arg), ": [`", stringify!($arg), "`]\n",
+						)*
+					)?
+				)]
+				$(
+					#[doc=concat!(
+						"# Opcodes \n",
+						"* main opcode: `", stringify!($main_opcode), "`\n",
+						$( "* other possible opcode: `", stringify!($opcode), "`\n", )*
+					)]
+				)?
+				$(
+					#[doc=
+						gen_insts_impl!( @text_if_pseudo $( $attr )+ )
+					]
+				)?
+				$inst,
+			)*
+		}
+
+// 		impl fmt::Display for RawBytecodeOpcodes {
+// 			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+// 				match self {
+// 					$(
+// 						Self::$inst => {
+// 							let $formatter = f;
+//
+// 							$inst_display
+// 						}
+// 					)*
+// 				}
+// 			}
+// 		}
+
 		impl fmt::Display for Bytecode {
 			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 				match self {
@@ -313,30 +370,25 @@ macro_rules! gen_insts_impl {
 			}
 		}
 
-		impl Bytecode {
+		impl RawBytecodeOpcodes {
 			#[allow(dead_code)]
-			fn is_pseudo(&self) -> bool {
+			const fn is_pseudo(self) -> bool {
 				match self {
 					$(
 						#[allow(unused_variables)]
-						Self::$inst $( ( $( $display_arg, )* ) )? => {
-							$(
-								let _ = $main_opcode;
-
-								return false;
-							)?
-
-							#[allow(unreachable_code)]
-							return true;
+						Self::$inst => {
+							return gen_insts_impl!(@is_pseudo $( $( $attr )+ )?);
 						},
 					)*
 				}
 			}
+		}
 
+		impl Bytecode {
 			fn asm_inst(self) -> Result<Vec<u8>, BytecodeError> {
-				if self.is_pseudo() {
-					unreachable!("Instruction \"{self}\" is pseudo, so cannot be assembled");
-				}
+				// if self.is_pseudo() {
+				// 	unreachable!("Instruction \"{self}\" is pseudo, so cannot be assembled");
+				// }
 
 				let mut result = Vec::new();
 
@@ -344,6 +396,16 @@ macro_rules! gen_insts_impl {
 					$(
 						$(
 							Self::$inst $( ( $( $asm_arg, )* ) )? => {
+								const _: () = {
+									let const_inst = RawBytecodeOpcodes::$inst;
+
+									if const_inst.is_pseudo() {
+										panic!(
+											concat!("Instruction \"", stringify!($inst), "\" is pseudo, so it should not have assemble function!")
+										);
+									}
+								};
+
 								result.push($main_opcode);
 
 								#[allow(unused_mut)]
@@ -385,6 +447,16 @@ macro_rules! gen_insts_impl {
 					$(
 						$(
 							$main_opcode $( | $opcode )* => {
+								const _: () = {
+									let const_inst = RawBytecodeOpcodes::$inst;
+
+									if const_inst.is_pseudo() {
+										panic!(
+											concat!("Instruction \"", stringify!($inst), "\" is pseudo, so it should not have disassemble function!")
+										);
+									}
+								};
+
 								#[allow(unused_mut)]
 								let mut $bytes = bytes;
 
@@ -412,15 +484,25 @@ macro_rules! gen_insts_impl {
 			}
 
 			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
-				if self.is_pseudo() {
-					unreachable!("Instruction \"{self}\" is pseudo, so cannot execute it");
-				}
+				// if self.is_pseudo() {
+				// 	unreachable!("Instruction \"{self}\" is pseudo, so cannot execute it");
+				// }
 
 				match self {
 					$(
 						$(
 							#[allow(unused_variables)]
 							&Self::$inst $( ( $( $exec_arg, )* ) )? => {
+								const _: () = {
+									let const_inst = RawBytecodeOpcodes::$inst;
+
+									if const_inst.is_pseudo() {
+										panic!(
+											concat!("Instruction \"", stringify!($inst), "\" is pseudo, so it should not have execution function!")
+										);
+									}
+								};
+
 								#[allow(unused_mut)]
 								let mut $mem = mem;
 

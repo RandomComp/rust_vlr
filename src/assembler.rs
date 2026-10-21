@@ -341,20 +341,16 @@ gen_insts_impl!(
 	/// jmp some_label ; jump on some_label
 	/// loop_exit:
 	/// ```
-	(pseudo) JmpLabel(VMWord) as 0x28 => {
-		asm(result, pos) => {
-			result.extend(pos.to_le_bytes());
+	(pseudo) JmpLabel(usize) as 123 => {
+		asm(result, label) => {
 		},
 		disasm(bytes) => {
-			let pos = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
-
-			Self::Jmp(pos)
+			Self::Halt
 		},
-		exec(mem, pos) => {
-			mem.regs.pc = pos;
+		exec(mem, label) => {
 		},
-		display(f, pos) => {
-			write!(f, "jmp {pos}")
+		display(f, label) => {
+			write!(f, "jmp {label}")
 		}
 	},
 

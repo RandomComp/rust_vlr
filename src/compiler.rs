@@ -30,6 +30,23 @@ pub enum CompilerError {
 	ReturnOutsideOfFunction,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+enum RegisterState {
+	#[default]
+	/// If register not affected
+	NotAffected,
+	/// If register affected while executing
+	Affected,
+	/// Result registr
+	Result,
+}
+
+#[derive(Default, Debug)]
+struct CompilerState {
+	acc: RegisterState,
+	base: RegisterState, cnt: RegisterState,
+}
+
 #[derive(Debug)]
 struct CompilerContext<'a> {
 	functions: HashMap<String, u32>,
@@ -270,14 +287,14 @@ impl Compiler {
 		Segments { code: result, data: self.segs.data }
 	}
 
-	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<(), Spanned<CompilerError>> {
+	fn compile(&mut self, ast: &Spanned<ASTNode>, context: &mut CompilerContext) -> Result<CompilerState, Spanned<CompilerError>> {
 		println!("context = {context:?}");
 
 		println!("stack_pos = {}; ast = {ast}", self.stack);
 
 		let span = ast.span;
 
-		match &ast.val {
+		let result = match &ast.val {
 			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
 				let jmp = self.pc;
 				self.result_push(Bytecode::Jmp(0));
@@ -346,7 +363,8 @@ impl Compiler {
 				self.result_push(Bytecode::Jmp(0));
 			},
 			ASTNode::FunctionDefinition {..} => todo!("{}", ast.val),
-			ASTNode::None => return Ok(()),
+			ASTNode::None =>
+				return Ok(CompilerState::default()),
 			&ASTNode::Boolean(x) => {
 				self.stack += 1;
 
@@ -531,8 +549,7 @@ impl Compiler {
 
 				self.result_push(Bytecode::from_binary_op(op, BytecodeRegister::Accum, BytecodeRegister::Base));
 
-				self.result_push(Bytecode::PushReg(BytecodeRegister::Accum));
-				self.stack += 1;
+				// Compile
 			},
 			ASTNode::Function { name, args } => {
 				self.call_func(
@@ -619,9 +636,9 @@ impl Compiler {
 					self.compile(statement, &mut local_context)?;
 				}
 			},
-		}
+		};
 
-		Ok(())
+		Ok(CompilerState::default())
 	}
 
 	pub fn compile_loop(&mut self, ast: &Spanned<ASTNode>) -> Result<(), Spanned<CompilerError>> {
