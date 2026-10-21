@@ -4,7 +4,7 @@ use std::string::FromUtf8Error;
 // use std::thread::sleep;
 // use std::time::Duration;
 
-use crate::assembler::defs::{BytecodeError, IndexedIterator};
+use crate::assembler::defs::BytecodeError;
 use crate::assembler::{Bytecode, VMRegs};
 use crate::compiler::{native_func::NativeFunctionIDError};
 

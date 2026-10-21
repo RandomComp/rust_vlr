@@ -327,6 +327,37 @@ gen_insts_impl!(
 		}
 	},
 
+	/// # Unconditional jump on label `label`
+	/// # Example
+	/// ```asm,ignore
+	/// mov cnt, 0 ; our counter
+	/// mov base, 10
+	///
+	/// some_label: ; our label
+	/// mov acc, cnt
+	/// lt
+	/// jif loop_exit
+	/// add cnt, 1
+	/// jmp some_label ; jump on some_label
+	/// loop_exit:
+	/// ```
+	(pseudo) JmpLabel(VMWord) as 0x28 => {
+		asm(result, pos) => {
+			result.extend(pos.to_le_bytes());
+		},
+		disasm(bytes) => {
+			let pos = VMWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+
+			Self::Jmp(pos)
+		},
+		exec(mem, pos) => {
+			mem.regs.pc = pos;
+		},
+		display(f, pos) => {
+			write!(f, "jmp {pos}")
+		}
+	},
+
 	/// # Unconditional jump on address `pos`
 	/// # Example
 	/// ```asm,ignore
@@ -341,6 +372,9 @@ gen_insts_impl!(
 	/// jmp some_label ; jump on some_label
 	/// loop_exit:
 	/// ```
+	/// # Safety
+	/// This is not very safe, because it may jump and execute every data from memory!
+	/// If you wanna use this for loops, use pseudo Jmp with labels instead
 	Jmp(VMWord) as 0x28 => {
 		asm(result, pos) => {
 			result.extend(pos.to_le_bytes());

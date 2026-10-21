@@ -334,6 +334,10 @@ macro_rules! gen_insts_impl {
 			}
 
 			fn asm_inst(self) -> Result<Vec<u8>, BytecodeError> {
+				if self.is_pseudo() {
+					unreachable!("Instruction \"{self}\" is pseudo, so cannot be assembled");
+				}
+
 				let mut result = Vec::new();
 
 				match self {
@@ -408,6 +412,10 @@ macro_rules! gen_insts_impl {
 			}
 
 			pub fn exec(&self, mem: &mut Memory) -> Result<(), RawVMError> {
+				if self.is_pseudo() {
+					unreachable!("Instruction \"{self}\" is pseudo, so cannot execute it");
+				}
+
 				match self {
 					$(
 						$(
