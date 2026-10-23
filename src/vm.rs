@@ -44,6 +44,7 @@ impl fmt::Display for VMError {
 }
 
 pub type VMWord = u32;
+pub type VMSWord = i32;
 
 #[derive(Debug)]
 pub struct Memory {

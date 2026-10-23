@@ -1,3 +1,4 @@
+use crate::vm::VMSWord;
 use crate::{gen_from_bin_ops, gen_from_un_ops};
 
 use crate::{{assembler::defs::BytecodeError}, {compiler::native_func::NativeFunctionID}, gen_insts_impl, gen_regs_code};
@@ -173,7 +174,7 @@ gen_insts_impl!(
 	/// mov acc, [base+0x80] ; move heap 0x16 value to acc
 	/// ; in acc our value
 	/// ```
-	LoadToReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x06 => {
+	LoadToReg(BytecodeRegister, BytecodeRegister, VMSWord) as 0x06 => {
 		asm(result, reg1, reg2, offset) => {
 			result.extend(reg1.to_le_bytes());
 			result.extend(reg2.to_le_bytes());
@@ -187,12 +188,12 @@ gen_insts_impl!(
 				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: 0 })?
 			)?;
 
-			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let offset = VMSWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::LoadToReg(reg1, reg2, offset)
 		},
 		exec(mem, reg1, reg2, offset) => {
-			let addr = (mem.regs[reg2] - offset) as usize;
+			let addr = (mem.regs[reg2].strict_sub_signed(offset)) as usize;
 
 			let value = mem.get_word(addr)?;
 
@@ -210,7 +211,7 @@ gen_insts_impl!(
 	/// mov base, 0x16 ; heap address, 0x16 + 128 = 150 = 0x96
 	/// mov [base+0x80], acc ; move acc value to heap 0x16
 	/// ```
-	LoadFromReg(BytecodeRegister, BytecodeRegister, VMWord) as 0x07 => {
+	LoadFromReg(BytecodeRegister, BytecodeRegister, VMSWord) as 0x07 => {
 		asm(result, val_reg, reg, offset) => {
 			result.extend(val_reg.to_le_bytes());
 			result.extend(reg.to_le_bytes());
@@ -224,14 +225,14 @@ gen_insts_impl!(
 				bytes.nth(0).ok_or(BytecodeError::UnexpectedEof { pos: bytes.index })?
 			)?;
 
-			let offset = u32::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
+			let offset = VMSWord::from_le_bytes(consume_const_bytes_and_get::<4, _>(&mut bytes)?);
 
 			Self::LoadFromReg(val_reg, reg, offset)
 		},
 		exec(mem, val_reg, reg, offset) => {
 			let value = mem.regs[val_reg];
 
-			let addr = (mem.regs[reg] - offset) as usize;
+			let addr = (mem.regs[reg].strict_sub_signed(offset)) as usize;
 
 			mem.set_word(addr, value)?;
 		},
@@ -347,7 +348,7 @@ gen_insts_impl!(
 		}
 	},
 
-	/// # Push pc to stack and jump on address `pos`
+	/// # Push pc to stack and jump on label `label`
 	/// # Example
 	/// ```asm,ignore
 	/// some_subprogram: ; our subprogram
@@ -358,7 +359,7 @@ gen_insts_impl!(
 	/// ret ; returns from subprogram to where called
 	/// call some_subprogram ; our calling
 	/// ```
-	CallLabel(usize) => {
+	(pseudo) CallLabel(usize) => {
 		display(f, label) => {
 			write!(f, "call {label}")
 		}

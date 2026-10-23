@@ -228,7 +228,7 @@ macro_rules! gen_insts_impl {
 	( @text_if_pseudo pseudo ) => {
 		concat!(
 			"# Important\n\r",
-			"This is a pseudo instruction, that means this have only display implementation, use linker to assemble this instruction in real instruction"
+			"This is a pseudo instruction, that means this have only display implementation, use linker to assemble this instruction to real instructions"
 		)
 	};
 	( @text_if_pseudo bin $op:ident ) => {

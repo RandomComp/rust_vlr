@@ -179,15 +179,16 @@ fn repl() -> Result<(), AppError> {
 
 		println!("ast = {ast}");
 
-		let mut compiler = Compiler::new();
+		let compiler = Compiler::new();
 
-		if let Err(e) = compiler.compile_loop(&ast) {
-			eprintln!("Compiler error: {e}");
+		let segs = match compiler.build(&ast) {
+			Ok(val) => val,
+			Err(e) => {
+				eprintln!("Compiler error: {e}");
 
-			continue;
-		}
-
-		let segs = compiler.build();
+				continue;
+			}
+		};
 
 		let bytes = Linker::link(segs)?;
 
@@ -338,13 +339,14 @@ fn compile(code: &str) -> Result<Vec<u8>, (AppError, Spans)> {
 // 		println!("'{var}' unused");
 // 	}
 
-	let mut compiler = Compiler::new();
+	let compiler = Compiler::new();
 
-	if let Err(e) = compiler.compile_loop(&ast) {
-		return Err((e.into(), spans))
-	}
-
-	let segs = compiler.build();
+	let segs = match compiler.build(&ast) {
+		Ok(val) => val,
+		Err(e) => {
+			return Err((e.into(), spans))
+		}
+	};
 
 	let bytes = match Linker::link(segs) {
 		Ok(res) => res,
