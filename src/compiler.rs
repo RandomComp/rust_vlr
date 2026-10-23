@@ -41,7 +41,7 @@ enum RegisterState {
 	Result,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Copy, Clone, Debug)]
 struct CompilerState {
 	acc: RegisterState,
 	base: RegisterState, cnt: RegisterState,
@@ -173,19 +173,36 @@ impl Compiler {
 		}
 	}
 
-	fn push_result_to_stack(&mut self, buf: &mut Vec<Bytecode>, state: CompilerState) {
-		match state {
-			CompilerState { acc: RegisterState::Result, base: _, cnt: _ } => {
-				self.result_push(buf, Bytecode::PushReg(BytecodeRegister::Accum));
-			}
-			CompilerState { acc: _, base: RegisterState::Result, cnt: _ } => {
-				self.result_push(buf, Bytecode::PushReg(BytecodeRegister::Base));
-			}
-			CompilerState { acc: _, base: _, cnt: RegisterState::Result } => {
-				self.result_push(buf, Bytecode::PushReg(BytecodeRegister::Counter));
-			}
-			_ => unreachable!("result registers cannot be multiple: {state:?}"),
+	fn get_result_state(state: CompilerState) -> BytecodeRegister {
+		let acc_is_res = matches!(state.acc, RegisterState::Result);
+		let base_is_res = matches!(state.base, RegisterState::Result);
+		let cnt_is_res = matches!(state.cnt, RegisterState::Result);
+		let is_multiple_res =
+			(base_is_res && cnt_is_res) ||
+			(acc_is_res && (base_is_res || cnt_is_res));
+
+		if is_multiple_res {
+			unreachable!("result registers cannot be multiple: {state:?}")
+		} else if acc_is_res {
+			BytecodeRegister::Accum
+		} else if base_is_res {
+			BytecodeRegister::Base
+		} else if cnt_is_res {
+			BytecodeRegister::Counter
+		} else {
+			unreachable!("no such result: {state:?}")
 		}
+	}
+	fn push_result_to_stack(&mut self, buf: &mut Vec<Bytecode>, state: CompilerState) {
+		let reg = Self::get_result_state(state);
+
+		self.result_push(buf, Bytecode::PushReg(reg));
+	}
+
+	fn mov_result_to_reg(&mut self, buf: &mut Vec<Bytecode>, reg: BytecodeRegister, state: CompilerState) {
+		let reg2 = Self::get_result_state(state);
+
+		self.result_push(buf, Bytecode::MovRegToReg(reg, reg2));
 	}
 
 	fn call_func<'a, T>(&mut self, buf: &mut Vec<Bytecode>, name: &Spanned<&str>, args: T, context: &mut CompilerContext) -> Result<CompilerState, Spanned<CompilerError>>
@@ -398,11 +415,11 @@ impl Compiler {
 			ASTNode::FunctionDefinition { name: Some(name), args, body, is_global } => {
 				self.result_push(&mut buf, Bytecode::Jmp(self.pc as u32));
 
-				let label = if *is_global {
+				if *is_global {
 					self.insert_global_function(name.val.clone());
 				} else {
 					self.insert_function(name.val.clone(), context);
-				};
+				}
 
 				self.result_push(&mut buf,
 					Bytecode::PushReg(
@@ -641,13 +658,18 @@ impl Compiler {
 				self.stack += 1;
 			},
 			ASTNode::Binary { left, op, right } => {
-				self.compile(left, context)?;
-				self.compile(right, context)?;
+				let (left_compiled, left_state) = self.compile(left, context)?;
+				let (right_compiled, right_state) = self.compile(right, context)?;
 
-				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Base));
-				self.stack -= 1;
-				self.result_push(&mut buf, Bytecode::PopReg(BytecodeRegister::Accum));
-				self.stack -= 1;
+				buf.extend(left_compiled);
+				self.save_state(&mut buf, right_state);
+
+				self.mov_result_to_reg(&mut buf, BytecodeRegister::Accum, left_state);
+
+				buf.extend(right_compiled);
+				self.load_state(&mut buf, right_state);
+
+				self.mov_result_to_reg(&mut buf, BytecodeRegister::Base, right_state);
 
 				self.result_push(&mut buf, Bytecode::from_binary_op(op, BytecodeRegister::Accum, BytecodeRegister::Base));
 
